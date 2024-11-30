@@ -6,6 +6,10 @@ using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 
+// https://www.masswerk.at/6502/6502_instruction_set.html
+
+// https://www.pagetable.com/c64ref/6502/?tab=2
+
 namespace _6502CPU
 {
     public class _6502_CPU
@@ -46,67 +50,107 @@ namespace _6502CPU
             registers.PC++;
         }
 
-        private void LDA_IM()
+        private ulong Immediate()
         {
-            byte value = memory[registers.PC + 1];
-            registers.A = value;
+            byte value1 = memory[registers.PC + 1];
+            return value1;
+        }
+
+        private ulong Absolute()
+        {
+            byte value1 = memory[registers.PC + 1];
+            byte value2 = memory[registers.PC + 2];
+            return (ulong)((value2 << 8) + value1);
+        }
+
+        private ulong X_Indexed_Absolute()
+        {
+            return Absolute() + registers.X;
+        }
+
+        private ulong Y_Indexed_Absolute()
+        {
+            return Absolute() + registers.Y;
+        }
+
+        private ulong Zero_Page()
+        {
+            byte value1 = memory[registers.PC + 2];
+            return value1;
+        }
+
+        private ulong X_Indexed_Zero_Page()
+        {
+            return Zero_Page() + registers.X;
+        }
+
+        private ulong Y_Indexed_Zero_Page(ulong value)
+        {
+            return Zero_Page() + registers.Y;
+        }
+
+        private ulong X_Indexed_Zero_Page_Indirect(ulong value)
+        {
+            return 0;
+        }
+
+        private ulong Zero_Page_Indirect_Y_Indexed(ulong value)
+        {
+            return 0;
+        } // Addressing Modes
+
+        private void LDA_Set_FlagsZN()
+        {
             registers.FLAGS.Z = (registers.A == 0);
             registers.FLAGS.N = ((registers.A & 0x40) == 0x40);
+        }
+
+        private void LDA_IM()
+        {
+            registers.A = (byte)Immediate();
+            LDA_Set_FlagsZN();
             registers.PC++;
         }
 
         private void LDA_AB()
         {
-            byte value1 = memory[registers.PC + 1];
-            byte value2 = memory[registers.PC + 2];
-            ulong addr = (ulong)((value2 << 8) + value1);
-            registers.A = memory[addr];
-            registers.FLAGS.Z = (registers.A == 0);
-            registers.FLAGS.N = ((registers.A & 0x40) == 0x40);
-            registers.PC += 2;
+            ulong addr = Absolute();
+            registers.A = memory[addr & 0xFF];
+            LDA_Set_FlagsZN();
+            registers.PC += 3;
         }
 
         private void LDA_ABX()
         {
-            byte value1 = memory[registers.PC + 1];
-            byte value2 = memory[registers.PC + 2];
-            ulong value3 = (ulong)((value2 << 8) + value1);
-            ulong addr = value3 + registers.X;
+            ulong addr = X_Indexed_Absolute();
             registers.FLAGS.C = (addr > 0xFFFF);
             registers.A = memory[addr & 0xFFFF];
-            registers.FLAGS.Z = (registers.A == 0);
-            registers.FLAGS.N = ((registers.A & 0x40) == 0x40);
-            registers.PC += 2;
+            LDA_Set_FlagsZN();
+            registers.PC += 3;
         }
 
         private void LDA_ABY()
         {
-            byte value1 = memory[registers.PC + 1];
-            byte value2 = memory[registers.PC + 2];
-            ulong value3 = (ulong)((value2 << 8) + value1);
-            ulong addr = value3 + registers.Y;
+            ulong addr = Y_Indexed_Absolute();
             registers.FLAGS.C = (addr > 0xFFFF);
             registers.A = memory[addr & 0xFFFF];
-            registers.FLAGS.Z = (registers.A == 0);
-            registers.FLAGS.N = ((registers.A & 0x40) == 0x40);
-            registers.PC += 2;
+            LDA_Set_FlagsZN();
+            registers.PC += 3;
         }
 
         private void LDA_ZP()
         {
-            byte addr = memory[registers.PC + 1];
+            byte addr = (byte)Zero_Page();
             registers.A = memory[addr];
-            registers.FLAGS.Z = (registers.A == 0);
-            registers.FLAGS.N = ((registers.A & 0x40) == 0x40);
-            registers.PC++;
+            LDA_Set_FlagsZN();
+            registers.PC += 2;
         }
 
         private void LDA_ZPX()
         {
-            byte addr = memory[registers.PC + 1];
+            byte addr = (byte)X_Indexed_Zero_Page();
             registers.A = memory[addr + registers.X];
-            registers.FLAGS.Z = (registers.A == 0);
-            registers.FLAGS.N = ((registers.A & 0x40) == 0x40);
+            LDA_Set_FlagsZN();
             registers.PC++;
         }
 
