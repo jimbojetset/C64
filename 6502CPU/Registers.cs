@@ -8,8 +8,9 @@ namespace _6502CPU
 {
     public class Registers
     {
-        public uint PC { get; set; }
-        public uint SP { get; set; }
+        public ulong PC { get; set; }
+        public ulong P { get; set; }
+        public ulong S { get; set; }
         public byte A { get; set; }
         public byte X { get; set; }
         public byte Y { get; set; }
