@@ -21,6 +21,11 @@ namespace _6502CPU
 
         }
 
+        public void Clear()
+        {
+            C = Z = I = D = B = V = N = false;
+        }
+
         public void SetFlagsFromByte(byte flags)
         {
             // 7 6 5 4 3 2 1 0

@@ -70,14 +70,16 @@ namespace _6502CPU
 
         private ulong X_Indexed_Absolute()
         {
+            ulong value1 = Absolute() + registers.X;
             registers.PC += 1;
-            return Absolute() + registers.X;
+            return value1;
         }
 
         private ulong Y_Indexed_Absolute()
         {
+            ulong value1 = Absolute() + registers.Y;
             registers.PC += 1;
-            return Absolute() + registers.Y;
+            return value1;
         }
 
         private ulong Zero_Page()
@@ -95,8 +97,9 @@ namespace _6502CPU
 
         private ulong Y_Indexed_Zero_Page(ulong value)
         {
+            ulong value1 = Zero_Page() + registers.Y;
             registers.PC++;
-            return Zero_Page() + registers.Y;
+            return value1;
         }
 
         private ulong X_Indexed_Zero_Page_Indirect(ulong value)
@@ -111,8 +114,8 @@ namespace _6502CPU
 
         private void LDA_Set_FlagsZN()
         {
-            registers.FLAGS.Z = (registers.A == 0);
-            registers.FLAGS.N = ((registers.A & 0x40) == 0x40);
+            registers.Flags.Z = (registers.A == 0);
+            registers.Flags.N = ((registers.A & 0x40) == 0x40);
         }
 
         private void LDA_IM()
@@ -161,18 +164,8 @@ namespace _6502CPU
         public void Reset()
         {
             registers = new Registers();
-            registers.FLAGS.SetFlagsFromByte(0x0);
-            registers.PC = 0xFFFC;
-            registers.P = 0x0100;
-            registers.A = registers.X = registers.Y = 0;
+            registers.Clear();
             memory = new byte[0x10000];
-            memory[0xFFFC] = 0xBD;
-            memory[0xFFFD] = 0xEE;
-            memory[0xFFFE] = 0xFF;
-            memory[0xED] = 0x68;
-            registers.X = 0xFF;
-
         }
-
     }
 }
