@@ -8,13 +8,20 @@ namespace _6502CPU
 {
     public class Flags
     {
-        public bool C { get; set; }
-        public bool Z { get; set; }
-        public bool I { get; set; }
-        public bool D { get; set; }
-        public bool B { get; set; }
-        public bool V { get; set; }
-        public bool N { get; set; }
+        private static bool c = false;
+        public bool C { get { return c; } set { c = value; } } // Carry
+        private static bool z = false;
+        public bool Z { get { return z; } set { z = value; } } // Zero
+        private static bool i = false;
+        public bool I { get { return i; } set { i = value; } } // Interrupt Disable
+        private static bool d = false;
+        public bool D { get { return d; } set { d = value; } } // Decimal
+        private static bool b = false;
+        public bool B { get { return b; } set { b = value; } } // Break
+        private static bool v = false;
+        public bool V { get { return v; } set { v = value; } } // Overflow
+        private static bool n = false;
+        public bool N { get { return n; } set { n = value; } } // Negative
 
         public Flags()
         {
@@ -30,26 +37,26 @@ namespace _6502CPU
         {
             // 7 6 5 4 3 2 1 0
             // N V   B D I Z C
-            C = ((flags & 0x1) == 0x01);
-            Z = ((flags & 0x2) == 0x02);
-            I = ((flags & 0x4) == 0x04);
-            D = ((flags & 0x8) == 0x08);
-            B = ((flags & 0x10) == 0x10);
-            V = ((flags & 0x40) == 0x40);
-            N = ((flags & 0x80) == 0x80);
+            c = ((flags & 0x1) == 0x01);
+            z = ((flags & 0x2) == 0x02);
+            i = ((flags & 0x4) == 0x04);
+            d = ((flags & 0x8) == 0x08);
+            b = ((flags & 0x10) == 0x10);
+            v = ((flags & 0x40) == 0x40);
+            n = ((flags & 0x80) == 0x80);
         }
 
         public byte GetFlagsAsByte()
         {
             byte value = new byte();
             //                NV BDIZC
-            if (C) value += 0b00000001;
-            if (Z) value += 0b00000010;
-            if (I) value += 0b00000100;
-            if (D) value += 0b00001000;
-            if (B) value += 0b00010000;
-            if (V) value += 0b01000000;
-            if (N) value += 0b10000000;
+            if (c) value += 0b00000001;
+            if (z) value += 0b00000010;
+            if (i) value += 0b00000100;
+            if (d) value += 0b00001000;
+            if (b) value += 0b00010000;
+            if (v) value += 0b01000000;
+            if (n) value += 0b10000000;
             return value;
         }
     }

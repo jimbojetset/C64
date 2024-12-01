@@ -10,13 +10,15 @@ using System.Threading.Tasks;
 
 // https://www.pagetable.com/c64ref/6502/?tab=2
 
+// https://github.com/JamesRandall/6502-Emulator/blob/master/Emulator6502/Components/OpcodeExecuterBase.cs
+
 namespace _6502CPU
 {
     public class _6502_CPU
     {
         private Registers registers = new Registers();
 
-        private byte[] memory = new byte[0x10000];
+        private RAM memory;
 
         public _6502_CPU()
         {
@@ -25,7 +27,7 @@ namespace _6502CPU
 
         public void Execute()
         {
-            byte instruction = memory[registers.PC];
+            byte instruction = memory.ReadByte(registers.PC);
             switch (instruction)
             {
                 case 0xA9:
@@ -60,38 +62,36 @@ namespace _6502CPU
 
         private ulong Immediate()
         {
-            byte value1 = memory[registers.PC + 1];
+            byte addr = memory.ReadByte(registers.PC + 1);
             registers.PC += 2;
-            return value1;
+            return addr;
         }
 
         private ulong Absolute()
         {
-            byte value1 = memory[registers.PC + 1];
-            byte value2 = memory[registers.PC + 2];
+            ulong addr = memory.ReadWord(registers.PC + 1);
             registers.PC += 3;
-            return (ulong)((value2 << 8) + value1);
+            return addr;
         }
 
         private ulong X_Indexed_Absolute()
         {
-            ulong value1 = Absolute() + registers.X;
-            registers.PC += 1;
-            return value1;
+            ulong addr = Absolute() + registers.X;
+            return addr;
         }
 
         private ulong Y_Indexed_Absolute()
         {
-            ulong value1 = Absolute() + registers.Y;
-            registers.PC += 1;
-            return value1;
+            ulong addr = Absolute() + registers.Y;
+            return addr;
         }
 
         private ulong Zero_Page()
         {
-            byte value1 = memory[registers.PC + 2];
+            byte value = memory.ReadByte(registers.PC + 1);
+            byte addr = memory.ReadByte(value);
             registers.PC += 2;
-            return value1;
+            return addr;
         }
 
         private ulong X_Indexed_Zero_Page()
@@ -100,16 +100,21 @@ namespace _6502CPU
             return Zero_Page() + registers.X;
         }
 
-        private ulong Y_Indexed_Zero_Page(ulong value)
+        private ulong Y_Indexed_Zero_Page()
         {
             ulong value1 = Zero_Page() + registers.Y;
             registers.PC++;
             return value1;
         }
 
-        private ulong X_Indexed_Zero_Page_Indirect(ulong value)
-        { // 6 cycles
-            return 0;
+        private ulong X_Indexed_Zero_Page_Indirect()
+        { 
+            ulong value1 = (ulong)(memory[registers.PC + 1] + registers.X);
+            ulong value2 = memory[value1];
+
+
+
+            return value2;
         }
 
         private ulong Zero_Page_Indirect_Y_Indexed(ulong value)
@@ -117,77 +122,62 @@ namespace _6502CPU
             return 0;
         }
 
-        private ulong Relative()
+        private void Set_FlagsNZ(byte value)
         {
-            byte value1 = memory[registers.PC + 1];
-            ulong value2 = 0;
-            if (!registers.Flags.C)
-            {
-                value2 = registers.PC + 2 + value1;
-                if(((registers.PC + 2) & 0xFF00) != (value2 & 0xFF00))
-                { }
-            }
-
-            // incomplete !!!
-            registers.PC = value2 & 0xFF;
-            return value1;
+            registers.Flags.Z = (value == 0);
+            registers.Flags.N = ((value & 0x40) == 0x40);
         }
+
         // ***********************
         // End Of Addressing Modes
         // ***********************
 
-        private void Set_FlagsNZ()
-        {
-            registers.Flags.Z = (registers.A == 0);
-            registers.Flags.N = ((registers.A & 0x40) == 0x40);
-        }
-
         private void LDA_IM()
         {
-            registers.A = (byte)Immediate();
-            Set_FlagsNZ();
+            registers.AC = (byte)Immediate();
+            Set_FlagsNZ(registers.AC);
         }
 
         private void LDA_AB()
         {
             ulong addr = Absolute();
-            registers.A = memory[addr & 0xFF];
-            Set_FlagsNZ();
+            registers.AC = memory[addr & 0xFF];
+            Set_FlagsNZ(registers.AC);
         }
 
         private void LDA_ABX()
         {
             ulong addr = X_Indexed_Absolute();
-            registers.A = memory[addr & 0xFFFF];
-            Set_FlagsNZ();
+            registers.AC = memory[addr & 0xFFFF];
+            Set_FlagsNZ(registers.AC);
         }
 
         private void LDA_ABY()
         {
             ulong addr = Y_Indexed_Absolute();
-            registers.A = memory[addr & 0xFFFF];
-            Set_FlagsNZ();
+            registers.AC = memory[addr & 0xFFFF];
+            Set_FlagsNZ(registers.AC);
         }
 
         private void LDA_ZP()
         {
             byte addr = (byte)Zero_Page();
-            registers.A = memory[addr];
-            Set_FlagsNZ();
+            registers.AC = memory[addr];
+            Set_FlagsNZ(registers.AC);
         }
 
         private void LDA_ZPX()
         {
             byte addr = (byte)X_Indexed_Zero_Page();
-            registers.A = memory[addr + registers.X];
-            Set_FlagsNZ();
+            registers.AC = memory[addr + registers.X];
+            Set_FlagsNZ(registers.AC);
         }
 
         public void Reset()
         {
             registers = new Registers();
             registers.Clear();
-            memory = new byte[0x10000];
+            memory = new RAM(0x10000);
         }
     }
 }
