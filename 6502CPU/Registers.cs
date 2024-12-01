@@ -19,7 +19,7 @@ namespace _6502CPU
 
         public Registers()
         {
-        
+            Clear();
         }
 
         public void Clear()
