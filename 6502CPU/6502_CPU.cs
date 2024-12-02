@@ -16,110 +16,210 @@ namespace _6502CPU
 {
     public class _6502_CPU
     {
-        private Registers registers = new Registers();
+        public Registers registers = new Registers();
 
-        private RAM memory;
+        public RAM memory = new RAM(0x10000);
 
         public _6502_CPU()
         {
-            Reset();
+            Initialise();
+        }
+
+        public void Initialise()
+        {
+            registers = new Registers();
+            registers.Clear();
+            memory = new RAM(0x10000);
+            registers.PC = 0xE00;
+            registers.SP = 0x1FF;
         }
 
         public void Execute()
         {
-            byte instruction = memory.ReadByte(registers.PC);
-            switch (instruction)
+            while (true)
             {
-                case 0xA9:
-                    LDA_IM();
-                    break;
-                case 0xAD:
-                    LDA_AB();
-                    break;
-                case 0xBD:
-                    LDA_ABX();
-                    break;
-                case 0xB9:
-                    LDA_ABY();
-                    break;
-                case 0xA5:
-                    LDA_ZP();
-                    break;
-                case 0xB5:
-                    LDA_ZPX();
-                    break;
-                default:
-                    Debug.WriteLine("Instruction not handled " + instruction.ToString("x2"));
-                    break;
+                byte instruction = GetNextByte();
+                switch (instruction)
+                {
+                    #region LDA
+                    case 0xA9:
+                        LDA_IM();
+                        break;
+                    case 0xAD:
+                        LDA_AB();
+                        break;
+                    case 0xBD:
+                        LDA_ABX();
+                        break;
+                    case 0xB9:
+                        LDA_ABY();
+                        break;
+                    case 0xA5:
+                        LDA_ZP();
+                        break;
+                    case 0xB5:
+                        LDA_ZPX();
+                        break;
+                    case 0xA1:
+                        LDA_ZPIX();
+                        break;
+                    case 0xB1:
+                        LDA_ZPIY();
+                        break;
+                    #endregion
+
+                    #region LDX
+                    case 0xA2:
+                        LDX_IM();
+                        break;
+                    case 0xAE:
+                        LDX_AB();
+                        break;
+                    case 0xBE:
+                        LDX_ABY();
+                        break;
+                    case 0xA6:
+                        LDX_ZP();
+                        break;
+                    case 0xB6:
+                        LDX_ZPY();
+                        break;
+                    #endregion
+
+                    #region LDY
+                    case 0xA0:
+                        LDY_IM();
+                        break;
+                    case 0xAC:
+                        LDY_AB();
+                        break;
+                    case 0xBC:
+                        LDY_ABX();
+                        break;
+                    case 0xA4:
+                        LDY_ZP();
+                        break;
+                    case 0xB4:
+                        LDY_ZPX();
+                        break;
+                    #endregion
+
+                    #region STX
+                    case 0x8E:
+                        STX_AB();
+                        break;
+                    case 0x86:
+                        STX_ZP();
+                        break;
+                    case 0x96:
+                        STX_ZPY();
+                        break;
+                    #endregion
+
+                    #region STY
+                    case 0x8C:
+                        STY_AB();
+                        break;
+                    case 0x84:
+                        STY_ZP();
+                        break;
+                    case 0x94:
+                        STY_ZPX();
+                        break;
+                    #endregion
+
+                    #region STA
+                    case 0x8D:
+                        STA_AB();
+                        break;
+                    case 0x9D:
+                        STA_ABX();
+                        break;
+                    case 0x99:
+                        STA_ABY();
+                        break;
+                    case 0x85:
+                        STA_ZP();
+                        break;
+                    case 0x95:
+                        STA_ZPX();
+                        break;
+                    case 0x81:
+                        STA_ZPIX();
+                        break;
+                    case 0x91:
+                        STA_ZPIY();
+                        break;
+                    #endregion
+
+                    default:
+                        Debug.WriteLine("Instruction not handled " + instruction.ToString("x2"));
+                        break;
+                }
             }
-            registers.PC++;
         }
 
-        // *************************
-        // Start Of Addressing Modes
-        // *************************
-        
-
-        private ulong Immediate()
+        #region Addressing Modes
+        private byte Immediate()
         {
-            byte addr = memory.ReadByte(registers.PC + 1);
-            registers.PC += 2;
+            byte addr = GetNextByte();
             return addr;
         }
 
-        private ulong Absolute()
+        private byte Absolute()
         {
-            ulong addr = memory.ReadWord(registers.PC + 1);
-            registers.PC += 3;
-            return addr;
-        }
-
-        private ulong X_Indexed_Absolute()
-        {
-            ulong addr = Absolute() + registers.X;
-            return addr;
-        }
-
-        private ulong Y_Indexed_Absolute()
-        {
-            ulong addr = Absolute() + registers.Y;
-            return addr;
-        }
-
-        private ulong Zero_Page()
-        {
-            byte value = memory.ReadByte(registers.PC + 1);
+            ulong value = GetNextWord();
             byte addr = memory.ReadByte(value);
-            registers.PC += 2;
             return addr;
         }
 
-        private ulong X_Indexed_Zero_Page()
+        private byte X_Indexed_Absolute()
         {
-            registers.PC ++;
-            return Zero_Page() + registers.X;
+            ulong value = GetNextWord() + registers.X;
+            byte addr = memory.ReadByte(value);
+            return addr;
         }
 
-        private ulong Y_Indexed_Zero_Page()
+        private byte Y_Indexed_Absolute()
         {
-            ulong value1 = Zero_Page() + registers.Y;
-            registers.PC++;
-            return value1;
+            ulong value = GetNextWord() + registers.Y;
+            byte addr = memory.ReadByte(value);
+            return addr;
+        }
+
+        private byte Zero_Page()
+        {
+            byte value = GetNextByte();
+            byte addr = memory.ReadByte(value);
+            return addr;
+        }
+
+        private byte X_Indexed_Zero_Page()
+        {
+            byte value = (byte)((GetNextByte() + registers.X) & 0xFF);
+            byte addr = memory.ReadByte(value);
+            return addr;
+        }
+
+        private byte Y_Indexed_Zero_Page()
+        {
+            byte value = (byte)((GetNextByte() + registers.Y) & 0xFF);
+            byte addr = memory.ReadByte(value);
+            return addr;
         }
 
         private ulong X_Indexed_Zero_Page_Indirect()
-        { 
-            ulong value1 = (ulong)(memory[registers.PC + 1] + registers.X);
-            ulong value2 = memory[value1];
-
-
-
-            return value2;
+        {
+            ulong value = (ulong)(GetNextByte() + registers.X);
+            ulong addr = memory.ReadByte(value);
+            return addr;
         }
 
-        private ulong Zero_Page_Indirect_Y_Indexed(ulong value)
-        { // 5 cycles
-            return 0;
+        private ulong Zero_Page_Indirect_Y_Indexed()
+        {
+            ulong value = (ulong)(GetNextByte() + registers.Y);
+            ulong addr = memory.ReadByte(value);
+            return addr;
         }
 
         private void Set_FlagsNZ(byte value)
@@ -127,57 +227,208 @@ namespace _6502CPU
             registers.Flags.Z = (value == 0);
             registers.Flags.N = ((value & 0x40) == 0x40);
         }
+        #endregion
 
-        // ***********************
-        // End Of Addressing Modes
-        // ***********************
-
+        #region LDA
         private void LDA_IM()
         {
-            registers.AC = (byte)Immediate();
-            Set_FlagsNZ(registers.AC);
+            registers.A = Immediate();
+            Set_FlagsNZ(registers.A);
         }
 
         private void LDA_AB()
         {
-            ulong addr = Absolute();
-            registers.AC = memory[addr & 0xFF];
-            Set_FlagsNZ(registers.AC);
+            registers.A = Absolute();
+            Set_FlagsNZ(registers.A);
         }
 
         private void LDA_ABX()
         {
-            ulong addr = X_Indexed_Absolute();
-            registers.AC = memory[addr & 0xFFFF];
-            Set_FlagsNZ(registers.AC);
+            registers.A = X_Indexed_Absolute();
+            Set_FlagsNZ(registers.A);
         }
 
         private void LDA_ABY()
         {
-            ulong addr = Y_Indexed_Absolute();
-            registers.AC = memory[addr & 0xFFFF];
-            Set_FlagsNZ(registers.AC);
+            registers.A = Y_Indexed_Absolute();
+            Set_FlagsNZ(registers.A);
         }
 
         private void LDA_ZP()
         {
-            byte addr = (byte)Zero_Page();
-            registers.AC = memory[addr];
-            Set_FlagsNZ(registers.AC);
+            registers.A = Zero_Page();
+            Set_FlagsNZ(registers.A);
         }
 
         private void LDA_ZPX()
         {
-            byte addr = (byte)X_Indexed_Zero_Page();
-            registers.AC = memory[addr + registers.X];
-            Set_FlagsNZ(registers.AC);
+            registers.A = X_Indexed_Zero_Page();
+            Set_FlagsNZ(registers.A);
         }
 
-        public void Reset()
+        private void LDA_ZPIX()
         {
-            registers = new Registers();
-            registers.Clear();
-            memory = new RAM(0x10000);
+            ulong value = X_Indexed_Zero_Page_Indirect();
+            registers.A = memory.ReadByte(value);
+            Set_FlagsNZ(registers.A);
         }
+
+        private void LDA_ZPIY()
+        {
+            ulong value = Zero_Page_Indirect_Y_Indexed();
+            registers.A = memory.ReadByte(value);
+            Set_FlagsNZ(registers.A);
+        }
+        #endregion
+
+        #region LDX
+        private void LDX_IM()
+        {
+            registers.X = Immediate();
+            Set_FlagsNZ(registers.X);
+        }
+
+        private void LDX_AB()
+        {
+            registers.X = Absolute();
+            Set_FlagsNZ(registers.X);
+        }
+
+        private void LDX_ABY()
+        {
+            registers.X = Y_Indexed_Absolute();
+            Set_FlagsNZ(registers.X);
+        }
+
+        private void LDX_ZP()
+        {
+            registers.X = Zero_Page();
+            Set_FlagsNZ(registers.X);
+        }
+
+        private void LDX_ZPY()
+        {
+            registers.X = Y_Indexed_Zero_Page();
+            Set_FlagsNZ(registers.X);
+        }
+        #endregion
+
+        #region LDY
+        private void LDY_IM()
+        {
+            registers.Y = Immediate();
+            Set_FlagsNZ(registers.Y);
+        }
+
+        private void LDY_AB()
+        {
+            registers.Y = Absolute();
+            Set_FlagsNZ(registers.Y);
+        }
+
+        private void LDY_ABX()
+        {
+            registers.Y = X_Indexed_Absolute();
+            Set_FlagsNZ(registers.Y);
+        }
+
+        private void LDY_ZP()
+        {
+            registers.Y = Zero_Page();
+            Set_FlagsNZ(registers.Y);
+        }
+
+        private void LDY_ZPX()
+        {
+            registers.Y = X_Indexed_Zero_Page();
+            Set_FlagsNZ(registers.Y);
+        }
+        #endregion
+
+        #region STA
+        private void STA_AB()
+        {
+            memory.WriteByte(Absolute(), registers.A);
+        }
+
+        private void STA_ABX()
+        {
+            memory.WriteByte(X_Indexed_Absolute(), registers.A);
+        }
+
+        private void STA_ABY()
+        {
+            memory.WriteByte(Y_Indexed_Absolute(), registers.A);
+        }
+
+        private void STA_ZP()
+        {
+            memory.WriteByte(Zero_Page(), registers.A);
+        }
+
+        private void STA_ZPX()
+        {
+            memory.WriteByte(X_Indexed_Zero_Page(), registers.A);
+        }
+
+        private void STA_ZPIX()
+        {
+            memory.WriteByte(X_Indexed_Zero_Page_Indirect(), registers.A);
+        }
+
+        private void STA_ZPIY()
+        {
+            memory.WriteByte(Zero_Page_Indirect_Y_Indexed(), registers.A);
+        }
+        #endregion
+
+        #region STX
+        private void STX_AB()
+        {
+            memory.WriteByte(Absolute(), registers.X);
+        }
+
+        private void STX_ZP()
+        {
+            memory.WriteByte(Zero_Page(), registers.X);
+        }
+
+        private void STX_ZPY()
+        {
+            memory.WriteByte(Y_Indexed_Zero_Page(), registers.X);
+        }
+        #endregion
+
+        #region STY
+        private void STY_AB()
+        {
+            memory.WriteByte(Absolute(), registers.X);
+        }
+
+        private void STY_ZP()
+        {
+            memory.WriteByte(Zero_Page(), registers.X);
+        }
+
+        private void STY_ZPX()
+        {
+            memory.WriteByte(X_Indexed_Zero_Page(), registers.X);
+        }
+        #endregion
+
+        private byte GetNextByte()
+        {
+            byte value = memory.ReadByte(registers.PC);
+            registers.PC++;
+            return value;
+        }
+
+        private ulong GetNextWord()
+        {
+            byte value1 = GetNextByte();
+            byte value2 = GetNextByte();
+            return (ulong)((value2 << 8) | value1);
+        }
+
     }
 }
