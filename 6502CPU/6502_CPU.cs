@@ -223,10 +223,7 @@ namespace _6502CPU
         private ulong Zero_Page_Indirect_Y_Indexed()
         {
             byte a = memory.ReadByte(registers.PC);
-            int lo = (int)(memory.ReadByte(a) + registers.Y) & 0xFF00;
-            byte carry = (byte)(memory.ReadByte(a) + registers.Y);
-            byte hi = (byte)(memory.ReadByte((byte)(a + 1)) + carry);
-            ulong addr = (ulong)((hi << 8) | lo);
+            ulong addr = (ulong)(memory.ReadWord(a) + registers.Y);
             registers.PC++;
             return addr;
         }
