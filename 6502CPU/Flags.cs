@@ -22,6 +22,8 @@ namespace _6502CPU
         public bool V { get { return v; } set { v = value; } } // Overflow
         private static bool n = false;
         public bool N { get { return n; } set { n = value; } } // Negative
+        private static bool t = false;
+        public bool T { get { return t; } set { t = value; } } // Test Flag Not Used By CPU
 
         public Flags()
         {
@@ -42,6 +44,7 @@ namespace _6502CPU
             i = ((flags & 0x4) == 0x04);
             d = ((flags & 0x8) == 0x08);
             b = ((flags & 0x10) == 0x10);
+            t = ((flags & 0x20) == 0x20);
             v = ((flags & 0x40) == 0x40);
             n = ((flags & 0x80) == 0x80);
         }
@@ -55,6 +58,7 @@ namespace _6502CPU
             if (i) value += 0b00000100;
             if (d) value += 0b00001000;
             if (b) value += 0b00010000;
+            if (t) value += 0b00100000;
             if (v) value += 0b01000000;
             if (n) value += 0b10000000;
             return value;

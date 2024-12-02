@@ -10,8 +10,8 @@ namespace _6502CPU
     public class Registers
     {
         public ulong PC { get; set; } // Program Counter
-        public byte S { get; set; } // Processor Status
-        public ulong SP { get; set; } // Stack Pointer
+        public byte P { get; set; } // Processor Status
+        public ulong S { get; set; } // Stack Pointer
         public byte A { get; set; } // Accumulator
         public byte X { get; set; } // X Index Register
         public byte Y { get; set; } // Y Index Register
@@ -24,7 +24,7 @@ namespace _6502CPU
 
         public void Clear()
         {
-            PC = SP = S = A = X = Y = 0;
+            PC = S = P = A = X = Y = 0;
             Flags.Clear();
         }
     }

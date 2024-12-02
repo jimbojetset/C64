@@ -31,12 +31,13 @@ namespace _6502CPU
             registers.Clear();
             memory = new RAM(0x10000);
             registers.PC = 0xE00;
-            registers.SP = 0x1FF;
+            registers.S = 0x1FF;
         }
 
-        public void Execute()
+        public void Execute(bool test = true)
         {
-            while (true)
+
+            while (test)
             {
                 byte instruction = GetNextByte();
                 switch (instruction)
@@ -156,6 +157,7 @@ namespace _6502CPU
                         Debug.WriteLine("Instruction not handled " + instruction.ToString("x2"));
                         break;
                 }
+                test = false;
             }
         }
 
@@ -210,22 +212,29 @@ namespace _6502CPU
 
         private ulong X_Indexed_Zero_Page_Indirect()
         {
-            ulong value = (ulong)(GetNextByte() + registers.X);
-            ulong addr = memory.ReadByte(value);
+            byte a = (byte)(memory.ReadByte(registers.PC) + registers.X);
+            byte lo = memory.ReadByte(a);
+            byte hi = memory.ReadByte((byte)(a + 1));
+            ulong addr = (ulong)((hi << 8) | lo);
+            registers.PC++;
             return addr;
         }
 
         private ulong Zero_Page_Indirect_Y_Indexed()
         {
-            ulong value = (ulong)(GetNextByte() + registers.Y);
-            ulong addr = memory.ReadByte(value);
+            byte a = memory.ReadByte(registers.PC);
+            int lo = (int)(memory.ReadByte(a) + registers.Y) & 0xFF00;
+            byte carry = (byte)(memory.ReadByte(a) + registers.Y);
+            byte hi = (byte)(memory.ReadByte((byte)(a + 1)) + carry);
+            ulong addr = (ulong)((hi << 8) | lo);
+            registers.PC++;
             return addr;
         }
 
         private void Set_FlagsNZ(byte value)
         {
             registers.Flags.Z = (value == 0);
-            registers.Flags.N = ((value & 0x40) == 0x40);
+            registers.Flags.N = ((value & (1 << 7)) != 0);
         }
         #endregion
 
@@ -373,7 +382,7 @@ namespace _6502CPU
 
         private void STA_ZPIX()
         {
-            memory.WriteByte(X_Indexed_Zero_Page_Indirect(), registers.A);
+            //memory.WriteByte(X_Indexed_Zero_Page_Indirect(), registers.A);
         }
 
         private void STA_ZPIY()
