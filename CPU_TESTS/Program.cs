@@ -3,10 +3,12 @@ using JsonSerializer = System.Text.Json.JsonSerializer;
 
 _6502_CPU cpu = new _6502_CPU();
 
-string[] LDA_LDX_LDY_Tests = ["a9", "ad", "bd", "b9", "a5", "b5", "a1", "b1", "a2", "ae", "be", "a6", "b6", "a0", "ac", "bc", "a4", "b4"];
-string[] STA_STX_STY_Tests = ["8d", "9d", "99", "85", "95", "81", "91", "8e", "86", "96", "8c", "84", "94"];
+string[] LD_Tests = ["a9", "ad", "bd", "b9", "a5", "b5", "a1", "b1", "a2", "ae", "be", "a6", "b6", "a0", "ac", "bc", "a4", "b4"];
+string[] ST_Tests = ["8d", "9d", "99", "85", "95", "81", "91", "8e", "86", "96", "8c", "84", "94"];
+string[] T_Tests = ["aa", "a8", "ba", "8a", "9a", "98"];
+string[] SE_Tests = ["38", "f8", "78"];
 
-foreach (string test in STA_STX_STY_Tests)
+foreach (string test in SE_Tests)
 {
     string testData = LoadJson(test);
 
@@ -89,7 +91,7 @@ internal class Data
 internal class Final
 {
     public ulong pc { get; set; }
-    public ulong s { get; set; }
+    public byte s { get; set; }
     public byte a { get; set; }
     public byte x { get; set; }
     public byte y { get; set; }
@@ -100,7 +102,7 @@ internal class Final
 internal class Initial
 {
     public ulong pc { get; set; }
-    public ulong s { get; set; }
+    public byte s { get; set; }
     public byte a { get; set; }
     public byte x { get; set; }
     public byte y { get; set; }

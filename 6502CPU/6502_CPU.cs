@@ -33,8 +33,7 @@ namespace _6502CPU
             registers = new Registers();
             registers.Clear();
             memory = new RAM(0x10000);
-            registers.PC = 0xE00;
-            registers.S = 0x1FF;
+            registers.PC = 0x0E00;
         }
         public void Run()
         {
@@ -160,6 +159,35 @@ namespace _6502CPU
                     STA_ZPIY();
                     break;
                 #endregion
+
+                case 0xAA:
+                    TAX();
+                    break;
+                case 0xA8:
+                    TAY();
+                    break;
+                case 0xBA:
+                    TSX();
+                    break;
+                case 0x8A:
+                    TXA();
+                    break;
+                case 0x9A:
+                    TXS();
+                    break;
+                case 0x98:
+                    TYA();
+                    break;
+
+                case 0x38:
+                    SEC();
+                    break;
+                case 0xF8:
+                    SED();
+                    break;
+                case 0x78:
+                    SEI();
+                    break;
 
                 default:
                     Debug.WriteLine("Instruction not handled " + instruction.ToString("x2"));
@@ -447,5 +475,58 @@ namespace _6502CPU
         }
         #endregion
 
+        #region T**
+        private void TAX()
+        {
+            registers.X = registers.A;
+            Set_FlagsNZ(registers.X);
+        }
+
+        private void TAY()
+        {
+            registers.Y = registers.A;
+            Set_FlagsNZ(registers.Y);
+        }
+
+        private void TSX()
+        {
+            registers.X = registers.S;
+            Set_FlagsNZ(registers.X);
+        }
+
+        private void TXA()
+        {
+            registers.A = registers.X;
+            Set_FlagsNZ(registers.A);
+        }
+
+        private void TXS()
+        {
+            registers.S = registers.X;
+        }
+
+        private void TYA()
+        {
+            registers.A = registers.Y;
+            Set_FlagsNZ(registers.A);
+        }
+        #endregion
+
+        #region SE*
+        private void SEC()
+        {
+            registers.Flags.C = true;
+        }
+
+        private void SED()
+        {
+            registers.Flags.D = true;
+        }
+
+        private void SEI()
+        {
+            registers.Flags.I = true;
+        }
+        #endregion
     }
 }
