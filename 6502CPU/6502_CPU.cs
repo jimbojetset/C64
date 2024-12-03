@@ -1,4 +1,5 @@
-﻿using System;
+﻿using Microsoft.Win32;
+using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Diagnostics.Metrics;
@@ -49,7 +50,13 @@ namespace _6502CPU
             byte instruction = GetNextInstruction();
             switch (instruction)
             {
-                #region LDA
+                #region NOP
+                case 0xEA:
+                    //NOP
+                    break;
+                #endregion
+
+                #region LD*
                 case 0xA9:
                     LDA_IM();
                     break;
@@ -74,9 +81,6 @@ namespace _6502CPU
                 case 0xB1:
                     LDA_ZPIY();
                     break;
-                #endregion
-
-                #region LDX
                 case 0xA2:
                     LDX_IM();
                     break;
@@ -92,9 +96,6 @@ namespace _6502CPU
                 case 0xB6:
                     LDX_ZPY();
                     break;
-                #endregion
-
-                #region LDY
                 case 0xA0:
                     LDY_IM();
                     break;
@@ -112,7 +113,7 @@ namespace _6502CPU
                     break;
                 #endregion
 
-                #region STX
+                #region ST*
                 case 0x8E:
                     STX_AB();
                     break;
@@ -122,9 +123,6 @@ namespace _6502CPU
                 case 0x96:
                     STX_ZPY();
                     break;
-                #endregion
-
-                #region STY
                 case 0x8C:
                     STY_AB();
                     break;
@@ -134,9 +132,6 @@ namespace _6502CPU
                 case 0x94:
                     STY_ZPX();
                     break;
-                #endregion
-
-                #region STA
                 case 0x8D:
                     STA_AB();
                     break;
@@ -160,6 +155,7 @@ namespace _6502CPU
                     break;
                 #endregion
 
+                #region T**
                 case 0xAA:
                     TAX();
                     break;
@@ -178,7 +174,9 @@ namespace _6502CPU
                 case 0x98:
                     TYA();
                     break;
+                #endregion
 
+                #region SE*
                 case 0x38:
                     SEC();
                     break;
@@ -188,6 +186,41 @@ namespace _6502CPU
                 case 0x78:
                     SEI();
                     break;
+                #endregion
+
+                #region PH*
+                case 0x48:
+                    PHA();
+                    break;
+                case 0x08:
+                    PHP();
+                    break;
+                #endregion
+
+                #region PL*
+                case 0x68:
+                    PLA();
+                    break;
+                case 0x28:
+                    PLP();
+                    break;
+                #endregion
+
+                #region CL*
+                case 0x18:
+                    CLC();
+                    break;
+                case 0xD8:
+                    CLD();
+                    break;
+                case 0x58:
+                    CLI();
+                    break;
+                case 0xB8:
+                    CLV();
+                    break;
+
+                #endregion
 
                 default:
                     Debug.WriteLine("Instruction not handled " + instruction.ToString("x2"));
@@ -526,6 +559,55 @@ namespace _6502CPU
         private void SEI()
         {
             registers.Flags.I = true;
+        }
+        #endregion
+
+        #region PH*
+        private void PHA()
+        {
+            memory.WriteByte(registers.S, registers.A);
+            registers.S--;
+        }
+
+        private void PHP()
+        {
+            memory.WriteByte(registers.S, registers.P);
+            registers.S--;
+        }
+        #endregion
+
+        #region PL*
+        private void PLA()
+        {
+            registers.S++;
+            registers.A = memory.ReadByte((ushort)(registers.S | 0x0100));
+            Set_FlagsNZ(registers.A);
+        }
+
+        private void PLP()
+        {
+            registers.S++;
+            byte value = memory.ReadByte((ushort)(registers.S | 0x0100));
+            registers.Flags.SetFlagsFromByte(value, 0xCF); //ignore bits 5 & 6
+        }
+        #endregion
+
+        #region CL*
+        private void CLC()
+        {
+            registers.Flags.C = false;
+        }
+        private void CLD()
+        {
+            registers.Flags.D = false;
+        }
+        private void CLI()
+        {
+            registers.Flags.I = false;
+        }
+        private void CLV()
+        {
+            registers.Flags.V = false;
         }
         #endregion
     }

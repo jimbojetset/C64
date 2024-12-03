@@ -1,4 +1,5 @@
-﻿namespace _6502CPU
+﻿
+namespace _6502CPU
 {
     public class Flags
     {
@@ -29,18 +30,18 @@
             C = Z = I = D = B = V = N = false;
         }
 
-        public void SetFlagsFromByte(byte flags)
+        public void SetFlagsFromByte(byte flags, byte bits = 0b11111111)
         {
             // 7 6 5 4 3 2 1 0
             // N V   B D I Z C
-            c = ((flags & 0x1) == 0x01);
-            z = ((flags & 0x2) == 0x02);
-            i = ((flags & 0x4) == 0x04);
-            d = ((flags & 0x8) == 0x08);
-            b = ((flags & 0x10) == 0x10);
-            t = ((flags & 0x20) == 0x20);
-            v = ((flags & 0x40) == 0x40);
-            n = ((flags & 0x80) == 0x80);
+            if ((bits & 0b00000001) == 0x01) c = ((flags & 0x01) == 0x01);
+            if ((bits & 0b00000010) == 0x02) z = ((flags & 0x02) == 0x02);
+            if ((bits & 0b00000100) == 0x04) i = ((flags & 0x04) == 0x04);
+            if ((bits & 0b00001000) == 0x08) d = ((flags & 0x08) == 0x08);
+            if ((bits & 0b00010000) == 0x10) b = ((flags & 0x10) == 0x10);
+            if ((bits & 0b00100000) == 0x20) t = ((flags & 0x20) == 0x20);
+            if ((bits & 0b01000000) == 0x40) v = ((flags & 0x40) == 0x40);
+            if ((bits & 0b10000000) == 0x80) n = ((flags & 0x80) == 0x80);
         }
 
         public byte GetFlagsAsByte()
