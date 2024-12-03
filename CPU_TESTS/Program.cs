@@ -1,66 +1,67 @@
 ﻿using _6502CPU;
-using Microsoft.Win32;
-using System;
-using static System.Net.Mime.MediaTypeNames;
 using JsonSerializer = System.Text.Json.JsonSerializer;
 
 _6502_CPU cpu = new _6502_CPU();
 
-string tests = LoadJson("ad");  
+string[] LDA_LDX_LDY_Tests = ["a9", "ad", "bd", "b9", "a5", "b5", "a1", "b1", "a2", "ae", "be", "a6", "b6", "a0", "ac", "bc", "a4", "b4"];
+string[] STA_STX_STY_Tests = ["8d", "9d", "99", "85", "95", "81", "91", "8e", "86", "96", "8c", "84", "94"];
 
-List<Test>? testList = JsonSerializer.Deserialize<List<Test>> (tests);
-
-ulong outPC = 0;
-ulong outS = 0;
-ulong outP = 0;
-ulong outA = 0;
-ulong outX = 0;
-ulong outY = 0;
-List<List<int>>? ram = new List<List<int>> ();
-
-foreach (Test? test in testList!)
+foreach (string test in STA_STX_STY_Tests)
 {
-    cpu.registers = new Registers();
-    cpu.registers.Clear();
-    cpu.memory = new RAM(0x10000);
+    string testData = LoadJson(test);
 
-    cpu.registers.PC = test.initial!.pc;
-    cpu.registers.Flags.SetFlagsFromByte(test.initial!.p);
-    cpu.registers.A = test.initial!.a;
-    cpu.registers.X = test.initial!.x;
-    cpu.registers.Y = test.initial!.y;
-    cpu.registers.S = test.initial!.s;
-    foreach (List<int> data in test.initial.ram!)
-        cpu.memory.WriteByte((ulong)data[0], (byte)data[1]);
+    List<Data>? testList = JsonSerializer.Deserialize<List<Data>>(testData);
 
-    outPC = test.final!.pc;
-    outP = test.final!.p;
-    outA = test.final!.a;
-    outX = test.final!.x;
-    outY = test.final!.y;
-    outS = test.final!.s;
-    ram = test.final!.ram;
+    ulong outPC = 0;
+    ulong outS = 0;
+    ulong outP = 0;
+    ulong outA = 0;
+    ulong outX = 0;
+    ulong outY = 0;
+    List<List<int>>? ram = new List<List<int>>();
 
-    if(test.name == "ad b3 c7")
-    { }
+    Console.WriteLine("Running Tests On: " + test);
 
-    cpu.Execute();
+    bool pass = true;
 
-    if (outPC == cpu.registers.PC &&
-        outP == cpu.registers.Flags.GetFlagsAsByte() &&
-        outA == cpu.registers.A &&
-        outX == cpu.registers.X &&
-        outY == cpu.registers.Y &&
-        outS == cpu.registers.S)
+    foreach (Data? data in testList!)
     {
-        Console.WriteLine("Pass test:" + test.name);
+
+        cpu.registers = new Registers();
+        cpu.registers.Clear();
+        cpu.memory = new RAM(0x10000);
+
+        cpu.registers.PC = data.initial!.pc;
+        cpu.registers.Flags.SetFlagsFromByte(data.initial!.p);
+        cpu.registers.A = data.initial!.a;
+        cpu.registers.X = data.initial!.x;
+        cpu.registers.Y = data.initial!.y;
+        cpu.registers.S = data.initial!.s;
+        foreach (List<int> ramData in data.initial.ram!)
+            cpu.memory.WriteByte((ulong)ramData[0], (byte)ramData[1]);
+
+        outPC = data.final!.pc;
+        outP = data.final!.p;
+        outA = data.final!.a;
+        outX = data.final!.x;
+        outY = data.final!.y;
+        outS = data.final!.s;
+        ram = data.final!.ram;
+
+        cpu.Execute();
+
+        if (outPC != cpu.registers.PC ||
+             outP != cpu.registers.Flags.GetFlagsAsByte() ||
+             outA != cpu.registers.A ||
+             outX != cpu.registers.X ||
+             outY != cpu.registers.Y ||
+             outS != cpu.registers.S)
+        {
+            Console.WriteLine("FAILED Test: " + data.name);
+            pass = false;
+        }
     }
-    else
-    {
-        Console.WriteLine("FAIL test:" + test.name);
-        Console.ReadLine();
-    
-    }
+    Console.WriteLine("Pass: " + pass);
 }
 
 
@@ -77,7 +78,7 @@ string LoadJson(string jsonFile)
     return content;
 }
 
-internal class Test
+internal class Data
 {
     public string? name { get; set; }
     public Initial? initial { get; set; }

@@ -2,4 +2,4 @@
 
 _6502_CPU cpu = new _6502_CPU();
 cpu.Initialise();
-cpu.Execute();
+cpu.Run();

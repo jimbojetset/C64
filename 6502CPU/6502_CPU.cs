@@ -20,6 +20,9 @@ namespace _6502CPU
 
         public RAM memory = new RAM(0x10000);
 
+        private bool running = true;
+        public bool Running {get; set;}
+
         public _6502_CPU()
         {
             Initialise();
@@ -33,203 +36,220 @@ namespace _6502CPU
             registers.PC = 0xE00;
             registers.S = 0x1FF;
         }
-
-        public void Execute(bool test = true)
+        public void Run()
         {
-
-            while (test)
+            running = true;
+            while (running)
             {
-                byte instruction = GetNextByte();
-                switch (instruction)
-                {
-                    #region LDA
-                    case 0xA9:
-                        LDA_IM();
-                        break;
-                    case 0xAD:
-                        LDA_AB();
-                        break;
-                    case 0xBD:
-                        LDA_ABX();
-                        break;
-                    case 0xB9:
-                        LDA_ABY();
-                        break;
-                    case 0xA5:
-                        LDA_ZP();
-                        break;
-                    case 0xB5:
-                        LDA_ZPX();
-                        break;
-                    case 0xA1:
-                        LDA_ZPIX();
-                        break;
-                    case 0xB1:
-                        LDA_ZPIY();
-                        break;
-                    #endregion
-
-                    #region LDX
-                    case 0xA2:
-                        LDX_IM();
-                        break;
-                    case 0xAE:
-                        LDX_AB();
-                        break;
-                    case 0xBE:
-                        LDX_ABY();
-                        break;
-                    case 0xA6:
-                        LDX_ZP();
-                        break;
-                    case 0xB6:
-                        LDX_ZPY();
-                        break;
-                    #endregion
-
-                    #region LDY
-                    case 0xA0:
-                        LDY_IM();
-                        break;
-                    case 0xAC:
-                        LDY_AB();
-                        break;
-                    case 0xBC:
-                        LDY_ABX();
-                        break;
-                    case 0xA4:
-                        LDY_ZP();
-                        break;
-                    case 0xB4:
-                        LDY_ZPX();
-                        break;
-                    #endregion
-
-                    #region STX
-                    case 0x8E:
-                        STX_AB();
-                        break;
-                    case 0x86:
-                        STX_ZP();
-                        break;
-                    case 0x96:
-                        STX_ZPY();
-                        break;
-                    #endregion
-
-                    #region STY
-                    case 0x8C:
-                        STY_AB();
-                        break;
-                    case 0x84:
-                        STY_ZP();
-                        break;
-                    case 0x94:
-                        STY_ZPX();
-                        break;
-                    #endregion
-
-                    #region STA
-                    case 0x8D:
-                        STA_AB();
-                        break;
-                    case 0x9D:
-                        STA_ABX();
-                        break;
-                    case 0x99:
-                        STA_ABY();
-                        break;
-                    case 0x85:
-                        STA_ZP();
-                        break;
-                    case 0x95:
-                        STA_ZPX();
-                        break;
-                    case 0x81:
-                        STA_ZPIX();
-                        break;
-                    case 0x91:
-                        STA_ZPIY();
-                        break;
-                    #endregion
-
-                    default:
-                        Debug.WriteLine("Instruction not handled " + instruction.ToString("x2"));
-                        break;
-                }
-                test = false;
+                Execute();
             }
+        }
+
+        public void Execute()
+        {
+            byte instruction = GetNextInstruction();
+            switch (instruction)
+            {
+                #region LDA
+                case 0xA9:
+                    LDA_IM();
+                    break;
+                case 0xAD:
+                    LDA_AB();
+                    break;
+                case 0xBD:
+                    LDA_ABX();
+                    break;
+                case 0xB9:
+                    LDA_ABY();
+                    break;
+                case 0xA5:
+                    LDA_ZP();
+                    break;
+                case 0xB5:
+                    LDA_ZPX();
+                    break;
+                case 0xA1:
+                    LDA_ZPIX();
+                    break;
+                case 0xB1:
+                    LDA_ZPIY();
+                    break;
+                #endregion
+
+                #region LDX
+                case 0xA2:
+                    LDX_IM();
+                    break;
+                case 0xAE:
+                    LDX_AB();
+                    break;
+                case 0xBE:
+                    LDX_ABY();
+                    break;
+                case 0xA6:
+                    LDX_ZP();
+                    break;
+                case 0xB6:
+                    LDX_ZPY();
+                    break;
+                #endregion
+
+                #region LDY
+                case 0xA0:
+                    LDY_IM();
+                    break;
+                case 0xAC:
+                    LDY_AB();
+                    break;
+                case 0xBC:
+                    LDY_ABX();
+                    break;
+                case 0xA4:
+                    LDY_ZP();
+                    break;
+                case 0xB4:
+                    LDY_ZPX();
+                    break;
+                #endregion
+
+                #region STX
+                case 0x8E:
+                    STX_AB();
+                    break;
+                case 0x86:
+                    STX_ZP();
+                    break;
+                case 0x96:
+                    STX_ZPY();
+                    break;
+                #endregion
+
+                #region STY
+                case 0x8C:
+                    STY_AB();
+                    break;
+                case 0x84:
+                    STY_ZP();
+                    break;
+                case 0x94:
+                    STY_ZPX();
+                    break;
+                #endregion
+
+                #region STA
+                case 0x8D:
+                    STA_AB();
+                    break;
+                case 0x9D:
+                    STA_ABX();
+                    break;
+                case 0x99:
+                    STA_ABY();
+                    break;
+                case 0x85:
+                    STA_ZP();
+                    break;
+                case 0x95:
+                    STA_ZPX();
+                    break;
+                case 0x81:
+                    STA_ZPIX();
+                    break;
+                case 0x91:
+                    STA_ZPIY();
+                    break;
+                #endregion
+
+                default:
+                    Debug.WriteLine("Instruction not handled " + instruction.ToString("x2"));
+                    break;
+            }
+        }
+
+        private byte GetNextInstruction()
+        {
+            byte value = memory.ReadByte(registers.PC);
+            registers.IncPC();
+            return value;
+        }
+
+        private ulong GetInstructionWord()
+        {
+            byte value1 = GetNextInstruction();
+            byte value2 = GetNextInstruction();
+            ulong value3 = (ulong)((value2 << 8) | value1);
+            if (value3 > 65535) value3 = value3 - 65535;
+            return value3;
         }
 
         #region Addressing Modes
         private byte Immediate()
         {
-            byte addr = GetNextByte();
+            byte addr = GetNextInstruction();
             return addr;
         }
 
         private byte Absolute()
         {
-            ulong value = GetNextWord();
+            ulong value = GetInstructionWord();
             byte addr = memory.ReadByte(value & 0xFFFF);
             return addr;
         }
 
         private byte X_Indexed_Absolute()
         {
-            ulong value = (GetNextWord() + registers.X);
+            ulong value = (GetInstructionWord() + registers.X);
             byte addr = memory.ReadByte(value & 0xFFFF);
             return addr;
         }
 
         private byte Y_Indexed_Absolute()
         {
-            ulong value = (GetNextWord() + registers.Y);
+            ulong value = (GetInstructionWord() + registers.Y);
             byte addr = memory.ReadByte(value & 0xFFFF);
             return addr;
         }
 
         private byte Zero_Page()
         {
-            byte value = GetNextByte();
+            byte value = GetNextInstruction();
             byte addr = memory.ReadByte(value);
             return addr;
         }
 
         private byte X_Indexed_Zero_Page()
         {
-            byte value = (byte)((GetNextByte() + registers.X) & 0xFF);
+            byte value = (byte)((GetNextInstruction() + registers.X) & 0xFF);
             byte addr = memory.ReadByte(value);
             return addr;
         }
 
         private byte Y_Indexed_Zero_Page()
         {
-            byte value = (byte)((GetNextByte() + registers.Y) & 0xFF);
+            byte value = (byte)((GetNextInstruction() + registers.Y) & 0xFF);
             byte addr = memory.ReadByte(value);
             return addr;
         }
 
         private ulong X_Indexed_Zero_Page_Indirect()
         {
-            byte value = (byte)(memory.ReadByte(registers.PC) + registers.X);
+            byte value = (byte)(GetNextInstruction() + registers.X);
             byte value1 = memory.ReadByte(value);
             if (value == 255) value = 0; else value++;
             byte value2 = memory.ReadByte(value);
             ulong addr = (ulong)((value2 << 8) | value1);
-            registers.IncPC();
             return addr & 0xFFFF;
         }
 
         private ulong Zero_Page_Indirect_Y_Indexed()
         {
-            byte value = memory.ReadByte(registers.PC);
+            byte value = GetNextInstruction();
             byte value1 = memory.ReadByte(value);
             if (value == 255) value = 0; else value++;
             byte value2 = memory.ReadByte(value);
             ulong value3 = (ulong)((value2 << 8) | value1);
             ulong addr = (ulong)(value3 + registers.Y);
-            registers.IncPC();
             return addr & 0xFFFF;
         }
 
@@ -426,22 +446,6 @@ namespace _6502CPU
             memory.WriteByte(X_Indexed_Zero_Page(), registers.X);
         }
         #endregion
-
-        private byte GetNextByte()
-        {
-            byte value = memory.ReadByte(registers.PC);
-            registers.IncPC();
-            return value;
-        }
-
-        private ulong GetNextWord()
-        {
-            byte value1 = GetNextByte();
-            byte value2 = GetNextByte();
-            ulong value3 = (ulong)((value2 << 8) | value1);
-            if (value3 > 65535) value3 = value3 - 65535;
-            return value3;
-        }
 
     }
 }

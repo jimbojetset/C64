@@ -1,10 +1,4 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
-
-namespace _6502CPU
+﻿namespace _6502CPU
 {
     public class RAM
     {
@@ -32,7 +26,5 @@ namespace _6502CPU
             ulong value3 = (ulong)((value2 << 8) | value1);
             return value3;
         }
-
-
     }
 }
