@@ -321,7 +321,7 @@ namespace _6502CPU
         }
         #endregion
 
-        #region LDA
+        #region LD*
         private void LDA_IM()
         {
             registers.A = Immediate();
@@ -371,9 +371,7 @@ namespace _6502CPU
             registers.A = memory.ReadByte(value);
             Set_FlagsNZ(registers.A);
         }
-        #endregion
 
-        #region LDX
         private void LDX_IM()
         {
             registers.X = Immediate();
@@ -403,9 +401,7 @@ namespace _6502CPU
             registers.X = Y_Indexed_Zero_Page();
             Set_FlagsNZ(registers.X);
         }
-        #endregion
 
-        #region LDY
         private void LDY_IM()
         {
             registers.Y = Immediate();
@@ -437,7 +433,7 @@ namespace _6502CPU
         }
         #endregion
 
-        #region STA
+        #region ST*
         private void STA_AB()
         {
             memory.WriteByte(Absolute(), registers.A);
@@ -472,9 +468,7 @@ namespace _6502CPU
         {
             memory.WriteByte(Zero_Page_Indirect_Y_Indexed(), registers.A);
         }
-        #endregion
 
-        #region STX
         private void STX_AB()
         {
             memory.WriteByte(Absolute(), registers.X);
@@ -489,9 +483,7 @@ namespace _6502CPU
         {
             memory.WriteByte(Y_Indexed_Zero_Page(), registers.X);
         }
-        #endregion
 
-        #region STY
         private void STY_AB()
         {
             memory.WriteByte(Absolute(), registers.X);
