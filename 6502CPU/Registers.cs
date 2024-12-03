@@ -27,5 +27,12 @@ namespace _6502CPU
             PC = S = P = A = X = Y = 0;
             Flags.Clear();
         }
+
+        public void IncPC()
+        {
+            PC++;
+            if (PC >= 65536) PC = PC - 65536;
+
+        }
     }
 }

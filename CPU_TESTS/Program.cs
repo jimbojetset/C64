@@ -6,7 +6,7 @@ using JsonSerializer = System.Text.Json.JsonSerializer;
 
 _6502_CPU cpu = new _6502_CPU();
 
-string tests = LoadJson("b1");  
+string tests = LoadJson("ad");  
 
 List<Test>? testList = JsonSerializer.Deserialize<List<Test>> (tests);
 
@@ -31,9 +31,7 @@ foreach (Test? test in testList!)
     cpu.registers.Y = test.initial!.y;
     cpu.registers.S = test.initial!.s;
     foreach (List<int> data in test.initial.ram!)
-    {
         cpu.memory.WriteByte((ulong)data[0], (byte)data[1]);
-    }
 
     outPC = test.final!.pc;
     outP = test.final!.p;
@@ -42,6 +40,9 @@ foreach (Test? test in testList!)
     outY = test.final!.y;
     outS = test.final!.s;
     ram = test.final!.ram;
+
+    if(test.name == "ad b3 c7")
+    { }
 
     cpu.Execute();
 
@@ -58,6 +59,7 @@ foreach (Test? test in testList!)
     {
         Console.WriteLine("FAIL test:" + test.name);
         Console.ReadLine();
+    
     }
 }
 

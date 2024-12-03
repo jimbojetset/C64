@@ -171,21 +171,21 @@ namespace _6502CPU
         private byte Absolute()
         {
             ulong value = GetNextWord();
-            byte addr = memory.ReadByte(value);
+            byte addr = memory.ReadByte(value & 0xFFFF);
             return addr;
         }
 
         private byte X_Indexed_Absolute()
         {
-            ulong value = GetNextWord() + registers.X;
-            byte addr = memory.ReadByte(value);
+            ulong value = (GetNextWord() + registers.X);
+            byte addr = memory.ReadByte(value & 0xFFFF);
             return addr;
         }
 
         private byte Y_Indexed_Absolute()
         {
-            ulong value = GetNextWord() + registers.Y;
-            byte addr = memory.ReadByte(value);
+            ulong value = (GetNextWord() + registers.Y);
+            byte addr = memory.ReadByte(value & 0xFFFF);
             return addr;
         }
 
@@ -212,20 +212,25 @@ namespace _6502CPU
 
         private ulong X_Indexed_Zero_Page_Indirect()
         {
-            byte a = (byte)(memory.ReadByte(registers.PC) + registers.X);
-            byte lo = memory.ReadByte(a);
-            byte hi = memory.ReadByte((byte)(a + 1));
-            ulong addr = (ulong)((hi << 8) | lo);
-            registers.PC++;
-            return addr;
+            byte value = (byte)(memory.ReadByte(registers.PC) + registers.X);
+            byte value1 = memory.ReadByte(value);
+            if (value == 255) value = 0; else value++;
+            byte value2 = memory.ReadByte(value);
+            ulong addr = (ulong)((value2 << 8) | value1);
+            registers.IncPC();
+            return addr & 0xFFFF;
         }
 
         private ulong Zero_Page_Indirect_Y_Indexed()
         {
-            byte a = memory.ReadByte(registers.PC);
-            ulong addr = (ulong)(memory.ReadWord(a) + registers.Y);
-            registers.PC++;
-            return addr;
+            byte value = memory.ReadByte(registers.PC);
+            byte value1 = memory.ReadByte(value);
+            if (value == 255) value = 0; else value++;
+            byte value2 = memory.ReadByte(value);
+            ulong value3 = (ulong)((value2 << 8) | value1);
+            ulong addr = (ulong)(value3 + registers.Y);
+            registers.IncPC();
+            return addr & 0xFFFF;
         }
 
         private void Set_FlagsNZ(byte value)
@@ -379,7 +384,7 @@ namespace _6502CPU
 
         private void STA_ZPIX()
         {
-            //memory.WriteByte(X_Indexed_Zero_Page_Indirect(), registers.A);
+            memory.WriteByte(X_Indexed_Zero_Page_Indirect(), registers.A);
         }
 
         private void STA_ZPIY()
@@ -425,7 +430,7 @@ namespace _6502CPU
         private byte GetNextByte()
         {
             byte value = memory.ReadByte(registers.PC);
-            registers.PC++;
+            registers.IncPC();
             return value;
         }
 
@@ -433,7 +438,9 @@ namespace _6502CPU
         {
             byte value1 = GetNextByte();
             byte value2 = GetNextByte();
-            return (ulong)((value2 << 8) | value1);
+            ulong value3 = (ulong)((value2 << 8) | value1);
+            if (value3 > 65535) value3 = value3 - 65535;
+            return value3;
         }
 
     }
