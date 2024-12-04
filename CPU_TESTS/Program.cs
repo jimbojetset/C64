@@ -13,7 +13,8 @@ Dictionary<string, string[]> testDictionary = new Dictionary<string, string[]>()
 //testDictionary.Add("PH_Tests", ["48", "08"]);
 //testDictionary.Add("PL_Tests", ["68", "28"]);
 //testDictionary.Add("CL_Tests", ["18", "d8", "58", "b8"]);
-testDictionary.Add("DE_Tests", ["ce","ca","88"]);//, "de", "c6", "d6"]);
+//testDictionary.Add("DE_Tests", ["ce", "de", "c6", "d6", "ca","88"]);
+testDictionary.Add("IX_Tests", ["ee", "fe", "e6", "f6", "e8","c8"]);
 
 foreach (KeyValuePair<string, string[]> testPlan in testDictionary)
 {

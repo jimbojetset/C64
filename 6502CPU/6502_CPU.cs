@@ -226,6 +226,15 @@ namespace _6502CPU
                 case 0xCE:
                     DECA();
                     break;
+                case 0xDE:
+                    DECXA();
+                    break;
+                case 0xC6:
+                    DECZP();
+                    break;
+                case 0xD6:
+                    DECXZP();
+                    break;
                 case 0xCA:
                     DEX();
                     break;
@@ -234,6 +243,26 @@ namespace _6502CPU
                     break;
                 #endregion
 
+                #region IN*
+                case 0xEE:
+                    INCA();
+                    break;
+                case 0xFE:
+                    INCXA();
+                    break;
+                case 0xE6:
+                    INCZP();
+                    break;
+                case 0xF6:
+                    INCXZP();
+                    break;
+                case 0xE8:
+                    INX();
+                    break;
+                case 0xC8:
+                    INY();
+                    break;
+                #endregion
 
                 default:
                     Debug.WriteLine("Instruction not handled " + instruction.ToString("x2"));
@@ -620,6 +649,33 @@ namespace _6502CPU
             Set_FlagsNZ(value2);
         }
 
+        private void DECXA()
+        {
+            ulong addr = X_Indexed_Absolute();
+            byte value1 = memory.ReadByte(addr);
+            byte value2 = (byte)((value1 + (~0x01)) + 1);
+            memory.WriteByte(addr, value2);
+            Set_FlagsNZ(value2);
+        }
+
+        private void DECZP()
+        {
+            ulong addr = Zero_Page();
+            byte value1 = memory.ReadByte(addr);
+            byte value2 = (byte)((value1 + (~0x01)) + 1);
+            memory.WriteByte(addr, value2);
+            Set_FlagsNZ(value2);
+        }
+
+        private void DECXZP()
+        {
+            ulong addr = X_Indexed_Zero_Page();
+            byte value1 = memory.ReadByte(addr);
+            byte value2 = (byte)((value1 + (~0x01)) + 1);
+            memory.WriteByte(addr, value2);
+            Set_FlagsNZ(value2);
+        }
+
         private void DEX()
         {
             byte value1 = registers.X;
@@ -635,6 +691,60 @@ namespace _6502CPU
             if (value2 < 0) value2 = (byte)(0xFF - value2);
             registers.Y = value2;
             Set_FlagsNZ(value2);
+        }
+        #endregion
+
+        #region DE*
+        private void INCA()
+        {
+            ulong addr = Absolute();
+            byte value1 = memory.ReadByte(addr);
+            value1++;
+            memory.WriteByte(addr, value1);
+            Set_FlagsNZ(value1);
+        }
+
+        private void INCXA()
+        {
+            ulong addr = X_Indexed_Absolute();
+            byte value1 = memory.ReadByte(addr);
+            value1++;
+            memory.WriteByte(addr, value1);
+            Set_FlagsNZ(value1);
+        }
+
+        private void INCZP()
+        {
+            ulong addr = Zero_Page();
+            byte value1 = memory.ReadByte(addr);
+            value1++;
+            memory.WriteByte(addr, value1);
+            Set_FlagsNZ(value1);
+        }
+
+        private void INCXZP()
+        {
+            ulong addr = X_Indexed_Zero_Page();
+            byte value1 = memory.ReadByte(addr);
+            value1++;
+            memory.WriteByte(addr, value1);
+            Set_FlagsNZ(value1);
+        }
+
+        private void INX()
+        {
+            byte value1 = (byte)(registers.X + 1);
+            if (value1 < 0) value1 = (byte)(0xFF - value1);
+            registers.X = value1;
+            Set_FlagsNZ(value1);
+        }
+
+        private void INY()
+        {
+            byte value1 = (byte)(registers.Y + 1);
+            if (value1 < 0) value1 = (byte)(0xFF - value1);
+            registers.Y = value1;
+            Set_FlagsNZ(value1);
         }
         #endregion
     }
