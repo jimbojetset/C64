@@ -11,7 +11,7 @@ using System.Threading.Tasks;
 
 // https://www.pagetable.com/c64ref/6502/?tab=2
 
-// https://github.com/JamesRandall/6502-Emulator/blob/master/Emulator6502/Components/OpcodeExecuterBase.cs
+// https://github.com/aaronmell/6502Net/blob/master/Processor/Processor.cs
 
 namespace _6502CPU
 {
@@ -925,10 +925,37 @@ namespace _6502CPU
         {
             byte value = Immediate();
             int carry = registers.Flags.C ? 1 : 0;
-            byte value2 = (byte)(registers.A + value + carry);
-            // set registers.Flags.C when the sum of a binary add exceeds 255 or when the sum of a decimal add exceeds 99
-            // The overflow flag registers.Flags.V is set when the sign or bit 7 is changed due to the result exceeding +127 or -128
-            Set_FlagsNZ(value2);
+            int value2 = (byte)(registers.A + value + carry);
+            registers.Flags.V = (((registers.A ^ value2) & 0x80) != 0) && (((registers.A ^ value) & 0x80) == 0);
+            if (registers.Flags.D)
+            {
+                value2 = int.Parse(value.ToString("X")) + int.Parse(registers.A.ToString("X")) + (registers.Flags.C ? 1 : 0);
+
+                if (value2 > 99)
+                {
+                    registers.Flags.C = true;
+                    value2 -= 100;
+                }
+                else
+                {
+                    registers.Flags.C = false;
+                }
+                value2 = (int)Convert.ToInt64(string.Concat("0x", value2), 16);
+            }
+            else
+            {
+                if (value2 > 255)
+                {
+                    registers.Flags.C = true;
+                    value2 -= 256;
+                }
+                else
+                {
+                    registers.Flags.C = false;
+                }
+            }
+            Set_FlagsNZ((byte)value2);
+            registers.A = (byte)value2;
         }
         #endregion
 

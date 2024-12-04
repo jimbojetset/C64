@@ -16,7 +16,8 @@ Dictionary<string, string[]> testDictionary = new Dictionary<string, string[]>()
 //testDictionary.Add("DE_Tests", ["ce", "de", "c6", "d6", "ca","88"]);
 //testDictionary.Add("IX_Tests", ["ee", "fe", "e6", "f6", "e8", "c8"]);
 //testDictionary.Add("CM_Tests", ["c9", "cd", "dd", "d9", "c5", "d5", "c1", "d1"]);
-testDictionary.Add("CP_Tests", ["e0", "ec", "e4", "c0", "cc", "c4"]);
+//testDictionary.Add("CP_Tests", ["e0", "ec", "e4", "c0", "cc", "c4"]);
+testDictionary.Add("ADC_Tests", ["69"]);//, "ec", "e4", "c0", "cc", "c4"]);
 
 foreach (KeyValuePair<string, string[]> testPlan in testDictionary)
 {
@@ -92,7 +93,7 @@ foreach (KeyValuePair<string, string[]> testPlan in testDictionary)
 
 string LoadJson(string jsonFile)
 {
-    using var client = new HttpClient();
+    using var client = new HttpClient(); 
     var content = client.GetStringAsync(@"https://raw.githubusercontent.com/SingleStepTests/65x02/refs/heads/main/6502/v1/" + jsonFile + ".json").Result;
     return content;
 }
