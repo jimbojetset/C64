@@ -222,6 +222,19 @@ namespace _6502CPU
 
                 #endregion
 
+                #region DE*
+                case 0xCE:
+                    DECA();
+                    break;
+                case 0xCA:
+                    DEX();
+                    break;
+                case 0x88:
+                    DEY();
+                    break;
+                #endregion
+
+
                 default:
                     Debug.WriteLine("Instruction not handled " + instruction.ToString("x2"));
                     break;
@@ -251,45 +264,39 @@ namespace _6502CPU
             return addr;
         }
 
-        private byte Absolute()
+        private ulong Absolute()
         {
-            ulong value = GetInstructionWord();
-            byte addr = memory.ReadByte(value & 0xFFFF);
-            return addr;
+            ulong addr = GetInstructionWord();
+            return addr & 0xFFFF;
         }
 
-        private byte X_Indexed_Absolute()
+        private ulong X_Indexed_Absolute()
         {
-            ulong value = (GetInstructionWord() + registers.X);
-            byte addr = memory.ReadByte(value & 0xFFFF);
-            return addr;
+            ulong addr = (GetInstructionWord() + registers.X);
+            return addr & 0xFFFF;
         }
 
-        private byte Y_Indexed_Absolute()
+        private ulong Y_Indexed_Absolute()
         {
-            ulong value = (GetInstructionWord() + registers.Y);
-            byte addr = memory.ReadByte(value & 0xFFFF);
-            return addr;
+            ulong addr = (GetInstructionWord() + registers.Y);
+            return addr & 0xFFFF;
         }
 
         private byte Zero_Page()
         {
-            byte value = GetNextInstruction();
-            byte addr = memory.ReadByte(value);
+            byte addr = GetNextInstruction();
             return addr;
         }
 
         private byte X_Indexed_Zero_Page()
         {
-            byte value = (byte)((GetNextInstruction() + registers.X) & 0xFF);
-            byte addr = memory.ReadByte(value);
+            byte addr = (byte)((GetNextInstruction() + registers.X) & 0xFF);
             return addr;
         }
 
         private byte Y_Indexed_Zero_Page()
         {
-            byte value = (byte)((GetNextInstruction() + registers.Y) & 0xFF);
-            byte addr = memory.ReadByte(value);
+            byte addr = (byte)((GetNextInstruction() + registers.Y) & 0xFF);
             return addr;
         }
 
@@ -330,31 +337,31 @@ namespace _6502CPU
 
         private void LDA_AB()
         {
-            registers.A = Absolute();
+            registers.A = memory.ReadByte(Absolute());
             Set_FlagsNZ(registers.A);
         }
 
         private void LDA_ABX()
         {
-            registers.A = X_Indexed_Absolute();
+            registers.A = memory.ReadByte(X_Indexed_Absolute());
             Set_FlagsNZ(registers.A);
         }
 
         private void LDA_ABY()
         {
-            registers.A = Y_Indexed_Absolute();
+            registers.A = memory.ReadByte(Y_Indexed_Absolute());
             Set_FlagsNZ(registers.A);
         }
 
         private void LDA_ZP()
         {
-            registers.A = Zero_Page();
+            registers.A = memory.ReadByte(Zero_Page());
             Set_FlagsNZ(registers.A);
         }
 
         private void LDA_ZPX()
         {
-            registers.A = X_Indexed_Zero_Page();
+            registers.A = memory.ReadByte(X_Indexed_Zero_Page());
             Set_FlagsNZ(registers.A);
         }
 
@@ -380,25 +387,25 @@ namespace _6502CPU
 
         private void LDX_AB()
         {
-            registers.X = Absolute();
+            registers.X = memory.ReadByte(Absolute());
             Set_FlagsNZ(registers.X);
         }
 
         private void LDX_ABY()
         {
-            registers.X = Y_Indexed_Absolute();
+            registers.X = memory.ReadByte(Y_Indexed_Absolute());
             Set_FlagsNZ(registers.X);
         }
 
         private void LDX_ZP()
         {
-            registers.X = Zero_Page();
+            registers.X = memory.ReadByte(Zero_Page());
             Set_FlagsNZ(registers.X);
         }
 
         private void LDX_ZPY()
         {
-            registers.X = Y_Indexed_Zero_Page();
+            registers.X = memory.ReadByte(Y_Indexed_Zero_Page());
             Set_FlagsNZ(registers.X);
         }
 
@@ -410,25 +417,25 @@ namespace _6502CPU
 
         private void LDY_AB()
         {
-            registers.Y = Absolute();
+            registers.Y = memory.ReadByte(Absolute());
             Set_FlagsNZ(registers.Y);
         }
 
         private void LDY_ABX()
         {
-            registers.Y = X_Indexed_Absolute();
+            registers.Y = memory.ReadByte(X_Indexed_Absolute());
             Set_FlagsNZ(registers.Y);
         }
 
         private void LDY_ZP()
         {
-            registers.Y = Zero_Page();
+            registers.Y = memory.ReadByte(Zero_Page());
             Set_FlagsNZ(registers.Y);
         }
 
         private void LDY_ZPX()
         {
-            registers.Y = X_Indexed_Zero_Page();
+            registers.Y = memory.ReadByte(X_Indexed_Zero_Page());
             Set_FlagsNZ(registers.Y);
         }
         #endregion
@@ -600,6 +607,34 @@ namespace _6502CPU
         private void CLV()
         {
             registers.Flags.V = false;
+        }
+        #endregion
+
+        #region DE*
+        private void DECA()
+        {
+            ulong addr = Absolute();
+            byte value1 = memory.ReadByte(addr);
+            byte value2 = (byte)((value1 + (~0x01)) + 1);
+            memory.WriteByte(addr, value2);
+            Set_FlagsNZ(value2);
+        }
+
+        private void DEX()
+        {
+            byte value1 = registers.X;
+            byte value2 = (byte)((value1 + (~0x01)) + 1);
+            registers.X = value2;
+            Set_FlagsNZ(value2);
+        }
+
+        private void DEY()
+        {
+            byte value1 = registers.Y;
+            byte value2 = (byte)((value1 + (~0x01)) + 1);
+            if (value2 < 0) value2 = (byte)(0xFF - value2);
+            registers.Y = value2;
+            Set_FlagsNZ(value2);
         }
         #endregion
     }
