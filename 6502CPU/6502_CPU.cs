@@ -264,6 +264,62 @@ namespace _6502CPU
                     break;
                 #endregion
 
+                #region CM*
+                case 0xC9:
+                    CMPI();
+                    break;
+                case 0xCD:
+                    CMPA();
+                    break;
+                case 0xDD:
+                    CMPXA();
+                    break;
+                case 0xD9:
+                    CMPYA();
+                    break;
+                case 0xC5:
+                    CMPZ();
+                    break;
+                case 0xD5:
+                    CMPXZ();
+                    break;
+                case 0xC1:
+                    CMPXZI();
+                    break;
+                case 0xD1:
+                    CMPYZI();
+                    break;
+                #endregion
+
+                #region CPX
+                case 0xE0:
+                    CPXI();
+                    break;
+                case 0xEC:
+                    CPXA();
+                    break;
+                case 0xE4:
+                    CPXZ();
+                    break;
+                #endregion
+
+                #region CPY
+                case 0xC0:
+                    CPYI();
+                    break;
+                case 0xCC:
+                    CPYA();
+                    break;
+                case 0xC4:
+                    CPYZ();
+                    break;
+                #endregion
+
+                #region ADC
+                case 0x69:
+                    ADCI();
+                    break;
+                #endregion
                 default:
                     Debug.WriteLine("Instruction not handled " + instruction.ToString("x2"));
                     break;
@@ -396,15 +452,13 @@ namespace _6502CPU
 
         private void LDA_ZPIX()
         {
-            ulong value = X_Indexed_Zero_Page_Indirect();
-            registers.A = memory.ReadByte(value);
+            registers.A = memory.ReadByte(X_Indexed_Zero_Page_Indirect());
             Set_FlagsNZ(registers.A);
         }
 
         private void LDA_ZPIY()
         {
-            ulong value = Zero_Page_Indirect_Y_Indexed();
-            registers.A = memory.ReadByte(value);
+            registers.A = memory.ReadByte(Zero_Page_Indirect_Y_Indexed());
             Set_FlagsNZ(registers.A);
         }
 
@@ -694,7 +748,7 @@ namespace _6502CPU
         }
         #endregion
 
-        #region DE*
+        #region IN*
         private void INCA()
         {
             ulong addr = Absolute();
@@ -747,5 +801,136 @@ namespace _6502CPU
             Set_FlagsNZ(value1);
         }
         #endregion
+
+        #region CM*
+        private void CMPI()
+        {
+            byte addr = Immediate();
+            byte value2 = (byte)(registers.A - addr);
+            registers.Flags.C = (addr <= registers.A);
+            Set_FlagsNZ(value2);
+        }
+
+        private void CMPA()
+        {
+            byte addr = memory.ReadByte(Absolute());
+            byte value2 = (byte)(registers.A - addr);
+            registers.Flags.C = (addr <= registers.A);
+            Set_FlagsNZ(value2);
+        }
+
+        private void CMPXA()
+        {
+            byte addr = memory.ReadByte(X_Indexed_Absolute());
+            byte value2 = (byte)(registers.A - addr);
+            registers.Flags.C = (addr <= registers.A);
+            Set_FlagsNZ(value2);
+        }
+
+        private void CMPYA()
+        {
+            byte addr = memory.ReadByte(Y_Indexed_Absolute());
+            byte value2 = (byte)(registers.A - addr);
+            registers.Flags.C = (addr <= registers.A);
+            Set_FlagsNZ(value2);
+        }
+
+        private void CMPZ()
+        {
+            byte addr = memory.ReadByte(Zero_Page());
+            byte value2 = (byte)(registers.A - addr);
+            registers.Flags.C = (addr <= registers.A);
+            Set_FlagsNZ(value2);
+        }
+
+        private void CMPXZ()
+        {
+            byte addr = memory.ReadByte(X_Indexed_Zero_Page());
+            byte value2 = (byte)(registers.A - addr);
+            registers.Flags.C = (addr <= registers.A);
+            Set_FlagsNZ(value2);
+        }
+
+        private void CMPXZI()
+        {
+            byte addr = memory.ReadByte(X_Indexed_Zero_Page_Indirect());
+            byte value2 = (byte)(registers.A - addr);
+            registers.Flags.C = (addr <= registers.A);
+            Set_FlagsNZ(value2);
+        }
+
+        private void CMPYZI()
+        {
+            byte addr = memory.ReadByte(Zero_Page_Indirect_Y_Indexed());
+            byte value2 = (byte)(registers.A - addr);
+            registers.Flags.C = (addr <= registers.A);
+            Set_FlagsNZ(value2);
+        }
+        #endregion
+
+        #region CPX
+        private void CPXI()
+        {
+            byte addr = Immediate();
+            byte value = (byte)(registers.X - addr);
+            registers.Flags.C = (registers.X >= value);
+            Set_FlagsNZ(value);
+        }
+
+        private void CPXA()
+        {
+            byte addr = memory.ReadByte(Absolute());
+            byte value = (byte)(registers.X - addr);
+            registers.Flags.C = (registers.X >= value);
+            Set_FlagsNZ(value);
+        }
+
+        private void CPXZ()
+        {
+            byte addr = memory.ReadByte(Zero_Page());
+            byte value = (byte)(registers.X - addr);
+            registers.Flags.C = (registers.X >= value);
+            Set_FlagsNZ(value);
+        }
+        #endregion
+
+        #region CPY
+        private void CPYI()
+        {
+            byte addr = Immediate();
+            byte value = (byte)((registers.Y + (~addr)) + 1);
+            registers.Flags.C = (registers.Y >= value);
+            Set_FlagsNZ(value);
+        }
+
+        private void CPYA()
+        {
+            byte addr = memory.ReadByte(Absolute());
+            byte value = (byte)((registers.Y + (~addr)) + 1);
+            registers.Flags.C = (registers.Y >= value);
+            Set_FlagsNZ(value);
+        }
+
+        private void CPYZ()
+        {
+            byte addr = memory.ReadByte(Zero_Page());
+            byte value = (byte)((registers.Y + (~addr)) + 1);
+            registers.Flags.C = (registers.Y >= value);
+            Set_FlagsNZ(value);
+        }
+        #endregion
+
+        #region ADC
+        private void ADCI()
+        {
+            byte value = Immediate();
+            int carry = registers.Flags.C ? 1 : 0;
+            byte value2 = (byte)(registers.A + value + carry);
+            // set registers.Flags.C when the sum of a binary add exceeds 255 or when the sum of a decimal add exceeds 99
+            // The overflow flag registers.Flags.V is set when the sign or bit 7 is changed due to the result exceeding +127 or -128
+            Set_FlagsNZ(value2);
+        }
+        #endregion
+
     }
 }

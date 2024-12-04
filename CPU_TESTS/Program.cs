@@ -14,7 +14,9 @@ Dictionary<string, string[]> testDictionary = new Dictionary<string, string[]>()
 //testDictionary.Add("PL_Tests", ["68", "28"]);
 //testDictionary.Add("CL_Tests", ["18", "d8", "58", "b8"]);
 //testDictionary.Add("DE_Tests", ["ce", "de", "c6", "d6", "ca","88"]);
-testDictionary.Add("IX_Tests", ["ee", "fe", "e6", "f6", "e8","c8"]);
+//testDictionary.Add("IX_Tests", ["ee", "fe", "e6", "f6", "e8", "c8"]);
+//testDictionary.Add("CM_Tests", ["c9", "cd", "dd", "d9", "c5", "d5", "c1", "d1"]);
+testDictionary.Add("CP_Tests", ["e0", "ec", "e4", "c0", "cc", "c4"]);
 
 foreach (KeyValuePair<string, string[]> testPlan in testDictionary)
 {
