@@ -21,11 +21,30 @@ Dictionary<string, string[]> testDictionary = new Dictionary<string, string[]>()
 //testDictionary.Add("ADC_Tests", ["69","6d","7d","79","65","75","61","71"]);
 testDictionary.Add("SBC_Tests", ["e9","ed","fd","f9","e5","f5","e1","f1"]);
 
+int testCount = 0;
+int testCountTotal = 0;
+int opcodes = 0;
+int success = 0;
+int failure = 0;
+int totalSuccess = 0;
+int totalFailure = 0;
+int totalOpcodeCount = 0;
+
+foreach (KeyValuePair<string, string[]> testPlan in testDictionary)
+    foreach (string test in testPlan.Value)
+        totalOpcodeCount++;
+
+Console.WriteLine("Starting Tests...");
+var watch = System.Diagnostics.Stopwatch.StartNew();
 foreach (KeyValuePair<string, string[]> testPlan in testDictionary)
 {
     foreach (string test in testPlan.Value)
     {
-        string testData = LoadJson(test);
+        opcodes++;
+
+        Console.Write("\r{0}   ", "Opcode " + opcodes + " of " + totalOpcodeCount);
+
+        string testData = File.ReadAllText(AppDomain.CurrentDomain.BaseDirectory + @"\6502\v1\" +test + ".json");
 
         List<Data>? testList = JsonSerializer.Deserialize<List<Data>>(testData);
 
@@ -37,12 +56,15 @@ foreach (KeyValuePair<string, string[]> testPlan in testDictionary)
         ulong outY = 0;
         List<List<int>>? ram = new List<List<int>>();
 
-        Console.WriteLine("Running Tests On: " + test);
-
-        bool pass = true;
+        testCount = 0;
+        success = 0;
+        failure = 0;
 
         foreach (Data? data in testList!)
         {
+            testCount++;
+            testCountTotal++;
+
             // prime the CPU
             cpu.registers = new Registers();
             cpu.registers.Clear();
@@ -78,13 +100,22 @@ foreach (KeyValuePair<string, string[]> testPlan in testDictionary)
                  outY != cpu.registers.Y ||
                  outS != cpu.registers.S)
             {
-                Console.WriteLine("FAILED Test: " + data.name);
-                pass = false;
+                failure++;
+                totalFailure++;
+            }
+            else
+            {
+                success++;
+                totalSuccess++;
             }
         }
-        Console.WriteLine("Pass: " + pass);
     }
 }
+watch.Stop();
+Console.WriteLine("Total Tests Run: " + testCountTotal);
+Console.WriteLine("Total Pass: " + totalSuccess + " tests");
+Console.WriteLine("Total Fail: " + totalFailure + " tests");
+Console.WriteLine("Time Taken: " + watch.ElapsedMilliseconds / 1000 + " Seconds");
 
 
 
@@ -93,12 +124,7 @@ foreach (KeyValuePair<string, string[]> testPlan in testDictionary)
 
 
 
-string LoadJson(string jsonFile)
-{
-    using var client = new HttpClient(); 
-    var content = client.GetStringAsync(@"https://raw.githubusercontent.com/SingleStepTests/65x02/refs/heads/main/6502/v1/" + jsonFile + ".json").Result;
-    return content;
-}
+
 
 internal class Data
 {
