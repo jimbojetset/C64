@@ -36,6 +36,7 @@ namespace _6502CPU
             memory = new RAM(0x10000);
             registers.PC = 0x0E00;
         }
+
         public void Run()
         {
             running = true;
@@ -487,43 +488,36 @@ namespace _6502CPU
             byte addr = GetNextInstruction();
             return addr;
         }
-
         private ulong Absolute()
         {
             ulong addr = GetInstructionWord();
             return addr & 0xFFFF;
         }
-
         private ulong X_Indexed_Absolute()
         {
             ulong addr = (GetInstructionWord() + registers.X);
             return addr & 0xFFFF;
         }
-
         private ulong Y_Indexed_Absolute()
         {
             ulong addr = (GetInstructionWord() + registers.Y);
             return addr & 0xFFFF;
         }
-
         private byte Zero_Page()
         {
             byte addr = GetNextInstruction();
             return addr;
         }
-
         private byte X_Indexed_Zero_Page()
         {
             byte addr = (byte)((GetNextInstruction() + registers.X) & 0xFF);
             return addr;
         }
-
         private byte Y_Indexed_Zero_Page()
         {
             byte addr = (byte)((GetNextInstruction() + registers.Y) & 0xFF);
             return addr;
         }
-
         private ulong X_Indexed_Zero_Page_Indirect()
         {
             byte value = (byte)(GetNextInstruction() + registers.X);
@@ -533,7 +527,6 @@ namespace _6502CPU
             ulong addr = (ulong)((value2 << 8) | value1);
             return addr & 0xFFFF;
         }
-
         private ulong Zero_Page_Indirect_Y_Indexed()
         {
             byte value = GetNextInstruction();
@@ -544,7 +537,6 @@ namespace _6502CPU
             ulong addr = (ulong)(value3 + registers.Y);
             return addr & 0xFFFF;
         }
-
         private void Set_FlagsNZ(byte value)
         {
             registers.Flags.Z = (value == 0);
@@ -558,103 +550,86 @@ namespace _6502CPU
             registers.A = Immediate();
             Set_FlagsNZ(registers.A);
         }
-
         private void LDA_AB()
         {
             registers.A = memory.ReadByte(Absolute());
             Set_FlagsNZ(registers.A);
         }
-
         private void LDA_ABX()
         {
             registers.A = memory.ReadByte(X_Indexed_Absolute());
             Set_FlagsNZ(registers.A);
         }
-
         private void LDA_ABY()
         {
             registers.A = memory.ReadByte(Y_Indexed_Absolute());
             Set_FlagsNZ(registers.A);
         }
-
         private void LDA_ZP()
         {
             registers.A = memory.ReadByte(Zero_Page());
             Set_FlagsNZ(registers.A);
         }
-
         private void LDA_ZPX()
         {
             registers.A = memory.ReadByte(X_Indexed_Zero_Page());
             Set_FlagsNZ(registers.A);
         }
-
         private void LDA_ZPIX()
         {
             registers.A = memory.ReadByte(X_Indexed_Zero_Page_Indirect());
             Set_FlagsNZ(registers.A);
         }
-
         private void LDA_ZPIY()
         {
             registers.A = memory.ReadByte(Zero_Page_Indirect_Y_Indexed());
             Set_FlagsNZ(registers.A);
         }
-
         private void LDX_IM()
         {
             registers.X = Immediate();
             Set_FlagsNZ(registers.X);
         }
-
         private void LDX_AB()
         {
             registers.X = memory.ReadByte(Absolute());
             Set_FlagsNZ(registers.X);
         }
-
         private void LDX_ABY()
         {
             registers.X = memory.ReadByte(Y_Indexed_Absolute());
             Set_FlagsNZ(registers.X);
         }
-
         private void LDX_ZP()
         {
             registers.X = memory.ReadByte(Zero_Page());
             Set_FlagsNZ(registers.X);
         }
-
         private void LDX_ZPY()
         {
             registers.X = memory.ReadByte(Y_Indexed_Zero_Page());
             Set_FlagsNZ(registers.X);
         }
-
         private void LDY_IM()
         {
             registers.Y = Immediate();
             Set_FlagsNZ(registers.Y);
         }
-
         private void LDY_AB()
         {
             registers.Y = memory.ReadByte(Absolute());
             Set_FlagsNZ(registers.Y);
         }
-
         private void LDY_ABX()
         {
             registers.Y = memory.ReadByte(X_Indexed_Absolute());
             Set_FlagsNZ(registers.Y);
         }
-
         private void LDY_ZP()
         {
             registers.Y = memory.ReadByte(Zero_Page());
             Set_FlagsNZ(registers.Y);
         }
-
         private void LDY_ZPX()
         {
             registers.Y = memory.ReadByte(X_Indexed_Zero_Page());
@@ -667,62 +642,50 @@ namespace _6502CPU
         {
             memory.WriteByte(Absolute(), registers.A);
         }
-
         private void STA_ABX()
         {
             memory.WriteByte(X_Indexed_Absolute(), registers.A);
         }
-
         private void STA_ABY()
         {
             memory.WriteByte(Y_Indexed_Absolute(), registers.A);
         }
-
         private void STA_ZP()
         {
             memory.WriteByte(Zero_Page(), registers.A);
         }
-
         private void STA_ZPX()
         {
             memory.WriteByte(X_Indexed_Zero_Page(), registers.A);
         }
-
         private void STA_ZPIX()
         {
             memory.WriteByte(X_Indexed_Zero_Page_Indirect(), registers.A);
         }
-
         private void STA_ZPIY()
         {
             memory.WriteByte(Zero_Page_Indirect_Y_Indexed(), registers.A);
         }
-
         private void STX_AB()
         {
             memory.WriteByte(Absolute(), registers.X);
         }
-
         private void STX_ZP()
         {
             memory.WriteByte(Zero_Page(), registers.X);
         }
-
         private void STX_ZPY()
         {
             memory.WriteByte(Y_Indexed_Zero_Page(), registers.X);
         }
-
         private void STY_AB()
         {
             memory.WriteByte(Absolute(), registers.X);
         }
-
         private void STY_ZP()
         {
             memory.WriteByte(Zero_Page(), registers.X);
         }
-
         private void STY_ZPX()
         {
             memory.WriteByte(X_Indexed_Zero_Page(), registers.X);
@@ -735,30 +698,25 @@ namespace _6502CPU
             registers.X = registers.A;
             Set_FlagsNZ(registers.X);
         }
-
         private void TAY()
         {
             registers.Y = registers.A;
             Set_FlagsNZ(registers.Y);
         }
-
         private void TSX()
         {
             registers.X = registers.S;
             Set_FlagsNZ(registers.X);
         }
-
         private void TXA()
         {
             registers.A = registers.X;
             Set_FlagsNZ(registers.A);
         }
-
         private void TXS()
         {
             registers.S = registers.X;
         }
-
         private void TYA()
         {
             registers.A = registers.Y;
@@ -771,12 +729,10 @@ namespace _6502CPU
         {
             registers.Flags.C = true;
         }
-
         private void SED()
         {
             registers.Flags.D = true;
         }
-
         private void SEI()
         {
             registers.Flags.I = true;
@@ -789,7 +745,6 @@ namespace _6502CPU
             memory.WriteByte(registers.S, registers.A);
             registers.S--;
         }
-
         private void PHP()
         {
             memory.WriteByte(registers.S, registers.P);
@@ -804,7 +759,6 @@ namespace _6502CPU
             registers.A = memory.ReadByte((ushort)(registers.S | 0x0100));
             Set_FlagsNZ(registers.A);
         }
-
         private void PLP()
         {
             registers.S++;
@@ -841,7 +795,6 @@ namespace _6502CPU
             memory.WriteByte(addr, value2);
             Set_FlagsNZ(value2);
         }
-
         private void DECXA()
         {
             ulong addr = X_Indexed_Absolute();
@@ -850,7 +803,6 @@ namespace _6502CPU
             memory.WriteByte(addr, value2);
             Set_FlagsNZ(value2);
         }
-
         private void DECZP()
         {
             ulong addr = Zero_Page();
@@ -859,7 +811,6 @@ namespace _6502CPU
             memory.WriteByte(addr, value2);
             Set_FlagsNZ(value2);
         }
-
         private void DECXZP()
         {
             ulong addr = X_Indexed_Zero_Page();
@@ -868,7 +819,6 @@ namespace _6502CPU
             memory.WriteByte(addr, value2);
             Set_FlagsNZ(value2);
         }
-
         private void DEX()
         {
             byte value1 = registers.X;
@@ -876,7 +826,6 @@ namespace _6502CPU
             registers.X = value2;
             Set_FlagsNZ(value2);
         }
-
         private void DEY()
         {
             byte value1 = registers.Y;
@@ -896,7 +845,6 @@ namespace _6502CPU
             memory.WriteByte(addr, value1);
             Set_FlagsNZ(value1);
         }
-
         private void INCXA()
         {
             ulong addr = X_Indexed_Absolute();
@@ -905,7 +853,6 @@ namespace _6502CPU
             memory.WriteByte(addr, value1);
             Set_FlagsNZ(value1);
         }
-
         private void INCZP()
         {
             ulong addr = Zero_Page();
@@ -914,7 +861,6 @@ namespace _6502CPU
             memory.WriteByte(addr, value1);
             Set_FlagsNZ(value1);
         }
-
         private void INCXZP()
         {
             ulong addr = X_Indexed_Zero_Page();
@@ -923,7 +869,6 @@ namespace _6502CPU
             memory.WriteByte(addr, value1);
             Set_FlagsNZ(value1);
         }
-
         private void INX()
         {
             byte value1 = (byte)(registers.X + 1);
@@ -931,7 +876,6 @@ namespace _6502CPU
             registers.X = value1;
             Set_FlagsNZ(value1);
         }
-
         private void INY()
         {
             byte value1 = (byte)(registers.Y + 1);
@@ -949,7 +893,6 @@ namespace _6502CPU
             registers.Flags.C = (addr <= registers.A);
             Set_FlagsNZ(value2);
         }
-
         private void CMPA()
         {
             byte addr = memory.ReadByte(Absolute());
@@ -957,7 +900,6 @@ namespace _6502CPU
             registers.Flags.C = (addr <= registers.A);
             Set_FlagsNZ(value2);
         }
-
         private void CMPXA()
         {
             byte addr = memory.ReadByte(X_Indexed_Absolute());
@@ -965,7 +907,6 @@ namespace _6502CPU
             registers.Flags.C = (addr <= registers.A);
             Set_FlagsNZ(value2);
         }
-
         private void CMPYA()
         {
             byte addr = memory.ReadByte(Y_Indexed_Absolute());
@@ -973,7 +914,6 @@ namespace _6502CPU
             registers.Flags.C = (addr <= registers.A);
             Set_FlagsNZ(value2);
         }
-
         private void CMPZ()
         {
             byte addr = memory.ReadByte(Zero_Page());
@@ -981,7 +921,6 @@ namespace _6502CPU
             registers.Flags.C = (addr <= registers.A);
             Set_FlagsNZ(value2);
         }
-
         private void CMPXZ()
         {
             byte addr = memory.ReadByte(X_Indexed_Zero_Page());
@@ -989,7 +928,6 @@ namespace _6502CPU
             registers.Flags.C = (addr <= registers.A);
             Set_FlagsNZ(value2);
         }
-
         private void CMPXZI()
         {
             byte addr = memory.ReadByte(X_Indexed_Zero_Page_Indirect());
@@ -997,7 +935,6 @@ namespace _6502CPU
             registers.Flags.C = (addr <= registers.A);
             Set_FlagsNZ(value2);
         }
-
         private void CMPYZI()
         {
             byte addr = memory.ReadByte(Zero_Page_Indirect_Y_Indexed());
@@ -1015,7 +952,6 @@ namespace _6502CPU
             registers.Flags.C = (registers.X >= value);
             Set_FlagsNZ(value);
         }
-
         private void CPXA()
         {
             byte addr = memory.ReadByte(Absolute());
@@ -1023,7 +959,6 @@ namespace _6502CPU
             registers.Flags.C = (registers.X >= value);
             Set_FlagsNZ(value);
         }
-
         private void CPXZ()
         {
             byte addr = memory.ReadByte(Zero_Page());
@@ -1041,7 +976,6 @@ namespace _6502CPU
             registers.Flags.C = (registers.Y >= value);
             Set_FlagsNZ(value);
         }
-
         private void CPYA()
         {
             byte addr = memory.ReadByte(Absolute());
@@ -1049,7 +983,6 @@ namespace _6502CPU
             registers.Flags.C = (registers.Y >= value);
             Set_FlagsNZ(value);
         }
-
         private void CPYZ()
         {
             byte addr = memory.ReadByte(Zero_Page());
@@ -1065,49 +998,41 @@ namespace _6502CPU
             byte value = Immediate();
             ADC(value);
         }
-
         private void ADCA()
         {
             byte value = memory.ReadByte(Absolute());
             ADC(value);
         }
-
         private void ADCXA()
         {
             byte value = memory.ReadByte(X_Indexed_Absolute());
             ADC(value);
         }
-
         private void ADCYA()
         {
             byte value = memory.ReadByte(Y_Indexed_Absolute());
             ADC(value);
         }
-
         private void ADCZ()
         {
             byte value = memory.ReadByte(Zero_Page());
             ADC(value);
         }
-
         private void ADCXZ()
         {
             byte value = memory.ReadByte(X_Indexed_Zero_Page());
             ADC(value);
         }
-
         private void ADCXZI()
         {
             byte value = memory.ReadByte(X_Indexed_Zero_Page_Indirect());
             ADC(value);
         }
-
         private void ADCYZI()
         {
             byte value = memory.ReadByte(Zero_Page_Indirect_Y_Indexed());
             ADC(value);
         }
-
         private void ADC(byte value)
         {
             if (registers.Flags.D)
@@ -1143,49 +1068,41 @@ namespace _6502CPU
             byte value = Immediate();
             SBC(value);
         }
-
         private void SBCA()
         {
             byte value = memory.ReadByte(Absolute());
             SBC(value);
         }
-
         private void SBCXA()
         {
             byte value = memory.ReadByte(X_Indexed_Absolute());
             SBC(value);
         }
-
         private void SBCYA()
         {
             byte value = memory.ReadByte(Y_Indexed_Absolute());
             SBC(value);
         }
-
         private void SBCZ()
         {
             byte value = memory.ReadByte(Zero_Page());
             SBC(value);
         }
-
         private void SBCXZ()
         {
             byte value = memory.ReadByte(X_Indexed_Zero_Page());
             SBC(value);
         }
-
         private void SBCXZI()
         {
             byte value = memory.ReadByte(X_Indexed_Zero_Page_Indirect());
             SBC(value);
         }
-
         private void SBCYZI()
         {
             byte value = memory.ReadByte(Zero_Page_Indirect_Y_Indexed());
             SBC(value);
         }
-
         private void SBC(byte value)
         {
             if (registers.Flags.D)
@@ -1401,7 +1318,6 @@ namespace _6502CPU
             registers.Flags.V = ((addr & (1 << 6)) != 0);
             registers.Flags.Z = (value == 0);
         }
-
         private void BITZ()
         {
             byte addr = memory.ReadByte(Zero_Page());
