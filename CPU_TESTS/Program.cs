@@ -1,6 +1,7 @@
 ﻿using _6502CPU;
 using JsonSerializer = System.Text.Json.JsonSerializer;
 
+
 _6502_CPU cpu = new _6502_CPU();
 
 // https://github.com/SingleStepTests/65x02/blob/main/6502/v1/28.json
@@ -17,7 +18,8 @@ Dictionary<string, string[]> testDictionary = new Dictionary<string, string[]>()
 //testDictionary.Add("IX_Tests", ["ee", "fe", "e6", "f6", "e8", "c8"]);
 //testDictionary.Add("CM_Tests", ["c9", "cd", "dd", "d9", "c5", "d5", "c1", "d1"]);
 //testDictionary.Add("CP_Tests", ["e0", "ec", "e4", "c0", "cc", "c4"]);
-testDictionary.Add("ADC_Tests", ["69"]);//, "ec", "e4", "c0", "cc", "c4"]);
+//testDictionary.Add("ADC_Tests", ["69","6d","7d","79","65","75","61","71"]);
+testDictionary.Add("SBC_Tests", ["e9","ed","fd","f9","e5","f5","e1","f1"]);
 
 foreach (KeyValuePair<string, string[]> testPlan in testDictionary)
 {

@@ -22,7 +22,7 @@ namespace _6502CPU
         public RAM memory = new RAM(0x10000);
 
         private bool running = true;
-        public bool Running {get; set;}
+        public bool Running { get; set; }
 
         public _6502_CPU()
         {
@@ -319,7 +319,56 @@ namespace _6502CPU
                 case 0x69:
                     ADCI();
                     break;
+                case 0x6D:
+                    ADCA();
+                    break;
+                case 0x7D:
+                    ADCXA();
+                    break;
+                case 0x79:
+                    ADCYA();
+                    break;
+                case 0x65:
+                    ADCZ();
+                    break;
+                case 0x75:
+                    ADCXZ();
+                    break;
+                case 0x61:
+                    ADCXZI();
+                    break;
+                case 0x71:
+                    ADCYZI();
+                    break;
                 #endregion
+
+                #region SBC
+                case 0xE9:
+                    SBCI();
+                    break;
+                case 0xED:
+                    SBCA();
+                    break;
+                case 0xFD:
+                    SBCXA();
+                    break;
+                case 0xF9:
+                    SBCYA();
+                    break;
+                case 0xE5:
+                    SBCZ();
+                    break;
+                case 0xF5:
+                    SBCXZ();
+                    break;
+                case 0xE1:
+                    SBCXZI();
+                    break;
+                case 0xF1:
+                    SBCYZI();
+                    break;
+                #endregion
+
                 default:
                     Debug.WriteLine("Instruction not handled " + instruction.ToString("x2"));
                     break;
@@ -924,40 +973,156 @@ namespace _6502CPU
         private void ADCI()
         {
             byte value = Immediate();
-            int carry = registers.Flags.C ? 1 : 0;
-            int value2 = (byte)(registers.A + value + carry);
-            registers.Flags.V = (((registers.A ^ value2) & 0x80) != 0) && (((registers.A ^ value) & 0x80) == 0);
+            ADC(value);
+        }
+
+        private void ADCA()
+        {
+            byte value = memory.ReadByte(Absolute());
+            ADC(value);
+        }
+
+        private void ADCXA()
+        {
+            byte value = memory.ReadByte(X_Indexed_Absolute());
+            ADC(value);
+        }
+
+        private void ADCYA()
+        {
+            byte value = memory.ReadByte(Y_Indexed_Absolute());
+            ADC(value);
+        }
+
+        private void ADCZ()
+        {
+            byte value = memory.ReadByte(Zero_Page());
+            ADC(value);
+        }
+
+        private void ADCXZ()
+        {
+            byte value = memory.ReadByte(X_Indexed_Zero_Page());
+            ADC(value);
+        }
+
+        private void ADCXZI()
+        {
+            byte value = memory.ReadByte(X_Indexed_Zero_Page_Indirect());
+            ADC(value);
+        }
+
+        private void ADCYZI()
+        {
+            byte value = memory.ReadByte(Zero_Page_Indirect_Y_Indexed());
+            ADC(value);
+        }
+
+        private void ADC(byte value)
+        {
             if (registers.Flags.D)
             {
-                value2 = int.Parse(value.ToString("X")) + int.Parse(registers.A.ToString("X")) + (registers.Flags.C ? 1 : 0);
-
-                if (value2 > 99)
-                {
-                    registers.Flags.C = true;
-                    value2 -= 100;
-                }
-                else
-                {
-                    registers.Flags.C = false;
-                }
-                value2 = (int)Convert.ToInt64(string.Concat("0x", value2), 16);
+                int low = (registers.A & 0xF) + (value & 0xF) + (registers.Flags.C ? 0x1 : 0);
+                bool halfCarry = (low > 0x9);
+                int high = (registers.A & 0xF0) + (value & 0xF0) + (halfCarry ? 0x10 : 0);
+                registers.Flags.C = (high > 0x9F);
+                byte binary = (byte)((low & 0xF) + (high & 0xF0));
+                Set_FlagsNZ(binary);
+                registers.Flags.V = ((registers.A ^ binary) & (value ^ binary) & 0x80) != 0;
+                if (halfCarry)
+                    low += 0x6;
+                if (registers.Flags.C)
+                    high += 0x60;
+                registers.A = (byte)((low & 0xF) + (high & 0xF0));
             }
             else
             {
-                if (value2 > 255)
-                {
-                    registers.Flags.C = true;
-                    value2 -= 256;
-                }
-                else
-                {
-                    registers.Flags.C = false;
-                }
+                int carry = registers.Flags.C ? 1 : 0;
+                int value2 = registers.A + value + carry;
+                registers.Flags.V = (((registers.A ^ value2) & 0x80) != 0) && (((registers.A ^ value) & 0x80) == 0);
+                registers.Flags.C = value2 > 0xFF;
+                Set_FlagsNZ((byte)value2);
+                registers.A = (byte)(value2);
             }
-            Set_FlagsNZ((byte)value2);
-            registers.A = (byte)value2;
         }
         #endregion
 
+        #region SBC
+        private void SBCI()
+        {
+            byte value = Immediate();
+            SBC(value);
+        }
+
+        private void SBCA()
+        {
+            byte value = memory.ReadByte(Absolute());
+            SBC(value);
+        }
+
+        private void SBCXA()
+        {
+            byte value = memory.ReadByte(X_Indexed_Absolute());
+            SBC(value);
+        }
+
+        private void SBCYA()
+        {
+            byte value = memory.ReadByte(Y_Indexed_Absolute());
+            SBC(value);
+        }
+
+        private void SBCZ()
+        {
+            byte value = memory.ReadByte(Zero_Page());
+            SBC(value);
+        }
+
+        private void SBCXZ()
+        {
+            byte value = memory.ReadByte(X_Indexed_Zero_Page());
+            SBC(value);
+        }
+
+        private void SBCXZI()
+        {
+            byte value = memory.ReadByte(X_Indexed_Zero_Page_Indirect());
+            SBC(value);
+        }
+
+        private void SBCYZI()
+        {
+            byte value = memory.ReadByte(Zero_Page_Indirect_Y_Indexed());
+            SBC(value);
+        }
+
+        private void SBC(byte value)
+        {
+            if (registers.Flags.D)
+            {
+                int low = 0xF + (registers.A & 0xF) - (value & 0xF) + (registers.Flags.C ? 0x1 : 0);
+                bool halfCarry = (low > 0xF);
+                int high = 0xF0 + (registers.A & 0xF0) - (value & 0xF0) + (halfCarry ? 0x10 : 0);
+                registers.Flags.C = (high > 0xFF);
+                byte binary = (byte)((low & 0xF) + (high & 0xF0));
+                Set_FlagsNZ(binary);
+                registers.Flags.V = ((registers.A ^ binary) & (~value ^ binary) & 0x80) != 0;
+                if (!halfCarry)
+                    low -= 0x6;
+                if (!registers.Flags.C)
+                    high -= 0x60;
+                registers.A = (byte)((low & 0xF) + (high & 0xF0));
+            }
+            else
+            {
+                int carry = registers.Flags.C ? 1 : 0;
+                int value2 = 0xFF + registers.A - value + carry;
+                registers.Flags.V = ((registers.A ^ value2) & (~value ^ value2) & 0x80) != 0;
+                registers.Flags.C = value2 > 0xFF;
+                Set_FlagsNZ((byte)value2);
+                registers.A = (byte)(value2);
+            }
+        }
+        #endregion
     }
 }
