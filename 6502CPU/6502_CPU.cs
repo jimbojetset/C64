@@ -369,6 +369,96 @@ namespace _6502CPU
                     break;
                 #endregion
 
+                #region EOR
+                case 0x49:
+                    EORI();
+                    break;
+                case 0x4D:
+                    EORA();
+                    break;
+                case 0x5D:
+                    EORXA();
+                    break;
+                case 0x59:
+                    EORYA();
+                    break;
+                case 0x45:
+                    EORZ();
+                    break;
+                case 0x55:
+                    EORXZ();
+                    break;
+                case 0x41:
+                    EORXZI();
+                    break;
+                case 0x51:
+                    EORYZI();
+                    break;
+                #endregion
+
+                #region ORA
+                case 0x09:
+                    ORAI();
+                    break;
+                case 0x0D:
+                    ORAA();
+                    break;
+                case 0x1D:
+                    ORAXA();
+                    break;
+                case 0x19:
+                    ORAYA();
+                    break;
+                case 0x05:
+                    ORAZ();
+                    break;
+                case 0x15:
+                    ORAXZ();
+                    break;
+                case 0x01:
+                    ORAXZI();
+                    break;
+                case 0x11:
+                    ORAYZI();
+                    break;
+                #endregion
+
+                #region AND
+                case 0x29:
+                    ANDI();
+                    break;
+                case 0x2D:
+                    ANDA();
+                    break;
+                case 0x3D:
+                    ANDXA();
+                    break;
+                case 0x39:
+                    ANDYA();
+                    break;
+                case 0x25:
+                    ANDZ();
+                    break;
+                case 0x35:
+                    ANDXZ();
+                    break;
+                case 0x21:
+                    ANDXZI();
+                    break;
+                case 0x31:
+                    ANDYZI();
+                    break;
+                #endregion
+
+                #region BIT
+                case 0x2C:
+                    BITA();
+                    break;
+                case 0x24:
+                    BITZ();
+                    break;
+                #endregion
+
                 default:
                     Debug.WriteLine("Instruction not handled " + instruction.ToString("x2"));
                     break;
@@ -1123,6 +1213,204 @@ namespace _6502CPU
                 registers.A = (byte)(value2);
             }
         }
+        #endregion
+
+        #region EOR
+        private void EORI()
+        {
+            byte addr = Immediate();
+            byte value = (byte)(registers.A ^ addr);
+            registers.A = value;
+            Set_FlagsNZ(value);
+        }
+        private void EORA()
+        {
+            byte addr = memory.ReadByte(Absolute());
+            byte value = (byte)(registers.A ^ addr);
+            registers.A = value;
+            Set_FlagsNZ(value);
+        }
+        private void EORXA()
+        {
+            byte addr = memory.ReadByte(X_Indexed_Absolute());
+            byte value = (byte)(registers.A ^ addr);
+            registers.A = value;
+            Set_FlagsNZ(value);
+        }
+        private void EORYA()
+        {
+            byte addr = memory.ReadByte(Y_Indexed_Absolute());
+            byte value = (byte)(registers.A ^ addr);
+            registers.A = value;
+            Set_FlagsNZ(value);
+        }
+        private void EORZ()
+        {
+            byte addr = memory.ReadByte(Zero_Page());
+            byte value = (byte)(registers.A ^ addr);
+            registers.A = value;
+            Set_FlagsNZ(value);
+        }
+        private void EORXZ()
+        {
+            byte addr = memory.ReadByte(X_Indexed_Zero_Page());
+            byte value = (byte)(registers.A ^ addr);
+            registers.A = value;
+            Set_FlagsNZ(value);
+        }
+        private void EORXZI()
+        {
+            byte addr = memory.ReadByte(X_Indexed_Zero_Page_Indirect());
+            byte value = (byte)(registers.A ^ addr);
+            registers.A = value;
+            Set_FlagsNZ(value);
+        }
+        private void EORYZI()
+        {
+            byte addr = memory.ReadByte(Zero_Page_Indirect_Y_Indexed());
+            byte value = (byte)(registers.A ^ addr);
+            registers.A = value;
+            Set_FlagsNZ(value);
+        }
+        #endregion
+
+        #region ORA
+        private void ORAI()
+        {
+            byte addr = Immediate();
+            byte value = (byte)(registers.A | addr);
+            registers.A = value;
+            Set_FlagsNZ(value);
+        }
+        private void ORAA()
+        {
+            byte addr = memory.ReadByte(Absolute());
+            byte value = (byte)(registers.A | addr);
+            registers.A = value;
+            Set_FlagsNZ(value);
+        }
+        private void ORAXA()
+        {
+            byte addr = memory.ReadByte(X_Indexed_Absolute());
+            byte value = (byte)(registers.A | addr);
+            registers.A = value;
+            Set_FlagsNZ(value);
+        }
+        private void ORAYA()
+        {
+            byte addr = memory.ReadByte(Y_Indexed_Absolute());
+            byte value = (byte)(registers.A | addr);
+            registers.A = value;
+            Set_FlagsNZ(value);
+        }
+        private void ORAZ()
+        {
+            byte addr = memory.ReadByte(Zero_Page());
+            byte value = (byte)(registers.A | addr);
+            registers.A = value;
+            Set_FlagsNZ(value);
+        }
+        private void ORAXZ()
+        {
+            byte addr = memory.ReadByte(X_Indexed_Zero_Page());
+            byte value = (byte)(registers.A | addr);
+            registers.A = value;
+            Set_FlagsNZ(value);
+        }
+        private void ORAXZI()
+        {
+            byte addr = memory.ReadByte(X_Indexed_Zero_Page_Indirect());
+            byte value = (byte)(registers.A | addr);
+            registers.A = value;
+            Set_FlagsNZ(value);
+        }
+        private void ORAYZI()
+        {
+            byte addr = memory.ReadByte(Zero_Page_Indirect_Y_Indexed());
+            byte value = (byte)(registers.A | addr);
+            registers.A = value;
+            Set_FlagsNZ(value);
+        }
+        #endregion
+
+        #region AND
+        private void ANDI()
+        {
+            byte addr = Immediate();
+            byte value = (byte)(registers.A & addr);
+            registers.A = value;
+            Set_FlagsNZ(value);
+        }
+        private void ANDA()
+        {
+            byte addr = memory.ReadByte(Absolute());
+            byte value = (byte)(registers.A & addr);
+            registers.A = value;
+            Set_FlagsNZ(value);
+        }
+        private void ANDXA()
+        {
+            byte addr = memory.ReadByte(X_Indexed_Absolute());
+            byte value = (byte)(registers.A & addr);
+            registers.A = value;
+            Set_FlagsNZ(value);
+        }
+        private void ANDYA()
+        {
+            byte addr = memory.ReadByte(Y_Indexed_Absolute());
+            byte value = (byte)(registers.A & addr);
+            registers.A = value;
+            Set_FlagsNZ(value);
+        }
+        private void ANDZ()
+        {
+            byte addr = memory.ReadByte(Zero_Page());
+            byte value = (byte)(registers.A & addr);
+            registers.A = value;
+            Set_FlagsNZ(value);
+        }
+        private void ANDXZ()
+        {
+            byte addr = memory.ReadByte(X_Indexed_Zero_Page());
+            byte value = (byte)(registers.A & addr);
+            registers.A = value;
+            Set_FlagsNZ(value);
+        }
+        private void ANDXZI()
+        {
+            byte addr = memory.ReadByte(X_Indexed_Zero_Page_Indirect());
+            byte value = (byte)(registers.A & addr);
+            registers.A = value;
+            Set_FlagsNZ(value);
+        }
+        private void ANDYZI()
+        {
+            byte addr = memory.ReadByte(Zero_Page_Indirect_Y_Indexed());
+            byte value = (byte)(registers.A & addr);
+            registers.A = value;
+            Set_FlagsNZ(value);
+        }
+        #endregion
+
+        #region BIT
+        private void BITA()
+        {
+            byte addr = memory.ReadByte(Absolute());
+            byte value = (byte)(registers.A & addr);
+            registers.Flags.N = ((addr & (1 << 7)) != 0);
+            registers.Flags.V = ((addr & (1 << 6)) != 0);
+            registers.Flags.Z = (value == 0);
+        }
+
+        private void BITZ()
+        {
+            byte addr = memory.ReadByte(Zero_Page());
+            byte value = (byte)(registers.A & addr);
+            registers.Flags.N = ((addr & (1 << 7)) != 0);
+            registers.Flags.V = ((addr & (1 << 6)) != 0);
+            registers.Flags.Z = (value == 0);
+        }
+
         #endregion
     }
 }

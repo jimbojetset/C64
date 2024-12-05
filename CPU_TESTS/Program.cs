@@ -7,19 +7,23 @@ _6502_CPU cpu = new _6502_CPU();
 // https://github.com/SingleStepTests/65x02/blob/main/6502/v1/28.json
 
 Dictionary<string, string[]> testDictionary = new Dictionary<string, string[]>();
-//testDictionary.Add("LD_Tests", ["a9", "ad", "bd", "b9", "a5", "b5", "a1", "b1", "a2", "ae", "be", "a6", "b6", "a0", "ac", "bc", "a4", "b4"]);
-//testDictionary.Add("ST_Tests", ["8d", "9d", "99", "85", "95", "81", "91", "8e", "86", "96", "8c", "84", "94"]);
-//testDictionary.Add("T__Tests", ["aa", "a8", "ba", "8a", "9a", "98"]);
-//testDictionary.Add("SE_Tests", ["38", "f8", "78"]);
-//testDictionary.Add("PH_Tests", ["48", "08"]);
-//testDictionary.Add("PL_Tests", ["68", "28"]);
-//testDictionary.Add("CL_Tests", ["18", "d8", "58", "b8"]);
-//testDictionary.Add("DE_Tests", ["ce", "de", "c6", "d6", "ca","88"]);
-//testDictionary.Add("IX_Tests", ["ee", "fe", "e6", "f6", "e8", "c8"]);
-//testDictionary.Add("CM_Tests", ["c9", "cd", "dd", "d9", "c5", "d5", "c1", "d1"]);
-//testDictionary.Add("CP_Tests", ["e0", "ec", "e4", "c0", "cc", "c4"]);
-//testDictionary.Add("ADC_Tests", ["69","6d","7d","79","65","75","61","71"]);
+testDictionary.Add("LD_Tests", ["a9", "ad", "bd", "b9", "a5", "b5", "a1", "b1", "a2", "ae", "be", "a6", "b6", "a0", "ac", "bc", "a4", "b4"]);
+testDictionary.Add("ST_Tests", ["8d", "9d", "99", "85", "95", "81", "91", "8e", "86", "96", "8c", "84", "94"]);
+testDictionary.Add("T__Tests", ["aa", "a8", "ba", "8a", "9a", "98"]);
+testDictionary.Add("SE_Tests", ["38", "f8", "78"]);
+testDictionary.Add("PH_Tests", ["48", "08"]);
+testDictionary.Add("PL_Tests", ["68", "28"]);
+testDictionary.Add("CL_Tests", ["18", "d8", "58", "b8"]);
+testDictionary.Add("DE_Tests", ["ce", "de", "c6", "d6", "ca","88"]);
+testDictionary.Add("IX_Tests", ["ee", "fe", "e6", "f6", "e8", "c8"]);
+testDictionary.Add("CM_Tests", ["c9", "cd", "dd", "d9", "c5", "d5", "c1", "d1"]);
+testDictionary.Add("CP_Tests", ["e0", "ec", "e4", "c0", "cc", "c4"]);
+testDictionary.Add("ADC_Tests", ["69","6d","7d","79","65","75","61","71"]);
 testDictionary.Add("SBC_Tests", ["e9","ed","fd","f9","e5","f5","e1","f1"]);
+testDictionary.Add("EOR_Tests", ["49","4d","5d","59","45","55","41","51"]);
+testDictionary.Add("ORA_Tests", ["09", "0d", "1d", "19", "05", "15", "01", "11"]);
+testDictionary.Add("AND_Tests", ["29", "2d", "3d", "39", "25", "35", "21", "31"]);
+testDictionary.Add("BIT_Tests", ["2c", "24"]);
 
 int testCount = 0;
 int testCountTotal = 0;
