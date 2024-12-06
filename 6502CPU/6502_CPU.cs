@@ -544,6 +544,24 @@ namespace _6502CPU
                 case 0xF0:
                     BEQ();
                     break;
+                case 0x30:
+                    BMI();
+                    break;
+                case 0xd0:
+                    BNE();
+                    break;
+                case 0x10:
+                    BPL();
+                    break;
+                case 0x50:
+                    BVC();
+                    break;
+                case 0x70:
+                    BVS();
+                    break;
+                case 0x00:
+                    BRK();
+                    break;
                 #endregion
 
                 default:
@@ -1639,61 +1657,83 @@ namespace _6502CPU
         #region BRANCH
         private void BCC()
         {
-            if(registers.PC == 12)
-            { }
             byte value = memory.ReadByte(registers.PC);
             registers.PC++;
             if (!registers.Flags.C)
-            {
-                if ((value & 0x80) == 0)
-                    registers.PC = (registers.PC + value) & 0xFFFF;
-                else
-                {
-                    int x = (byte)(~(value - 0x01)) * -1;
-                    int y = (int)registers.PC;
-                    y += x;
-                    registers.PC = (ulong)y & 0xFFFF;
-                }
-            }
+                BranchTo(value);
         }
 
         private void BCS()
         {
-            if (registers.PC == 12)
-            { }
             byte value = memory.ReadByte(registers.PC);
             registers.PC++;
             if (registers.Flags.C)
-            {
-                if ((value & 0x80) == 0)
-                    registers.PC = (registers.PC + value) & 0xFFFF;
-                else
-                {
-                    int x = (byte)(~(value - 0x01)) * -1;
-                    int y = (int)registers.PC;
-                    y += x;
-                    registers.PC = (ulong)y & 0xFFFF;
-                }
-            }
+                BranchTo(value);
         }
 
         private void BEQ()
         {
-            if (registers.PC == 12)
-            { }
             byte value = memory.ReadByte(registers.PC);
             registers.PC++;
             if (registers.Flags.Z)
+                BranchTo(value);
+        }
+
+        private void BMI()
+        {
+            byte value = memory.ReadByte(registers.PC);
+            registers.PC++;
+            if (registers.Flags.N)
+                BranchTo(value);
+        }
+
+        private void BNE()
+        {
+            byte value = memory.ReadByte(registers.PC);
+            registers.PC++;
+            if (!registers.Flags.Z)
+                BranchTo(value);
+        }
+
+        private void BPL()
+        {
+            byte value = memory.ReadByte(registers.PC);
+            registers.PC++;
+            if (!registers.Flags.N)
+                BranchTo(value);
+        }
+
+        private void BVC()
+        {
+            byte value = memory.ReadByte(registers.PC);
+            registers.PC++;
+            if (!registers.Flags.V)
+                BranchTo(value);
+        }
+
+        private void BVS()
+        {
+            byte value = memory.ReadByte(registers.PC);
+            registers.PC++;
+            if (registers.Flags.V)
+                BranchTo(value);
+        }
+
+        private void BRK()
+        {
+            // not implemented yet
+        }
+
+        private void BranchTo(ulong value)
+        {
+            if ((value & 0x80) == 0)
+                registers.PC = (registers.PC + value) & 0xFFFF;
+            else
             {
-                if ((value & 0x80) == 0)
-                    registers.PC = (registers.PC + value) & 0xFFFF;
-                else
-                {
-                    int x = (byte)(~(value - 0x01)) * -1;
-                    int y = (int)registers.PC;
-                    y += x;
-                    registers.PC = (ulong)y & 0xFFFF;
-                }
+                int x = (byte)(~(value - 0x01)) * -1;
+                int y = (int)registers.PC;
+                y += x;
+                registers.PC = (ulong)y & 0xFFFF;
             }
         }
         #endregion
