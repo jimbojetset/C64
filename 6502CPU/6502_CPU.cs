@@ -1791,7 +1791,7 @@ namespace _6502CPU
             addr += 1;
             byte hi = memory.ReadByte(addr & 0xFFFF);
             ulong value3 = (ulong)((hi << 8) | lo);
-            registers.PC = value3 & 0xFFFF;
+            registers.PC = value3;
         }
         private void JSRA()
         {
