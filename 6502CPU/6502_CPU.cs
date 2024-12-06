@@ -597,6 +597,18 @@ namespace _6502CPU
                     break;
                 #endregion
 
+                #region J**
+                case 0x4C:
+                    JMPA();
+                    break;
+                case 0x6C:
+                    JMPAI();
+                    break;
+                case 0x20:
+                    JSRA();
+                    break;
+                #endregion
+
                 default:
                     Debug.WriteLine("Instruction not handled " + instruction.ToString("x2"));
                     break;
@@ -1766,5 +1778,26 @@ namespace _6502CPU
         }
         #endregion
 
+        #region J**
+        private void JMPA()
+        {
+            ulong value = Absolute();
+            registers.PC = value;
+        }
+        private void JMPAI()
+        {
+            ulong addr = Absolute();
+            byte lo = memory.ReadByte(addr);
+            addr += 1;
+            byte hi = memory.ReadByte(addr & 0xFFFF);
+            ulong value3 = (ulong)((hi << 8) | lo);
+            registers.PC = value3 & 0xFFFF;
+        }
+        private void JSRA()
+        {
+
+        }
+
+        #endregion
     }
 }

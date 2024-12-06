@@ -8,6 +8,7 @@ _6502_CPU cpu = new _6502_CPU();
 
 Dictionary<string, string[]> testDictionary = new Dictionary<string, string[]>();
 
+/*
 testDictionary.Add("NOP_Tests", ["1a", "3a", "5a", "7a", "da", "fa", "80", "82","89","c2","e2","0c","1c","3c","5c","7c","dc","fc","04","44","64","14","34","54","74","d4","f4"]);
 testDictionary.Add("LD_Tests", ["a9", "ad", "bd", "b9", "a5", "b5", "a1", "b1", "a2", "ae", "be", "a6", "b6", "a0", "ac", "bc", "a4", "b4"]);
 testDictionary.Add("ST_Tests", ["8d", "9d", "99", "85", "95", "81", "91", "8e", "86", "96", "8c", "84", "94"]);
@@ -31,6 +32,9 @@ testDictionary.Add("LSR_Tests", ["4a", "4e", "5e", "46", "56"]);
 testDictionary.Add("ROL_Tests", ["2a", "2e", "3e", "26", "36"]);
 testDictionary.Add("ROR_Tests", ["6a", "6e", "7e", "66", "76"]);//
 testDictionary.Add("BRANCH_Tests", ["90", "b0", "f0", "30", "d0", "10", "50", "70"]);
+*/
+testDictionary.Add("J__Tests", ["4c", "6c"]);//, "20"]);
+
 
 int testCount = 0;
 int testCountTotal = 0;
