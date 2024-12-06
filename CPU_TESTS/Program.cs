@@ -32,7 +32,6 @@ testDictionary.Add("ROL_Tests", ["2a", "2e", "3e", "26", "36"]);
 testDictionary.Add("ROR_Tests", ["6a", "6e", "7e", "66", "76"]);//
 testDictionary.Add("BRANCH_Tests", ["90", "b0", "f0", "30", "d0", "10", "50", "70"]);
 
-
 int testCount = 0;
 int testCountTotal = 0;
 int opcodes = 0;
@@ -56,7 +55,7 @@ foreach (KeyValuePair<string, string[]> testPlan in testDictionary)
 
         Console.Write("\r{0}   ", "Opcode " + opcodes + " of " + totalOpcodeCount);
 
-        string testData = File.ReadAllText(AppDomain.CurrentDomain.BaseDirectory + @"\6502\v1\" +test + ".json");
+        string testData = File.ReadAllText(@"D:\6502\v1\" +test + ".json");
 
         List<Data>? testList = JsonSerializer.Deserialize<List<Data>>(testData);
 
@@ -124,6 +123,7 @@ foreach (KeyValuePair<string, string[]> testPlan in testDictionary)
     }
 }
 watch.Stop();
+Console.WriteLine();
 Console.WriteLine("Total Tests Run: " + testCountTotal);
 Console.WriteLine("Total Pass: " + totalSuccess + " tests");
 Console.WriteLine("Total Fail: " + totalFailure + " tests");
