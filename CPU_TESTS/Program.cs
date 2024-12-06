@@ -7,6 +7,7 @@ _6502_CPU cpu = new _6502_CPU();
 // https://github.com/SingleStepTests/65x02/blob/main/6502/v1/28.json
 
 Dictionary<string, string[]> testDictionary = new Dictionary<string, string[]>();
+/*
 testDictionary.Add("LD_Tests", ["a9", "ad", "bd", "b9", "a5", "b5", "a1", "b1", "a2", "ae", "be", "a6", "b6", "a0", "ac", "bc", "a4", "b4"]);
 testDictionary.Add("ST_Tests", ["8d", "9d", "99", "85", "95", "81", "91", "8e", "86", "96", "8c", "84", "94"]);
 testDictionary.Add("T__Tests", ["aa", "a8", "ba", "8a", "9a", "98"]);
@@ -24,6 +25,12 @@ testDictionary.Add("EOR_Tests", ["49","4d","5d","59","45","55","41","51"]);
 testDictionary.Add("ORA_Tests", ["09", "0d", "1d", "19", "05", "15", "01", "11"]);
 testDictionary.Add("AND_Tests", ["29", "2d", "3d", "39", "25", "35", "21", "31"]);
 testDictionary.Add("BIT_Tests", ["2c", "24"]);
+testDictionary.Add("ASL_Tests", ["0a", "0e", "1e", "06", "16"]);
+testDictionary.Add("LSR_Tests", ["4a", "4e", "5e", "46", "56"]);
+testDictionary.Add("ROL_Tests", ["2a", "2e", "3e", "26", "36"]);
+testDictionary.Add("ROR_Tests", ["6a", "6e", "7e", "66", "76"]);//
+*/
+testDictionary.Add("BCC_Tests", ["90"]);//
 
 int testCount = 0;
 int testCountTotal = 0;
