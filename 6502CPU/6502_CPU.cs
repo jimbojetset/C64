@@ -54,7 +54,43 @@ namespace _6502CPU
             {
                 #region NOP
                 case 0xEA:
-                    //NOP
+                case 0x1A:
+                case 0x3A:
+                case 0x5A:
+                case 0x7A:
+                case 0xDA:
+                case 0xFA:
+                    break;
+                case 0x80:
+                case 0x82:
+                case 0x89:
+                case 0xC2:
+                case 0xE2:
+                    Immediate();
+                    break;
+                case 0x0C:
+                    Absolute();
+                    break;
+                case 0x1C:
+                case 0x3C:
+                case 0x5C:
+                case 0x7C:
+                case 0xDC:
+                case 0xFC:
+                    X_Indexed_Absolute();
+                    break;
+                case 0x04:
+                case 0x44:
+                case 0x64:
+                    Zero_Page();
+                    break;
+                case 0x14:
+                case 0x34:
+                case 0x54:
+                case 0x74:
+                case 0xD4:
+                case 0xF4:
+                    X_Indexed_Zero_Page();
                     break;
                 #endregion
 
@@ -558,9 +594,6 @@ namespace _6502CPU
                     break;
                 case 0x70:
                     BVS();
-                    break;
-                case 0x00:
-                    BRK();
                     break;
                 #endregion
 
@@ -1658,7 +1691,7 @@ namespace _6502CPU
         private void BCC()
         {
             byte value = memory.ReadByte(registers.PC);
-            registers.PC++;
+            registers.IncPC();
             if (!registers.Flags.C)
                 BranchTo(value);
         }
@@ -1666,7 +1699,7 @@ namespace _6502CPU
         private void BCS()
         {
             byte value = memory.ReadByte(registers.PC);
-            registers.PC++;
+            registers.IncPC();
             if (registers.Flags.C)
                 BranchTo(value);
         }
@@ -1674,7 +1707,7 @@ namespace _6502CPU
         private void BEQ()
         {
             byte value = memory.ReadByte(registers.PC);
-            registers.PC++;
+            registers.IncPC();
             if (registers.Flags.Z)
                 BranchTo(value);
         }
@@ -1682,7 +1715,7 @@ namespace _6502CPU
         private void BMI()
         {
             byte value = memory.ReadByte(registers.PC);
-            registers.PC++;
+            registers.IncPC();
             if (registers.Flags.N)
                 BranchTo(value);
         }
@@ -1690,7 +1723,7 @@ namespace _6502CPU
         private void BNE()
         {
             byte value = memory.ReadByte(registers.PC);
-            registers.PC++;
+            registers.IncPC();
             if (!registers.Flags.Z)
                 BranchTo(value);
         }
@@ -1698,7 +1731,7 @@ namespace _6502CPU
         private void BPL()
         {
             byte value = memory.ReadByte(registers.PC);
-            registers.PC++;
+            registers.IncPC();
             if (!registers.Flags.N)
                 BranchTo(value);
         }
@@ -1706,7 +1739,7 @@ namespace _6502CPU
         private void BVC()
         {
             byte value = memory.ReadByte(registers.PC);
-            registers.PC++;
+            registers.IncPC();
             if (!registers.Flags.V)
                 BranchTo(value);
         }
@@ -1714,14 +1747,9 @@ namespace _6502CPU
         private void BVS()
         {
             byte value = memory.ReadByte(registers.PC);
-            registers.PC++;
+            registers.IncPC();
             if (registers.Flags.V)
                 BranchTo(value);
-        }
-
-        private void BRK()
-        {
-            // not implemented yet
         }
 
         private void BranchTo(ulong value)
