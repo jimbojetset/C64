@@ -534,9 +534,15 @@ namespace _6502CPU
                     break;
                 #endregion
 
-                #region BCC
+                #region BRANCH
                 case 0x90:
                     BCC();
+                    break;
+                case 0xB0:
+                    BCS();
+                    break;
+                case 0xF0:
+                    BEQ();
                     break;
                 #endregion
 
@@ -1630,7 +1636,7 @@ namespace _6502CPU
         }
         #endregion
 
-        #region BCC
+        #region BRANCH
         private void BCC()
         {
             if(registers.PC == 12)
@@ -1650,6 +1656,47 @@ namespace _6502CPU
                 }
             }
         }
+
+        private void BCS()
+        {
+            if (registers.PC == 12)
+            { }
+            byte value = memory.ReadByte(registers.PC);
+            registers.PC++;
+            if (registers.Flags.C)
+            {
+                if ((value & 0x80) == 0)
+                    registers.PC = (registers.PC + value) & 0xFFFF;
+                else
+                {
+                    int x = (byte)(~(value - 0x01)) * -1;
+                    int y = (int)registers.PC;
+                    y += x;
+                    registers.PC = (ulong)y & 0xFFFF;
+                }
+            }
+        }
+
+        private void BEQ()
+        {
+            if (registers.PC == 12)
+            { }
+            byte value = memory.ReadByte(registers.PC);
+            registers.PC++;
+            if (registers.Flags.Z)
+            {
+                if ((value & 0x80) == 0)
+                    registers.PC = (registers.PC + value) & 0xFFFF;
+                else
+                {
+                    int x = (byte)(~(value - 0x01)) * -1;
+                    int y = (int)registers.PC;
+                    y += x;
+                    registers.PC = (ulong)y & 0xFFFF;
+                }
+            }
+        }
         #endregion
+
     }
 }
