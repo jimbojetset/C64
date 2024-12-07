@@ -1822,7 +1822,6 @@ namespace _6502CPU
             registers.S--;
             registers.PC = addr;
         }
-
         #endregion
     }
 }
