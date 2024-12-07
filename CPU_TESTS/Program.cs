@@ -30,10 +30,10 @@ testDictionary.Add("BIT_Tests", ["2c", "24"]);
 testDictionary.Add("ASL_Tests", ["0a", "0e", "1e", "06", "16"]);
 testDictionary.Add("LSR_Tests", ["4a", "4e", "5e", "46", "56"]);
 testDictionary.Add("ROL_Tests", ["2a", "2e", "3e", "26", "36"]);
-testDictionary.Add("ROR_Tests", ["6a", "6e", "7e", "66", "76"]);*/
-testDictionary.Add("BRANCH_Tests", ["00"]);//,"90", "b0", "f0", "30", "d0", "10", "50", "70"]);
-//testDictionary.Add("J__Tests", ["4c", "6c", "20"]);
-//testDictionary.Add("RT_Tests", ["40", "60"]);
+testDictionary.Add("ROR_Tests", ["6a", "6e", "7e", "66", "76"]);
+testDictionary.Add("BRANCH_Tests", ["00","90", "b0", "f0", "30", "d0", "10", "50", "70"]);
+testDictionary.Add("J__Tests", ["4c", "6c", "20"]);*/
+testDictionary.Add("RT_Tests", ["40", "60"]);
 
 
 int testCount = 0;
@@ -104,11 +104,8 @@ foreach (KeyValuePair<string, string[]> testPlan in testDictionary)
             outS = data.final!.s;
             ram = data.final!.ram;
 
-            if(data.name == "20 55 13")
-            { }
-
             // execute a single instruction
-            cpu.Execute();
+            cpu.Execute((byte)Convert.ToByte(test,16));
 
             // check asserted values
             if (outPC != cpu.registers.PC ||

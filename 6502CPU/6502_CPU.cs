@@ -25,6 +25,8 @@ namespace _6502CPU
         private bool running = true;
         public bool Running { get; set; }
 
+        private byte nextOpcode;
+
         public _6502_CPU()
         {
             Initialise();
@@ -43,14 +45,14 @@ namespace _6502CPU
             running = true;
             while (running)
             {
-                Execute();
+                nextOpcode = GetNextInstruction();
+                Execute(nextOpcode);
             }
         }
 
-        public void Execute()
+        public void Execute(byte opcode)
         {
-            byte instruction = GetNextInstruction();
-            switch (instruction)
+            switch (opcode)
             {
                 #region NOP
                 case 0xEA:
@@ -622,7 +624,7 @@ namespace _6502CPU
                 #endregion
 
                 default:
-                    Debug.WriteLine("Instruction not handled " + instruction.ToString("x2"));
+                    Debug.WriteLine("Instruction not handled " + nextOpcode.ToString("x2"));
                     break;
             }
         }
@@ -651,6 +653,18 @@ namespace _6502CPU
         private byte PeekStack()
         {
             return memory.ReadByte((ulong)(registers.S + 0x100));
+        }
+
+        private void ProcessNMI()
+        {
+            registers.PC--;
+            Break(false, 0xFFFA);
+
+        }
+
+        private void ProcessIRQ()
+        {
+
         }
 
         #region Addressing Modes
@@ -1788,7 +1802,29 @@ namespace _6502CPU
 
         private void BRK()
         {
+            Break(true, 0xFFFE);
+        }
 
+        private void Break(bool isBreak, ulong vector )
+        {
+            registers.IncPC();
+            PokeStack((byte)(((registers.PC) >> 8) & 0xFF));
+            registers.S--;
+            PokeStack((byte)((registers.PC) & 0xFF));
+            registers.S--;
+            if (isBreak)
+            {
+                registers.Flags.B = false;
+                PokeStack((byte)(registers.Flags.GetFlagsAsByte() | 0x10));
+            }
+            else
+            {
+                registers.Flags.B = true;
+                PokeStack((byte)(registers.Flags.GetFlagsAsByte()));
+            }
+            registers.S--;
+            registers.Flags.I = true;
+            registers.PC = (ulong)((memory.ReadByte(vector + 1) << 8) | memory.ReadByte(vector));
         }
 
         private void BranchTo(ulong value)
@@ -1841,7 +1877,7 @@ namespace _6502CPU
         }
         #endregion
 
-        #region
+        #region RT*
         private void RTI()
         {
             registers.S++;
