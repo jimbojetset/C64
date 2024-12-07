@@ -655,18 +655,6 @@ namespace _6502CPU
             return memory.ReadByte((ulong)(registers.S + 0x100));
         }
 
-        private void ProcessNMI()
-        {
-            registers.PC--;
-            Break(false, 0xFFFA);
-
-        }
-
-        private void ProcessIRQ()
-        {
-
-        }
-
         #region Addressing Modes
         private byte Immediate()
         {
