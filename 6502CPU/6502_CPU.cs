@@ -595,6 +595,9 @@ namespace _6502CPU
                 case 0x70:
                     BVS();
                     break;
+                case 0x00:
+                    BRK();
+                    break;
                 #endregion
 
                 #region J**
@@ -1781,6 +1784,11 @@ namespace _6502CPU
             registers.IncPC();
             if (registers.Flags.V)
                 BranchTo(value);
+        }
+
+        private void BRK()
+        {
+
         }
 
         private void BranchTo(ulong value)
