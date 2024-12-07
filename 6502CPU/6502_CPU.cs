@@ -54,45 +54,10 @@ namespace _6502CPU
         {
             switch (opcode)
             {
+                #region Documented Opcodes
+
                 #region NOP
                 case 0xEA:
-                case 0x1A:
-                case 0x3A:
-                case 0x5A:
-                case 0x7A:
-                case 0xDA:
-                case 0xFA:
-                    break;
-                case 0x80:
-                case 0x82:
-                case 0x89:
-                case 0xC2:
-                case 0xE2:
-                    Immediate();
-                    break;
-                case 0x0C:
-                    Absolute();
-                    break;
-                case 0x1C:
-                case 0x3C:
-                case 0x5C:
-                case 0x7C:
-                case 0xDC:
-                case 0xFC:
-                    X_Indexed_Absolute();
-                    break;
-                case 0x04:
-                case 0x44:
-                case 0x64:
-                    Zero_Page();
-                    break;
-                case 0x14:
-                case 0x34:
-                case 0x54:
-                case 0x74:
-                case 0xD4:
-                case 0xF4:
-                    X_Indexed_Zero_Page();
                     break;
                 #endregion
 
@@ -623,6 +588,53 @@ namespace _6502CPU
                     break;
                 #endregion
 
+                #endregion
+
+                #region Undocumented Opcodes
+
+                #region NOP
+                case 0x1A:
+                case 0x3A:
+                case 0x5A:
+                case 0x7A:
+                case 0xDA:
+                case 0xFA:
+                    break;
+                case 0x80:
+                case 0x82:
+                case 0x89:
+                case 0xC2:
+                case 0xE2:
+                    Immediate();
+                    break;
+                case 0x0C:
+                    Absolute();
+                    break;
+                case 0x1C:
+                case 0x3C:
+                case 0x5C:
+                case 0x7C:
+                case 0xDC:
+                case 0xFC:
+                    X_Indexed_Absolute();
+                    break;
+                case 0x04:
+                case 0x44:
+                case 0x64:
+                    Zero_Page();
+                    break;
+                case 0x14:
+                case 0x34:
+                case 0x54:
+                case 0x74:
+                case 0xD4:
+                case 0xF4:
+                    X_Indexed_Zero_Page();
+                    break;
+                #endregion
+
+                #endregion
+
                 default:
                     Debug.WriteLine("Instruction not handled " + nextOpcode.ToString("x2"));
                     break;
@@ -716,6 +728,8 @@ namespace _6502CPU
             registers.Flags.N = ((value & (1 << 7)) != 0);
         }
         #endregion
+
+        #region Documented Opcodes
 
         #region LD*
         private void LDA_IM()
@@ -1885,6 +1899,13 @@ namespace _6502CPU
             registers.PC = (hi & 0xFFFF | lo);
             registers.PC++;
         }
+        #endregion
+
+        #endregion
+
+        #region Undocumented Opcodes
+
+
         #endregion
     }
 }
