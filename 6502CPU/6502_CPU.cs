@@ -631,6 +631,16 @@ namespace _6502CPU
             return value3;
         }
 
+        private void PokeStack(byte value)
+        {
+            memory.WriteByte((ulong)(registers.S + 0x100), value);
+        }
+
+        private byte PeekStack()
+        {
+            return memory.ReadByte((ulong)(registers.S + 0x100));
+        }
+
         #region Addressing Modes
         private byte Immediate()
         {
@@ -1662,7 +1672,7 @@ namespace _6502CPU
             registers.Flags.C = ((addr & (1 << 0)) != 0);
             registers.Flags.N = carry == 1;
             registers.Flags.Z = (value == 0);
-            memory.WriteByte(addr,value);
+            memory.WriteByte(addr, value);
         }
         private void RORXA()
         {
@@ -1788,14 +1798,29 @@ namespace _6502CPU
         {
             ulong addr = Absolute();
             byte lo = memory.ReadByte(addr);
-            addr += 1;
-            byte hi = memory.ReadByte(addr & 0xFFFF);
-            ulong value3 = (ulong)((hi << 8) | lo);
+            byte hi;
+            if ((addr & 0x00FF) == 0xFF)
+            {
+                hi = memory.ReadByte(addr & 0xFF00);
+            }
+            else
+            {
+                addr += 1;
+                hi = memory.ReadByte(addr & 0xFFFF);
+            }
+            ulong value3 = (ulong)((hi << 8) | lo) & 0xFFFF;
             registers.PC = value3;
         }
         private void JSRA()
         {
-
+            ulong addr = Absolute();
+            byte lo = (byte)(((registers.PC) >> 8) & 0xFF);
+            PokeStack(lo);
+            registers.S--;
+            byte hi = (byte)((registers.PC + 1) & 0xFF);
+            PokeStack(hi);
+            registers.S--;
+            registers.PC = addr;
         }
 
         #endregion

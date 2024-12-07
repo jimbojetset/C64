@@ -33,7 +33,7 @@ testDictionary.Add("ROL_Tests", ["2a", "2e", "3e", "26", "36"]);
 testDictionary.Add("ROR_Tests", ["6a", "6e", "7e", "66", "76"]);//
 testDictionary.Add("BRANCH_Tests", ["90", "b0", "f0", "30", "d0", "10", "50", "70"]);
 */
-testDictionary.Add("J__Tests", ["4c", "6c"]);//, "20"]);
+testDictionary.Add("J__Tests", ["4c", "6c", "20"]);
 
 
 
@@ -60,7 +60,7 @@ foreach (KeyValuePair<string, string[]> testPlan in testDictionary)
 
         Console.Write("\r{0}   ", "Opcode " + opcodes + " of " + totalOpcodeCount);
 
-        string testData = File.ReadAllText(@"D:\6502\v1\" +test + ".json");
+        string testData = File.ReadAllText(@"E:\6502\v1\" +test + ".json");
 
         List<Data>? testList = JsonSerializer.Deserialize<List<Data>>(testData);
 
@@ -104,6 +104,9 @@ foreach (KeyValuePair<string, string[]> testPlan in testDictionary)
             outY = data.final!.y;
             outS = data.final!.s;
             ram = data.final!.ram;
+
+            if(data.name == "20 55 13")
+            { }
 
             // execute a single instruction
             cpu.Execute();
