@@ -609,6 +609,15 @@ namespace _6502CPU
                     break;
                 #endregion
 
+                #region RT*
+                case 0x40:
+                    RTI();
+                    break;
+                case 0x60:
+                    RTS();
+                    break;
+                #endregion
+
                 default:
                     Debug.WriteLine("Instruction not handled " + instruction.ToString("x2"));
                     break;
@@ -1821,6 +1830,28 @@ namespace _6502CPU
             PokeStack(hi);
             registers.S--;
             registers.PC = addr;
+        }
+        #endregion
+
+        #region
+        private void RTI()
+        {
+            registers.S++;
+            registers.Flags.SetFlagsFromByte(PeekStack(),0b11001111);
+            registers.S++;
+            byte lo = PeekStack();
+            registers.S++;
+            ulong hi = (ulong)(PeekStack() << 8);
+            registers.PC = (hi & 0xFFFF | lo);
+        }
+        private void RTS()
+        {
+            registers.S++;
+            byte lo = PeekStack();
+            registers.S++;
+            ulong hi = (ulong)(PeekStack() << 8);
+            registers.PC = (hi & 0xFFFF | lo);
+            registers.PC++;
         }
         #endregion
     }
