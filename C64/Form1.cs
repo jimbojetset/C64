@@ -1,14 +1,81 @@
+using _6502CPU;
+using System;
+using static System.Windows.Forms.VisualStyles.VisualStyleElement;
+using System.Diagnostics;
+using System.Text;
+
 namespace C64
 {
     public partial class Form1 : Form
     {
+
+        private byte _width = 40;
+        private byte _height = 25;
+        private _6502_CPU cpu;
+        private ushort _screenStartAddress = 0x400;
+
         public Form1()
         {
             InitializeComponent();
+
         }
 
-        private void Form1_Load(object sender, EventArgs e)
+        private void Run()
         {
+            while (true)
+            {
+                var current = GetCurrentState();
+                textBox1.Invoke((MethodInvoker)delegate { textBox1.Clear(); });
+                for (byte x = 0; x < current.GetLength(0); x += 1)
+                {
+                    for (byte y = 0; y < current.GetLength(1); y += 1)
+                    {
+                        if (x >= _width || y >= _height)
+                            textBox1.Invoke((MethodInvoker)delegate { textBox1.Text += current[x, y]; });
+                    }
+                    textBox1.Invoke((MethodInvoker)delegate { textBox1.Text += "\r\n"; });
+                }
+                panel1.Invoke((MethodInvoker)delegate { panel1.Refresh(); ; });
+                textBox1.Invoke((MethodInvoker)delegate { textBox1.Refresh(); ; });
+                this.Invoke((MethodInvoker)delegate { this.Refresh(); ; });
+                Thread.Sleep(100);
+            }
+        }
+
+        private char[,] GetCurrentState()
+        {
+            var result = new char[_width, _height];
+            var currentAdr = _screenStartAddress;
+            for (byte x = 0; x < _width; x++)
+            {
+                for (byte y = 0; y < _height; y++)
+                {
+                    result[x, y] = C64CharConverter.ConvertToAscii(cpu.memory.ReadByte(currentAdr++));
+                    //result[x, y] = Encoding.ASCII.GetString(new byte[] { cpu.memory.ReadByte(currentAdr++) })[0];
+                }
+            }
+            return result;
+
+        }
+
+        private void button1_Click(object sender, EventArgs e)
+        {
+            cpu = new _6502_CPU();
+            cpu.memory.Load(@"ROMS\BASIC.ROM", 0xA000, 8192);
+            cpu.memory.Load(@"ROMS\KERNAL.ROM", 0xE000, 8192);
+            cpu.memory.Load(@"ROMS\CHAR.ROM", 0xD000, 4096);
+            //cpu.memory.Load(@"ROMS\C1541.ROM", 123, 16384);
+
+            var processorThread = new Thread(() => cpu.Run())
+            {
+                IsBackground = true
+            };
+            processorThread.Start();
+            var runThread = new Thread(() => Run())
+            {
+                IsBackground = true
+            };
+            runThread.Start();
 
         }
     }

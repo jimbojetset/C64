@@ -14,6 +14,8 @@ using System.Threading.Tasks;
 
 // https://github.com/aaronmell/6502Net/blob/master/Processor/Processor.cs
 
+// https://github.com/santatamas/C64-Emulator/blob/master/C64Emulator/C64Emulator.Presentation/Program.cs
+
 namespace _6502CPU
 {
     public class _6502_CPU
@@ -27,6 +29,10 @@ namespace _6502CPU
 
         private byte nextOpcode;
 
+        private int cyclecount = 0;
+
+        private byte lastOpcode;
+
         public _6502_CPU()
         {
             Initialise();
@@ -37,14 +43,19 @@ namespace _6502CPU
             registers = new Registers();
             registers.Clear();
             memory = new RAM(0x10000);
-            registers.PC = 0x0E00;
+            registers.S = 0xFF;
+            registers.A = 0x30;
+            registers.P = 0xA5;
+            registers.Y = 0x0A;
         }
 
         public void Run()
         {
+            registers.PC = memory.ReadWord(0xFFFC);
             running = true;
             while (running)
             {
+                cyclecount++;
                 nextOpcode = GetNextInstruction();
                 Execute(nextOpcode);
             }
@@ -52,6 +63,16 @@ namespace _6502CPU
 
         public void Execute(byte opcode)
         {
+           /*
+            File.AppendAllText(@"E:\6502.txt",
+                                     " Opcode=" + opcode.ToString("X2") +
+                                     " PC=" + (registers.PC - 1).ToString("X2") +
+                                     " S=" + registers.S.ToString("X2") +
+                                     " A=" + registers.A.ToString("X2") +
+                                     " X=" + registers.X.ToString("X2") +
+                                     " Y=" + registers.Y.ToString("X2") +
+                                     " P=" + registers.P.ToString("X2") +
+                                     Environment.NewLine); */
             switch (opcode)
             {
                 #region Documented Opcodes
@@ -591,9 +612,10 @@ namespace _6502CPU
                 #endregion
 
                 default:
-                    Debug.WriteLine("Instruction not handled " + nextOpcode.ToString("x2"));
+                    Debug.WriteLine("Instruction not handled " + opcode.ToString("x2"));
                     break;
             }
+            lastOpcode = opcode;
         }
 
         public byte GetNextInstruction()
@@ -1824,11 +1846,11 @@ namespace _6502CPU
         private void JSRA()
         {
             ulong addr = Absolute();
-            byte lo = (byte)(((registers.PC) >> 8) & 0xFF);
-            PokeStack(lo);
-            registers.S--;
-            byte hi = (byte)((registers.PC + 1) & 0xFF);
+            byte hi = (byte)(((registers.PC) >> 8) & 0xFF);
             PokeStack(hi);
+            registers.S--;
+            byte lo = (byte)((registers.PC-1) & 0xFF);
+            PokeStack(lo);
             registers.S--;
             registers.PC = addr;
         }
@@ -1843,7 +1865,7 @@ namespace _6502CPU
             byte lo = PeekStack();
             registers.S++;
             ulong hi = (ulong)(PeekStack() << 8);
-            registers.PC = (hi & 0xFFFF | lo);
+            registers.PC = (hi & 0xFF00 | lo);
         }
         private void RTS()
         {
@@ -1851,7 +1873,7 @@ namespace _6502CPU
             byte lo = PeekStack();
             registers.S++;
             ulong hi = (ulong)(PeekStack() << 8);
-            registers.PC = (hi & 0xFFFF | lo);
+            registers.PC = (hi & 0xFF00 | lo);
             registers.PC++;
         }
         #endregion
