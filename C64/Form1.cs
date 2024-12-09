@@ -38,12 +38,13 @@ namespace C64
                 textBox1.Invoke((MethodInvoker)delegate { textBox1.Text = sb.ToString(); });
                 panel1.Invoke((MethodInvoker)delegate { panel1.Refresh(); ; });
                 this.Invoke((MethodInvoker)delegate { this.Refresh(); ; });
-                Thread.Sleep(100);
+                Thread.Sleep(16);
             }
         }
 
         private char[,] GetCurrentState()
         {
+            cpu.InterruptRequest();
             var result = new char[_width, _height];
             var currentAdr = _screenStartAddress;
             for (byte x = 0; x < _width; x++)

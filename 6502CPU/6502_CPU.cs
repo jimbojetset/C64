@@ -33,6 +33,15 @@ namespace _6502CPU
 
         private byte lastOpcode;
 
+        public bool TriggerNmi { get; set; }
+
+        public bool TriggerIRQ { get; private set; }
+
+        private bool _previousInterrupt;
+
+        private bool _interrupt;
+
+
         public _6502_CPU()
         {
             Initialise();
@@ -44,9 +53,11 @@ namespace _6502CPU
             registers.Clear();
             memory = new RAM(0x10000);
             registers.S = 0xFF;
-            registers.A = 0x30;
-            registers.P = 0xA5;
-            registers.Y = 0x0A;
+            //registers.A = 0x30;
+            //registers.P = 0xA5;
+            //registers.Y = 0x0A;
+            TriggerNmi = false;
+            TriggerIRQ = false;
         }
 
         public void Run()
@@ -58,7 +69,27 @@ namespace _6502CPU
                 cyclecount++;
                 nextOpcode = GetNextInstruction();
                 Execute(nextOpcode);
+                if (_previousInterrupt)
+                {
+                    if (TriggerNmi)
+                    {
+                        ProcessNMI();
+                        TriggerNmi = false;
+                    }
+                    else if (TriggerIRQ)
+                    {
+                        ProcessIRQ();
+                        TriggerIRQ = false;
+                    }
+                }
+                _previousInterrupt = _interrupt;
+                _interrupt = TriggerNmi || (TriggerIRQ && !registers.Flags.I);
             }
+        }
+
+        public void InterruptRequest()
+        {
+            TriggerIRQ = true;
         }
 
         public void Execute(byte opcode)
@@ -644,6 +675,26 @@ namespace _6502CPU
         {
             return memory.ReadByte((ulong)(registers.S + 0x100));
         }
+
+        private void ProcessNMI()
+        {
+            registers.PC--;
+            Break(false, 0xFFFA);
+            nextOpcode = GetNextInstruction();
+            Execute(nextOpcode);
+        }
+
+        private void ProcessIRQ()
+        {
+            if (registers.Flags.I)
+                return;
+
+            registers.PC--;
+            Break(false, 0xFFFE);
+            nextOpcode = GetNextInstruction();
+            Execute(nextOpcode);
+        }
+
 
         #region Addressing Modes
         private byte Immediate()
