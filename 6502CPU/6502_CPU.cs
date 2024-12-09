@@ -663,16 +663,18 @@ namespace _6502CPU
             byte value2 = GetNextInstruction();
             ulong value3 = (ulong)((value2 << 8) | value1);
             if (value3 > 65535) value3 = value3 - 65535;
-            return value3;
+            return value3 & 0xFFFF;
         }
 
-        private void PokeStack(byte value)
+        private void StackPush(byte value)
         {
             memory.WriteByte((ulong)(registers.S + 0x100), value);
+            registers.S--;
         }
 
-        private byte PeekStack()
+        private byte StackPop()
         {
+            registers.S++;
             return memory.ReadByte((ulong)(registers.S + 0x100));
         }
 
@@ -958,27 +960,23 @@ namespace _6502CPU
         #region PH*
         private void PHA()
         {
-            memory.WriteByte(registers.S, registers.A);
-            registers.S--;
+            StackPush(registers.A);
         }
         private void PHP()
         {
-            memory.WriteByte(registers.S, registers.P);
-            registers.S--;
+            StackPush(registers.P);
         }
         #endregion
 
         #region PL*
         private void PLA()
         {
-            registers.S++;
-            registers.A = memory.ReadByte((ushort)(registers.S | 0x0100));
+            registers.A = StackPop();
             Set_FlagsNZ(registers.A);
         }
         private void PLP()
         {
-            registers.S++;
-            byte value = memory.ReadByte((ushort)(registers.S | 0x0100));
+            byte value = StackPop();
             registers.Flags.SetFlagsFromByte(value, 0xCF); //ignore bits 5 & 6
         }
         #endregion
@@ -1058,6 +1056,7 @@ namespace _6502CPU
             ulong addr = Absolute();
             byte value1 = memory.ReadByte(addr);
             value1++;
+            value1 = (byte)(value1 & 0xFF);
             memory.WriteByte(addr, value1);
             Set_FlagsNZ(value1);
         }
@@ -1066,6 +1065,7 @@ namespace _6502CPU
             ulong addr = X_Indexed_Absolute();
             byte value1 = memory.ReadByte(addr);
             value1++;
+            value1 = (byte)(value1 & 0xFF);
             memory.WriteByte(addr, value1);
             Set_FlagsNZ(value1);
         }
@@ -1074,6 +1074,7 @@ namespace _6502CPU
             ulong addr = Zero_Page();
             byte value1 = memory.ReadByte(addr);
             value1++;
+            value1 = (byte)(value1 & 0xFF);
             memory.WriteByte(addr, value1);
             Set_FlagsNZ(value1);
         }
@@ -1082,6 +1083,7 @@ namespace _6502CPU
             ulong addr = X_Indexed_Zero_Page();
             byte value1 = memory.ReadByte(addr);
             value1++;
+            value1 = (byte)(value1 & 0xFF);
             memory.WriteByte(addr, value1);
             Set_FlagsNZ(value1);
         }
@@ -1836,24 +1838,21 @@ namespace _6502CPU
             Break(true, 0xFFFE);
         }
 
-        private void Break(bool isBreak, ulong vector )
+        private void Break(bool isBreak, ulong vector)
         {
             registers.IncPC();
-            PokeStack((byte)(((registers.PC) >> 8) & 0xFF));
-            registers.S--;
-            PokeStack((byte)((registers.PC) & 0xFF));
-            registers.S--;
+            StackPush((byte)(((registers.PC) >> 8) & 0xFF));
+            StackPush((byte)((registers.PC) & 0xFF));
             if (isBreak)
             {
                 registers.Flags.B = false;
-                PokeStack((byte)(registers.Flags.GetFlagsAsByte() | 0x10));
+                StackPush((byte)(registers.Flags.GetFlagsAsByte() | 0x10));
             }
             else
             {
                 registers.Flags.B = true;
-                PokeStack((byte)(registers.Flags.GetFlagsAsByte()));
+                StackPush((byte)(registers.Flags.GetFlagsAsByte()));
             }
-            registers.S--;
             registers.Flags.I = true;
             registers.PC = (ulong)((memory.ReadByte(vector + 1) << 8) | memory.ReadByte(vector));
         }
@@ -1900,34 +1899,27 @@ namespace _6502CPU
             byte pclo = memory.ReadByte(registers.PC);
             registers.PC++;
             byte hi = (byte)(((registers.PC) >> 8) & 0xFF);
-            PokeStack(hi);
-            registers.S--;
+            StackPush(hi);
             byte lo = (byte)((registers.PC) & 0xFF);
-            PokeStack(lo);
-            registers.S--;
+            StackPush(lo);
             byte pchi = memory.ReadByte(registers.PC);
-            registers.PC = (ulong)((pchi << 8) | pclo);            
+            registers.PC = (ulong)((pchi << 8) | pclo);
         }
         #endregion
 
         #region RT*
         private void RTI()
         {
-            registers.S++;
-            registers.Flags.SetFlagsFromByte(PeekStack(),0b11001111);
-            registers.S++;
-            byte lo = PeekStack();
-            registers.S++;
-            ulong hi = (ulong)(PeekStack() << 8);
-            registers.PC = (hi & 0xFF00 | lo);
+            registers.Flags.SetFlagsFromByte(StackPop(), 0b11001111);
+            byte lo = StackPop();
+            byte hi = StackPop();
+            registers.PC = (ulong)((hi << 8) | lo);
         }
         private void RTS()
         {
-            registers.S++;
-            byte lo = PeekStack();
-            registers.S++;
-            ulong hi = (ulong)(PeekStack() << 8);
-            registers.PC = (hi & 0xFF00 | lo);
+            byte lo = StackPop();
+            byte hi = StackPop();
+            registers.PC = (ulong)((hi << 8) | lo);
             registers.PC++;
         }
         #endregion
