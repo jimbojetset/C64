@@ -53,9 +53,7 @@ namespace _6502CPU
             registers.Clear();
             memory = new RAM(0x10000);
             registers.S = 0xFF;
-            //registers.A = 0x30;
-            //registers.P = 0xA5;
-            //registers.Y = 0x0A;
+            registers.Flags.I = true;
             TriggerNmi = false;
             TriggerIRQ = false;
         }

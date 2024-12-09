@@ -26,12 +26,12 @@ namespace C64
             {
                 var current = GetCurrentState();
                 StringBuilder sb = new StringBuilder();
-                for (byte x = 0; x < current.GetLength(0); x += 1)
-                {
-                    for (byte y = 0; y < current.GetLength(1); y += 1)
+                    for (byte y = 0; y < _height; y += 1)
                     {
+                for (byte x = 0; x < _width; x += 1)
+                {
                         //if (x >= _width || y >= _height)
-                            sb.Append(current[x, y]);
+                        sb.Append(current[x, y]);
                     }
                     sb.Append("\r\n");
                 }
@@ -77,6 +77,11 @@ namespace C64
                 IsBackground = true
             };
             runThread.Start();
+
+        }
+
+        private void Form1_Load(object sender, EventArgs e)
+        {
 
         }
     }

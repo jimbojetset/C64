@@ -41,21 +41,22 @@
             textBox1.Location = new Point(0, 0);
             textBox1.Multiline = true;
             textBox1.Name = "textBox1";
-            textBox1.Size = new Size(418, 559);
+            textBox1.Size = new Size(416, 538);
             textBox1.TabIndex = 0;
             // 
             // panel1
             // 
             panel1.Controls.Add(button1);
             panel1.Controls.Add(textBox1);
-            panel1.Location = new Point(0, 1);
+            panel1.Dock = DockStyle.Fill;
+            panel1.Location = new Point(0, 0);
             panel1.Name = "panel1";
-            panel1.Size = new Size(418, 559);
+            panel1.Size = new Size(416, 538);
             panel1.TabIndex = 1;
             // 
             // button1
             // 
-            button1.Location = new Point(181, 533);
+            button1.Location = new Point(167, 515);
             button1.Name = "button1";
             button1.Size = new Size(75, 23);
             button1.TabIndex = 2;
@@ -67,11 +68,12 @@
             // 
             AutoScaleDimensions = new SizeF(7F, 15F);
             AutoScaleMode = AutoScaleMode.Font;
-            ClientSize = new Size(418, 558);
+            ClientSize = new Size(416, 538);
             Controls.Add(panel1);
             DoubleBuffered = true;
             Name = "Form1";
             Text = "Form1";
+            Load += Form1_Load;
             panel1.ResumeLayout(false);
             panel1.PerformLayout();
             ResumeLayout(false);
