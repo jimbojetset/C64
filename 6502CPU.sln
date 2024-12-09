@@ -10,11 +10,6 @@ Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "CPU_TESTS", "CPU_TESTS\CPU_
 		{AA18BA6A-9843-49F3-93EB-5AE92D9B54A7} = {AA18BA6A-9843-49F3-93EB-5AE92D9B54A7}
 	EndProjectSection
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "C64", "C64\C64.csproj", "{B867D39E-79E1-4B3A-A4A9-CD1BB4702074}"
-	ProjectSection(ProjectDependencies) = postProject
-		{AA18BA6A-9843-49F3-93EB-5AE92D9B54A7} = {AA18BA6A-9843-49F3-93EB-5AE92D9B54A7}
-	EndProjectSection
-EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -29,10 +24,6 @@ Global
 		{C3E19B02-3671-417C-8857-4679B623ACB0}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{C3E19B02-3671-417C-8857-4679B623ACB0}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{C3E19B02-3671-417C-8857-4679B623ACB0}.Release|Any CPU.Build.0 = Release|Any CPU
-		{B867D39E-79E1-4B3A-A4A9-CD1BB4702074}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
-		{B867D39E-79E1-4B3A-A4A9-CD1BB4702074}.Debug|Any CPU.Build.0 = Debug|Any CPU
-		{B867D39E-79E1-4B3A-A4A9-CD1BB4702074}.Release|Any CPU.ActiveCfg = Release|Any CPU
-		{B867D39E-79E1-4B3A-A4A9-CD1BB4702074}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
