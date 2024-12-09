@@ -25,18 +25,18 @@ namespace C64
             while (true)
             {
                 var current = GetCurrentState();
-                textBox1.Invoke((MethodInvoker)delegate { textBox1.Clear(); });
+                StringBuilder sb = new StringBuilder();
                 for (byte x = 0; x < current.GetLength(0); x += 1)
                 {
                     for (byte y = 0; y < current.GetLength(1); y += 1)
                     {
-                        if (x >= _width || y >= _height)
-                            textBox1.Invoke((MethodInvoker)delegate { textBox1.Text += current[x, y]; });
+                        //if (x >= _width || y >= _height)
+                            sb.Append(current[x, y]);
                     }
-                    textBox1.Invoke((MethodInvoker)delegate { textBox1.Text += "\r\n"; });
+                    sb.Append("\r\n");
                 }
+                textBox1.Invoke((MethodInvoker)delegate { textBox1.Text = sb.ToString(); });
                 panel1.Invoke((MethodInvoker)delegate { panel1.Refresh(); ; });
-                textBox1.Invoke((MethodInvoker)delegate { textBox1.Refresh(); ; });
                 this.Invoke((MethodInvoker)delegate { this.Refresh(); ; });
                 Thread.Sleep(100);
             }

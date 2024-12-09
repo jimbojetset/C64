@@ -63,8 +63,8 @@ namespace _6502CPU
 
         public void Execute(byte opcode)
         {
-           /*
-            File.AppendAllText(@"E:\6502.txt",
+            /*
+            File.AppendAllText(@"D:\6502.txt",
                                      " Opcode=" + opcode.ToString("X2") +
                                      " PC=" + (registers.PC - 1).ToString("X2") +
                                      " S=" + registers.S.ToString("X2") +
@@ -72,7 +72,8 @@ namespace _6502CPU
                                      " X=" + registers.X.ToString("X2") +
                                      " Y=" + registers.Y.ToString("X2") +
                                      " P=" + registers.P.ToString("X2") +
-                                     Environment.NewLine); */
+                                     Environment.NewLine); 
+            */
             switch (opcode)
             {
                 #region Documented Opcodes
@@ -1845,14 +1846,16 @@ namespace _6502CPU
         }
         private void JSRA()
         {
-            ulong addr = Absolute();
+            byte pclo = memory.ReadByte(registers.PC);
+            registers.PC++;
             byte hi = (byte)(((registers.PC) >> 8) & 0xFF);
             PokeStack(hi);
             registers.S--;
-            byte lo = (byte)((registers.PC-1) & 0xFF);
+            byte lo = (byte)((registers.PC) & 0xFF);
             PokeStack(lo);
             registers.S--;
-            registers.PC = addr;
+            byte pchi = memory.ReadByte(registers.PC);
+            registers.PC = (ulong)((pchi << 8) | pclo);            
         }
         #endregion
 
