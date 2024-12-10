@@ -62,6 +62,7 @@ namespace _6502CPU
         {
             registers.PC = memory.ReadWord(0xFFFC);
             running = true;
+            int D012Ctr = 0;
             while (running)
             {
                 cyclecount++;
@@ -82,6 +83,9 @@ namespace _6502CPU
                 }
                 _previousInterrupt = _interrupt;
                 _interrupt = TriggerNmi || (TriggerIRQ && !registers.Flags.I);
+                memory.WriteByte(0xD012, (byte)D012Ctr);
+                D012Ctr++;
+                if (D012Ctr > 256) D012Ctr = 0;
             }
         }
 
@@ -103,6 +107,7 @@ namespace _6502CPU
                                      " P=" + registers.P.ToString("X2") +
                                      Environment.NewLine); 
             */
+            
             switch (opcode)
             {
                 #region Documented Opcodes
@@ -1858,7 +1863,7 @@ namespace _6502CPU
         private void BranchTo(ulong value)
         {
             if ((value & 0x80) == 0)
-                registers.PC = (registers.PC + value) & 0xFFFF;
+                registers.IncPC(value);
             else
             {
                 int x = (byte)(~(value - 0x01)) * -1;

@@ -26,31 +26,29 @@ namespace C64
             {
                 var current = GetCurrentState();
                 StringBuilder sb = new StringBuilder();
-                    for (byte y = 0; y < _height; y += 1)
-                    {
-                for (byte x = 0; x < _width; x += 1)
+                for (byte y = 0; y < _height; y += 1)
                 {
-                        //if (x >= _width || y >= _height)
+                    for (byte x = 0; x < _width; x += 1)
+                    {
+                        if (x >= _width || y >= _height) continue;
                         sb.Append(current[x, y]);
                     }
                     sb.Append("\r\n");
                 }
                 textBox1.Invoke((MethodInvoker)delegate { textBox1.Text = sb.ToString(); });
-                panel1.Invoke((MethodInvoker)delegate { panel1.Refresh(); ; });
-                this.Invoke((MethodInvoker)delegate { this.Refresh(); ; });
                 Thread.Sleep(16);
             }
         }
 
         private char[,] GetCurrentState()
         {
-            cpu.InterruptRequest();
             var result = new char[_width, _height];
             var currentAdr = _screenStartAddress;
             for (byte x = 0; x < _width; x++)
             {
                 for (byte y = 0; y < _height; y++)
                 {
+
                     result[x, y] = C64CharConverter.ConvertToAscii(cpu.memory.ReadByte(currentAdr++));
                     //result[x, y] = Encoding.ASCII.GetString(new byte[] { cpu.memory.ReadByte(currentAdr++) })[0];
                 }
