@@ -675,10 +675,6 @@ namespace _6502CPU
             byte value1 = GetNextInstruction();
             byte value2 = GetNextInstruction();
             ulong value3 = (ulong)((value2 << 8) | value1);
-            if (value3 > 65535)
-            { }
-
-            //if (value3 > 65535) value3 = value3 - 65535;
             return value3 & 0xFFFF;
         }
 
