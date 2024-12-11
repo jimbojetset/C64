@@ -98,7 +98,7 @@ namespace _6502CPU
 
         public void Execute(byte opcode)
         {
-            /*
+       
             if(cyclecount % 20 == 1)
                 File.AppendAllText(@"E:\6502.txt","CNT       OP  PC    S   A   X   Y   NV BDIZC" + Environment.NewLine);
             File.AppendAllText(@"E:\6502.txt",
@@ -111,8 +111,8 @@ namespace _6502CPU
                                      "  " + registers.Y.ToString("X2") +
                                      "  " + Convert.ToString(registers.P, 2).PadLeft(8, '0') +
                                      Environment.NewLine); 
-            */
-
+            
+            
             switch (opcode)
             {
                 #region Documented Opcodes
@@ -1898,7 +1898,6 @@ namespace _6502CPU
         }
         private void JSRA()
         {
-            ulong value = Absolute();
             byte pclo = memory.ReadByte(registers.PC);
             registers.PC++;
             byte hi = (byte)(((registers.PC) >> 8) & 0xFF);
