@@ -657,9 +657,14 @@ namespace _6502CPU
             }
             lastOpcode = opcode;
         }
+        // CrossBoundary = ((oper & 0xff00) != (addr & 0xff00));
+
 
         public byte GetNextInstruction()
         {
+            if (registers.PC > 65535)
+            { }
+
             byte value = memory.ReadByte(registers.PC);
             registers.IncPC();
             return value;
@@ -670,7 +675,10 @@ namespace _6502CPU
             byte value1 = GetNextInstruction();
             byte value2 = GetNextInstruction();
             ulong value3 = (ulong)((value2 << 8) | value1);
-            if (value3 > 65535) value3 = value3 - 65535;
+            if (value3 > 65535)
+            { }
+
+            //if (value3 > 65535) value3 = value3 - 65535;
             return value3 & 0xFFFF;
         }
 
@@ -717,14 +725,32 @@ namespace _6502CPU
             ulong addr = GetInstructionWord();
             return addr & 0xFFFF;
         }
+        private ulong AbsoluteIndirect()
+        {
+            ulong addr = Absolute();
+            byte lo;
+            byte hi;
+            if ((addr & 0x00FF) == 0xFF)
+            {
+                lo = memory.ReadByte((addr & 0xFF00) + 0xFF);
+                hi = memory.ReadByte((addr & 0xFF00));
+            }
+            else
+            {
+                lo = memory.ReadByte(addr);
+                hi = memory.ReadByte((addr + 1));
+            }
+            ulong value = (ulong)((hi << 8) | lo);
+            return value & 0xFFFF;
+        }
         private ulong X_Indexed_Absolute()
         {
-            ulong addr = (GetInstructionWord() + registers.X);
+            ulong addr = (Absolute() + registers.X);
             return addr & 0xFFFF;
         }
         private ulong Y_Indexed_Absolute()
         {
-            ulong addr = (GetInstructionWord() + registers.Y);
+            ulong addr = (Absolute() + registers.Y);
             return addr & 0xFFFF;
         }
         private byte Zero_Page()
@@ -734,12 +760,12 @@ namespace _6502CPU
         }
         private byte X_Indexed_Zero_Page()
         {
-            byte addr = (byte)((GetNextInstruction() + registers.X) & 0xFF);
+            byte addr = (byte)((Zero_Page() + registers.X) & 0xFF);
             return addr;
         }
         private byte Y_Indexed_Zero_Page()
         {
-            byte addr = (byte)((GetNextInstruction() + registers.Y) & 0xFF);
+            byte addr = (byte)((Zero_Page() + registers.Y) & 0xFF);
             return addr;
         }
         private ulong X_Indexed_Zero_Page_Indirect()
@@ -747,7 +773,6 @@ namespace _6502CPU
             byte value = (byte)(GetNextInstruction() + registers.X);
 
             byte value1 = memory.ReadByte(value);
-            //if (value == 255) value = 0; else value++;
             byte value2 = (byte)(memory.ReadByte(value += 1) & 0xFF);
             ulong addr = (ulong)((value2 << 8) | value1);
             return addr & 0xFFFF;
@@ -756,7 +781,6 @@ namespace _6502CPU
         {
             byte value = GetNextInstruction();
             byte value1 = memory.ReadByte(value);
-           // if (value == 255) value = 0; else value++;
             byte value2 = (byte)(memory.ReadByte(value += 1) & 0xFF);
             ulong value3 = (ulong)((value2 << 8) | value1);
             ulong addr = value3 + registers.Y;
@@ -1873,23 +1897,12 @@ namespace _6502CPU
         }
         private void JMPAI()
         {
-            ulong addr = Absolute();
-            byte lo = memory.ReadByte(addr);
-            byte hi;
-            if ((addr & 0x00FF) == 0xFF)
-            {
-                hi = memory.ReadByte(addr & 0xFF00);
-            }
-            else
-            {
-                addr += 1;
-                hi = memory.ReadByte(addr & 0xFFFF);
-            }
-            ulong value3 = (ulong)((hi << 8) | lo) & 0xFFFF;
-            registers.PC = value3;
+            ulong addr = AbsoluteIndirect();
+            registers.PC = addr;
         }
         private void JSRA()
         {
+            ulong value = Absolute();
             byte pclo = memory.ReadByte(registers.PC);
             registers.PC++;
             byte hi = (byte)(((registers.PC) >> 8) & 0xFF);

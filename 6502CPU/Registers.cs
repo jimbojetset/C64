@@ -23,7 +23,8 @@
 
         public void IncPC(ulong value = 1)
         {
-            PC = (PC + value) & 0xFFFF;
+            PC += value;
+            if (PC >= 65536) PC = PC - 65536;
         }
     }
 }
