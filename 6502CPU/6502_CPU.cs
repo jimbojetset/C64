@@ -100,8 +100,8 @@ namespace _6502CPU
         {
             /*
             if(cyclecount % 20 == 1)
-                File.AppendAllText(@"D:\6502.txt","CNT       OP  PC    S   A   X   Y   NV BDIZC" + Environment.NewLine);
-            File.AppendAllText(@"D:\6502.txt",
+                File.AppendAllText(@"E:\6502.txt","CNT       OP  PC    S   A   X   Y   NV BDIZC" + Environment.NewLine);
+            File.AppendAllText(@"E:\6502.txt",
                                      cyclecount.ToString().PadRight(8, ' ') +
                                      "  " + opcode.ToString("X2") +
                                      "  " + (registers.PC - 1).ToString("X2") +
@@ -1854,7 +1854,7 @@ namespace _6502CPU
         private void BranchTo(ulong value)
         {
             if ((value & 0x80) == 0)
-                registers.IncPC(value);
+                registers.PC = (registers.PC + value) & 0xFFFF;
             else
             {
                 int x = (byte)(~(value - 0x01)) * -1;
