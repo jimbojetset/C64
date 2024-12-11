@@ -99,14 +99,17 @@ namespace _6502CPU
         public void Execute(byte opcode)
         {
             /*
+            if(cyclecount % 20 == 1)
+                File.AppendAllText(@"D:\6502.txt","CNT       OP  PC    S   A   X   Y   NV BDIZC" + Environment.NewLine);
             File.AppendAllText(@"D:\6502.txt",
-                                     " Opcode=" + opcode.ToString("X2") +
-                                     " PC=" + (registers.PC - 1).ToString("X2") +
-                                     " S=" + registers.S.ToString("X2") +
-                                     " A=" + registers.A.ToString("X2") +
-                                     " X=" + registers.X.ToString("X2") +
-                                     " Y=" + registers.Y.ToString("X2") +
-                                     " P=" + registers.P.ToString("X2") +
+                                     cyclecount.ToString().PadRight(8, ' ') +
+                                     "  " + opcode.ToString("X2") +
+                                     "  " + (registers.PC - 1).ToString("X2") +
+                                     "  " + registers.S.ToString("X2") +
+                                     "  " + registers.A.ToString("X2") +
+                                     "  " + registers.X.ToString("X2") +
+                                     "  " + registers.Y.ToString("X2") +
+                                     "  " + Convert.ToString(registers.P, 2).PadLeft(8, '0') +
                                      Environment.NewLine); 
             */
 
@@ -742,9 +745,10 @@ namespace _6502CPU
         private ulong X_Indexed_Zero_Page_Indirect()
         {
             byte value = (byte)(GetNextInstruction() + registers.X);
+
             byte value1 = memory.ReadByte(value);
-            if (value == 255) value = 0; else value++;
-            byte value2 = memory.ReadByte(value);
+            //if (value == 255) value = 0; else value++;
+            byte value2 = (byte)(memory.ReadByte(value += 1) & 0xFF);
             ulong addr = (ulong)((value2 << 8) | value1);
             return addr & 0xFFFF;
         }
@@ -752,10 +756,10 @@ namespace _6502CPU
         {
             byte value = GetNextInstruction();
             byte value1 = memory.ReadByte(value);
-            if (value == 255) value = 0; else value++;
-            byte value2 = memory.ReadByte(value);
+           // if (value == 255) value = 0; else value++;
+            byte value2 = (byte)(memory.ReadByte(value += 1) & 0xFF);
             ulong value3 = (ulong)((value2 << 8) | value1);
-            ulong addr = (ulong)(value3 + registers.Y);
+            ulong addr = value3 + registers.Y;
             return addr & 0xFFFF;
         }
         private void Set_FlagsNZ(byte value)
