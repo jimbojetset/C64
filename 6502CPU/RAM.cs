@@ -9,6 +9,14 @@ namespace _6502CPU
         public RAM(int size)
         {
             Memory = new byte[size];
+            bool flipflop = true;
+            for (int x = 0; x < size; x++)
+            {
+                if(x%64== 0) { flipflop = !flipflop; }
+                if(flipflop) 
+                    Memory[x] = 0xFF;
+                else Memory[x] = 0x00;
+            }
         }
 
         public void WriteByte(ulong addr, byte value)

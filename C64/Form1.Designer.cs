@@ -28,25 +28,13 @@
         /// </summary>
         private void InitializeComponent()
         {
-            textBox1 = new TextBox();
             panel1 = new Panel();
-            button1 = new Button();
+            textBox1 = new TextBox();
             panel1.SuspendLayout();
             SuspendLayout();
             // 
-            // textBox1
-            // 
-            textBox1.Dock = DockStyle.Fill;
-            textBox1.Font = new Font("Consolas", 14.25F, FontStyle.Regular, GraphicsUnit.Point, 0);
-            textBox1.Location = new Point(0, 0);
-            textBox1.Multiline = true;
-            textBox1.Name = "textBox1";
-            textBox1.Size = new Size(416, 538);
-            textBox1.TabIndex = 0;
-            // 
             // panel1
             // 
-            panel1.Controls.Add(button1);
             panel1.Controls.Add(textBox1);
             panel1.Dock = DockStyle.Fill;
             panel1.Location = new Point(0, 0);
@@ -54,15 +42,18 @@
             panel1.Size = new Size(416, 538);
             panel1.TabIndex = 1;
             // 
-            // button1
+            // textBox1
             // 
-            button1.Location = new Point(167, 515);
-            button1.Name = "button1";
-            button1.Size = new Size(75, 23);
-            button1.TabIndex = 2;
-            button1.Text = "button1";
-            button1.UseVisualStyleBackColor = true;
-            button1.Click += button1_Click;
+            textBox1.BackColor = Color.Blue;
+            textBox1.Dock = DockStyle.Fill;
+            textBox1.Font = new Font("Consolas", 14.25F, FontStyle.Regular, GraphicsUnit.Point, 0);
+            textBox1.ForeColor = Color.FromArgb(192, 192, 255);
+            textBox1.Location = new Point(0, 0);
+            textBox1.Multiline = true;
+            textBox1.Name = "textBox1";
+            textBox1.Size = new Size(416, 538);
+            textBox1.TabIndex = 0;
+            textBox1.WordWrap = false;
             // 
             // Form1
             // 
@@ -73,16 +64,13 @@
             DoubleBuffered = true;
             Name = "Form1";
             Text = "Form1";
-            Load += Form1_Load;
             panel1.ResumeLayout(false);
             panel1.PerformLayout();
             ResumeLayout(false);
         }
 
         #endregion
-
-        private TextBox textBox1;
         private Panel panel1;
-        private Button button1;
+        private TextBox textBox1;
     }
 }

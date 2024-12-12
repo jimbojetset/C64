@@ -32,9 +32,9 @@ testDictionary.Add("ROL_Tests", ["2a", "2e", "3e", "26", "36"]);
 testDictionary.Add("ROR_Tests", ["6a", "6e", "7e", "66", "76"]);
 testDictionary.Add("BRANCH_Tests", ["10","00","90", "b0", "f0", "30", "d0",  "50", "70"]);
 testDictionary.Add("J__Tests", ["4c", "6c", "20"]);
-testDictionary.Add("RT_Tests", ["40", "60"]);*/
-
-testDictionary.Add("Test", ["d0"]);
+testDictionary.Add("RT_Tests", ["40", "60"]);
+*/
+testDictionary.Add("Test", ["6e","7e","66","76"]);
 
 int testCount = 0;
 int testCountTotal = 0;
@@ -51,6 +51,7 @@ foreach (KeyValuePair<string, string[]> testPlan in testDictionary)
 
 Console.WriteLine("Starting Tests...");
 var watch = System.Diagnostics.Stopwatch.StartNew();
+string failedOpcodes = "";
 foreach (KeyValuePair<string, string[]> testPlan in testDictionary)
 {
     foreach (string test in testPlan.Value)
@@ -59,7 +60,7 @@ foreach (KeyValuePair<string, string[]> testPlan in testDictionary)
 
         Console.Write("\r{0}   ", "Opcode " + opcodes + " of " + totalOpcodeCount);
 
-        string testData = File.ReadAllText(@"E:\6502\v1\" +test + ".json");
+        string testData = File.ReadAllText(@"D:\6502\v1\" + test + ".json");
 
         List<Data>? testList = JsonSerializer.Deserialize<List<Data>>(testData);
 
@@ -108,14 +109,31 @@ foreach (KeyValuePair<string, string[]> testPlan in testDictionary)
             cpu.GetNextInstruction();
             cpu.Execute((byte)Convert.ToByte(test,16));
 
+            bool pass = true;
+            foreach (List<int> ramData in ram!)
+                if (ramData[1] != cpu.memory.ReadByte((ulong)ramData[0]))
+                    pass = false;
+
             // check asserted values
             if (outPC != cpu.registers.PC ||
                  outP != cpu.registers.P ||
                  outA != cpu.registers.A ||
                  outX != cpu.registers.X ||
                  outY != cpu.registers.Y ||
-                 outS != cpu.registers.S)
+                 outS != cpu.registers.S ||
+                 pass != true)
+                 
             {
+                //if(!pass)
+                //{
+                //    Console.WriteLine();
+                //    foreach (List<int> ramData in ram!)
+                //    {
+                //        Console.WriteLine(ramData[0] + " " + ramData[1] + " " + cpu.memory.ReadByte((ulong)ramData[0]));
+                 //   }
+                //}
+                if(!failedOpcodes.Contains(test))
+                    failedOpcodes += test + " ";
                 failure++;
                 totalFailure++;
             }
@@ -132,6 +150,7 @@ Console.WriteLine();
 Console.WriteLine("Total Tests Run: " + testCountTotal);
 Console.WriteLine("Total Pass: " + totalSuccess + " tests");
 Console.WriteLine("Total Fail: " + totalFailure + " tests");
+Console.WriteLine("Failed Opcodes = " + failedOpcodes.ToUpper());
 Console.WriteLine("Time Taken: " + watch.ElapsedMilliseconds / 1000 + " Seconds");
 
 
