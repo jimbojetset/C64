@@ -33,7 +33,6 @@ namespace C64
                 IsBackground = true
             };
             runThread.Start();
-
         }
 
         private void Run()
