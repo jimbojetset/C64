@@ -44,10 +44,11 @@
             // 
             // textBox1
             // 
-            textBox1.BackColor = Color.DodgerBlue;
+            textBox1.BackColor = Color.DarkSlateBlue;
+            textBox1.CausesValidation = false;
             textBox1.Dock = DockStyle.Fill;
             textBox1.Font = new Font("Consolas", 14.25F, FontStyle.Regular, GraphicsUnit.Point, 0);
-            textBox1.ForeColor = Color.FromArgb(192, 192, 255);
+            textBox1.ForeColor = Color.GhostWhite;
             textBox1.Location = new Point(0, 0);
             textBox1.Multiline = true;
             textBox1.Name = "textBox1";
