@@ -9,18 +9,6 @@ using System.Text;
 using System.Threading.Tasks;
 using static System.Runtime.InteropServices.JavaScript.JSType;
 
-// https://www.masswerk.at/6502/6502_instruction_set.html
-
-// https://www.pagetable.com/c64ref/6502/?tab=2
-
-// https://github.com/aaronmell/6502Net/blob/master/Processor/Processor.cs
-
-// https://github.com/santatamas/C64-Emulator/blob/master/C64Emulator/C64Emulator.Presentation/Program.cs
-
-/*
-08	PHP	I
-*/
-
 namespace _6502CPU
 {
     public class _6502_CPU
@@ -45,7 +33,6 @@ namespace _6502CPU
         private bool _previousInterrupt;
 
         private bool _interrupt;
-
 
         public _6502_CPU()
         {
@@ -103,22 +90,7 @@ namespace _6502CPU
         }
 
         public void Execute(byte opcode)
-        {
-       /*
-            if(cyclecount % 20 == 1)
-                File.AppendAllText(@"D:\6502.txt","CNT       OP  PC    S   A   X   Y   NV BDIZC" + Environment.NewLine);
-            File.AppendAllText(@"D:\6502.txt",
-                                     cyclecount.ToString().PadRight(8, ' ') +
-                                     "  " + opcode.ToString("X2") +
-                                     "  " + (registers.PC - 1).ToString("X2") +
-                                     "  " + registers.S.ToString("X2") +
-                                     "  " + registers.A.ToString("X2") +
-                                     "  " + registers.X.ToString("X2") +
-                                     "  " + registers.Y.ToString("X2") +
-                                     "  " + Convert.ToString(registers.P, 2).PadLeft(8, '0') +
-                                     Environment.NewLine); 
-            */
-            
+        {        
             switch (opcode)
             {
                 #region Documented Opcodes
@@ -663,8 +635,6 @@ namespace _6502CPU
             }
             lastOpcode = opcode;
         }
-        // CrossBoundary = ((oper & 0xff00) != (addr & 0xff00));
-
 
         public byte GetNextInstruction()
         {
@@ -1811,70 +1781,73 @@ namespace _6502CPU
             byte value = memory.ReadByte(registers.PC);
             registers.IncPC();
             if (!registers.Flags.C)
-                BranchTo(value);
+                Branch(value);
         }
-
         private void BCS()
         {
             byte value = memory.ReadByte(registers.PC);
             registers.IncPC();
             if (registers.Flags.C)
-                BranchTo(value);
+                Branch(value);
         }
-
         private void BEQ()
         {
             byte value = memory.ReadByte(registers.PC);
             registers.IncPC();
             if (registers.Flags.Z)
-                BranchTo(value);
+                Branch(value);
         }
-
         private void BMI()
         {
             byte value = memory.ReadByte(registers.PC);
             registers.IncPC();
             if (registers.Flags.N)
-                BranchTo(value);
+                Branch(value);
         }
-
         private void BNE()
         {
             byte value = memory.ReadByte(registers.PC);
             registers.IncPC();
             if (!registers.Flags.Z)
-                BranchTo(value);
+                Branch(value);
         }
-
         private void BPL()
         {
             byte value = memory.ReadByte(registers.PC);
             registers.IncPC();
             if (!registers.Flags.N)
-                BranchTo(value);
+                Branch(value);
         }
-
         private void BVC()
         {
             byte value = memory.ReadByte(registers.PC);
             registers.IncPC();
             if (!registers.Flags.V)
-                BranchTo(value);
+                Branch(value);
         }
-
         private void BVS()
         {
             byte value = memory.ReadByte(registers.PC);
             registers.IncPC();
             if (registers.Flags.V)
-                BranchTo(value);
+                Branch(value);
         }
-
         private void BRK()
         {
             Break(true, 0xFFFE);
         }
-
+        private void Branch(ulong value)
+        {
+            if ((value & 0x80) == 0)
+                registers.PC = (registers.PC + value) & 0xFFFF;
+            else
+            {
+                int x = (byte)(~(value - 0x01)) * -1;
+                int y = (int)registers.PC;
+                y += x;
+                registers.PC = (ulong)y & 0xFFFF;
+            }
+        }
         private void Break(bool isBreak, ulong vector)
         {
             registers.IncPC();
@@ -1892,19 +1865,6 @@ namespace _6502CPU
             }
             registers.Flags.I = true;
             registers.PC = (ulong)((memory.ReadByte(vector + 1) << 8) | memory.ReadByte(vector));
-        }
-
-        private void BranchTo(ulong value)
-        {
-            if ((value & 0x80) == 0)
-                registers.PC = (registers.PC + value) & 0xFFFF;
-            else
-            {
-                int x = (byte)(~(value - 0x01)) * -1;
-                int y = (int)registers.PC;
-                y += x;
-                registers.PC = (ulong)y & 0xFFFF;
-            }
         }
         #endregion
 
