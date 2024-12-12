@@ -74,13 +74,13 @@ namespace _6502CPU
                     {
                         ProcessIRQ();
                         TriggerIRQ = false;
+                        D012Ctr++;
+                        if (D012Ctr > 256) D012Ctr = 0;
                     }
                 }
                 _previousInterrupt = _interrupt;
                 _interrupt = TriggerNmi || (TriggerIRQ && !registers.Flags.I);
                 memory.WriteByte(0xD012, (byte)D012Ctr);
-                D012Ctr++;
-                if (D012Ctr > 256) D012Ctr = 0;
             }
         }
 
@@ -675,10 +675,6 @@ namespace _6502CPU
         {
             if (registers.Flags.I)
                 return;
-            registers.PC--;
-            Break(false, 0xFFFE);
-            nextOpcode = GetNextInstruction();
-            Execute(nextOpcode);
         }
 
 
