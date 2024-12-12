@@ -638,9 +638,6 @@ namespace _6502CPU
 
         public byte GetNextInstruction()
         {
-            if (registers.PC > 65535)
-            { }
-
             byte value = memory.ReadByte(registers.PC);
             registers.IncPC();
             return value;
@@ -678,7 +675,6 @@ namespace _6502CPU
         {
             if (registers.Flags.I)
                 return;
-
             registers.PC--;
             Break(false, 0xFFFE);
             nextOpcode = GetNextInstruction();
@@ -969,7 +965,10 @@ namespace _6502CPU
         }
         private void PHP()
         {
-            StackPush(registers.P);
+            byte addr = registers.Flags.GetFlagsAsByte();
+            addr = (byte)(addr | (1 << 4));
+            addr = (byte)(addr | (1 << 5));
+            StackPush(addr);
         }
         #endregion
 

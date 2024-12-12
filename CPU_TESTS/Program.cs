@@ -34,7 +34,7 @@ testDictionary.Add("BRANCH_Tests", ["10","00","90", "b0", "f0", "30", "d0",  "50
 testDictionary.Add("J__Tests", ["4c", "6c", "20"]);
 testDictionary.Add("RT_Tests", ["40", "60"]);
 */
-testDictionary.Add("Test", ["6e","7e","66","76"]);
+testDictionary.Add("Test", ["08"]);
 
 int testCount = 0;
 int testCountTotal = 0;
@@ -60,7 +60,7 @@ foreach (KeyValuePair<string, string[]> testPlan in testDictionary)
 
         Console.Write("\r{0}   ", "Opcode " + opcodes + " of " + totalOpcodeCount);
 
-        string testData = File.ReadAllText(@"D:\6502\v1\" + test + ".json");
+        string testData = File.ReadAllText(@"E:\6502\v1\" + test + ".json");
 
         List<Data>? testList = JsonSerializer.Deserialize<List<Data>>(testData);
 
@@ -124,15 +124,17 @@ foreach (KeyValuePair<string, string[]> testPlan in testDictionary)
                  pass != true)
                  
             {
-                //if(!pass)
-                //{
-                //    Console.WriteLine();
-                //    foreach (List<int> ramData in ram!)
-                //    {
-                //        Console.WriteLine(ramData[0] + " " + ramData[1] + " " + cpu.memory.ReadByte((ulong)ramData[0]));
-                 //   }
-                //}
-                if(!failedOpcodes.Contains(test))
+
+                if(!pass)
+                {
+                    Console.WriteLine();
+                    foreach (List<int> ramData in ram!)
+                    {
+                        Console.WriteLine(ramData[0] + " " + ramData[1] + " " + cpu.memory.ReadByte((ulong)ramData[0]));
+                   }
+                }
+
+                if (!failedOpcodes.Contains(test))
                     failedOpcodes += test + " ";
                 failure++;
                 totalFailure++;

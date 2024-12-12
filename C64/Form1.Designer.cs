@@ -44,7 +44,7 @@
             // 
             // textBox1
             // 
-            textBox1.BackColor = Color.Blue;
+            textBox1.BackColor = Color.DodgerBlue;
             textBox1.Dock = DockStyle.Fill;
             textBox1.Font = new Font("Consolas", 14.25F, FontStyle.Regular, GraphicsUnit.Point, 0);
             textBox1.ForeColor = Color.FromArgb(192, 192, 255);
