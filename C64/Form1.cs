@@ -52,7 +52,6 @@ namespace C64
                     sb.Append("\r\n");
                 }
                 textBox1.Invoke((MethodInvoker)delegate { textBox1.Text = sb.ToString(); });
-                cpu.InterruptRequest();
                 Thread.Sleep(16);
             }
         }

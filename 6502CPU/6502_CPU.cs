@@ -74,8 +74,6 @@ namespace _6502CPU
                     {
                         ProcessIRQ();
                         TriggerIRQ = false;
-                        D012Ctr++;
-                        if (D012Ctr > 256) D012Ctr = 0;
                     }
                 }
                 _previousInterrupt = _interrupt;
