@@ -84,7 +84,7 @@ foreach (KeyValuePair<string, string[]> testPlan in testDictionary)
             // prime the CPU
             cpu.registers = new Registers();
             cpu.registers.Clear();
-            cpu.memory = new RAM(0x10000);
+            cpu.memory = new Memory(0x10000);
 
             // load the CPU
             cpu.registers.PC = data.initial!.pc;

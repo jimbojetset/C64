@@ -15,7 +15,7 @@ namespace _6502CPU
     {
         public Registers registers = new Registers();
 
-        public RAM memory = new RAM(0x10000);
+        public Memory memory = new Memory(0x10000);
 
         private bool running = true;
         public bool Running { get; set; }
@@ -43,7 +43,7 @@ namespace _6502CPU
         {
             registers = new Registers();
             registers.Clear();
-            memory = new RAM(0x10000);
+            memory = new Memory(0x10000);
             memory.WriteByte(0x01, 0x1F);
             registers.S = 0xFF;
             registers.Flags.I = true;

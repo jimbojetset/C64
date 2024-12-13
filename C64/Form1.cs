@@ -20,9 +20,9 @@ namespace C64
             InitializeComponent();
 
             cpu = new _6502_CPU();
-            cpu.memory.Load(@"ROMS\BASIC.ROM", 0xA000, 8192);
-            cpu.memory.Load(@"ROMS\KERNAL.ROM", 0xE000, 8192);
-            cpu.memory.Load(@"ROMS\CHAR.ROM", 0xD000, 4096);
+            cpu.memory.Load(@"ROMS\BASIC.ROM", 0xA000, 8192, true);
+            cpu.memory.Load(@"ROMS\KERNAL.ROM", 0xE000, 8192, true);
+            cpu.memory.Load(@"ROMS\CHAR.ROM", 0xD000, 4096, false);
 
             var processorThread = new Thread(() => cpu.Run())
             {
@@ -65,24 +65,6 @@ namespace C64
                 for (byte x = 0; x < _width; x++)
                     result[x, y] = C64CharConverter.ConvertToAscii(cpu.memory.ReadByte(currentAdr++));
             return result;
-        }
-
-        private void button1_Click(object sender, EventArgs e)
-        {
-            cpu = new _6502_CPU();
-            cpu.memory.Load(@"ROMS\BASIC.ROM", 0xA000, 8192);
-            cpu.memory.Load(@"ROMS\KERNAL.ROM", 0xE000, 8192);
-            cpu.memory.Load(@"ROMS\CHAR.ROM", 0xD000, 4096);
-            var processorThread = new Thread(() => cpu.Run())
-            {
-                IsBackground = true
-            };
-            processorThread.Start();
-            var runThread = new Thread(() => Run())
-            {
-                IsBackground = true
-            };
-            runThread.Start();
         }
 
         [DllImport("user32.dll")]
