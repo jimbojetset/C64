@@ -27,10 +27,6 @@ namespace _6502CPU
         private const ushort NMI_VECTOR_LOW = 0xFFFA;
         private const ushort NMI_VECTOR_HIGH = 0xFFFB;
 
-        public bool TriggerNmi { get; set; }
-
-        public bool TriggerIRQ { get; private set; }
-
         public _6502_CPU()
         {
             Initialise();
@@ -41,18 +37,11 @@ namespace _6502CPU
             registers = new Registers();
             registers.Clear();
             memory = new Memory(0x10000);
-            memory.WriteByte(0x01, 0x1F);
-            registers.S = 0xFF;
-            registers.Flags.I = true;
-            TriggerNmi = false;
-            TriggerIRQ = false;
-            registers.Y = 0x0A;
-            registers.P = 0xA5;
         }
 
-        public void Run()
+        public void Run(ulong startVector = 0xFFFC)
         {
-            registers.PC = memory.ReadWord(0xFFFC);
+            registers.PC = memory.ReadWord(startVector);
             running = true;
             while (running)
             {
