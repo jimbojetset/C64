@@ -20,19 +20,16 @@ namespace _6502CPU
         private bool running = true;
         public bool Running { get; set; }
 
-        private byte nextOpcode;
+        public bool CIA_IRQ { get; set; }
+        public bool CIA_NMI { get; set; }
+        public bool VIC_IRQ { get; set; }
 
-        private int cyclecount = 0;
-
-        private byte lastOpcode;
+        private const ushort NMI_VECTOR_LOW = 0xFFFA;
+        private const ushort NMI_VECTOR_HIGH = 0xFFFB;
 
         public bool TriggerNmi { get; set; }
 
         public bool TriggerIRQ { get; private set; }
-
-        private bool _previousInterrupt;
-
-        private bool _interrupt;
 
         public _6502_CPU()
         {
@@ -57,34 +54,16 @@ namespace _6502CPU
         {
             registers.PC = memory.ReadWord(0xFFFC);
             running = true;
-            int D012Ctr = 0;
             while (running)
             {
-                cyclecount++;
-                nextOpcode = GetNextInstruction();
-                Execute(nextOpcode);
-                if (_previousInterrupt)
-                {
-                    if (TriggerNmi)
-                    {
-                        ProcessNMI();
-                        TriggerNmi = false;
-                    }
-                    else if (TriggerIRQ)
-                    {
+                if (CIA_IRQ || VIC_IRQ)
+                    if (!registers.Flags.I)
                         ProcessIRQ();
-                        TriggerIRQ = false;
-                    }
-                }
-                _previousInterrupt = _interrupt;
-                _interrupt = TriggerNmi || (TriggerIRQ && !registers.Flags.I);
-                memory.WriteByte(0xD012, (byte)D012Ctr);
-            }
-        }
+                if (CIA_NMI)
+                    ProcessNMI();
 
-        public void InterruptRequest()
-        {
-            TriggerIRQ = true;
+                Execute(GetNextInstruction());
+            }
         }
 
         public void Execute(byte opcode)
@@ -631,7 +610,6 @@ namespace _6502CPU
                     Debug.WriteLine("Instruction not handled " + opcode.ToString("x2"));
                     break;
             }
-            lastOpcode = opcode;
         }
 
         public byte GetNextInstruction()
@@ -663,16 +641,23 @@ namespace _6502CPU
 
         private void ProcessNMI()
         {
-            registers.PC--;
-            Break(false, 0xFFFA);
-            nextOpcode = GetNextInstruction();
-            Execute(nextOpcode);
+            StackPush((byte)((registers.PC >> 8) & 0xFF));
+            StackPush((byte)(registers.PC & 0xFF));
+            StackPush(registers.P);
+            registers.Flags.I = true;
+            registers.PC = (ushort)(memory.ReadByte(0xFFFA) | (memory.ReadByte(0xFFFB) << 8));
+            CIA_NMI = false;
         }
 
         private void ProcessIRQ()
         {
-            if (registers.Flags.I)
-                return;
+            StackPush((byte)((registers.PC >> 8) & 0xFF)); 
+            StackPush((byte)(registers.PC & 0xFF));        
+            StackPush((byte)(registers.P | 0x20)); 
+            registers.Flags.I = true;
+            registers.PC = (ushort)(memory.ReadByte(0xFFFE) | (memory.ReadByte(0xFFFF) << 8));
+            CIA_IRQ = false;
+            VIC_IRQ = false;
         }
 
 

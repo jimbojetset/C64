@@ -16,9 +16,6 @@
     <None Update="ROMS\BASIC.ROM">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
-    <None Update="ROMS\C1541.ROM">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </None>
     <None Update="ROMS\CHAR.ROM">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
