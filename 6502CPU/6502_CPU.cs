@@ -1,14 +1,4 @@
-﻿using Microsoft.Win32;
-using System;
-using System.Collections.Generic;
-using System.Diagnostics;
-using System.Diagnostics.Metrics;
-using System.Linq;
-using System.Net.Sockets;
-using System.Text;
-using System.Threading.Tasks;
-using static System.Runtime.InteropServices.JavaScript.JSType;
-
+﻿
 namespace _6502CPU
 {
     public class _6502_CPU
@@ -23,9 +13,6 @@ namespace _6502CPU
         public bool CIA_IRQ { get; set; }
         public bool CIA_NMI { get; set; }
         public bool VIC_IRQ { get; set; }
-
-        private const ushort NMI_VECTOR_LOW = 0xFFFA;
-        private const ushort NMI_VECTOR_HIGH = 0xFFFB;
 
         public _6502_CPU()
         {
@@ -596,7 +583,6 @@ namespace _6502CPU
                 #endregion
 
                 default:
-                    Debug.WriteLine("Instruction not handled " + opcode.ToString("x2"));
                     break;
             }
         }
