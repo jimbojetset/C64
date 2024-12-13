@@ -7,7 +7,7 @@ _6502_CPU cpu = new _6502_CPU();
 // https://github.com/SingleStepTests/65x02/blob/main/6502/v1/28.json
 
 Dictionary<string, string[]> testDictionary = new Dictionary<string, string[]>();
-/*
+
 testDictionary.Add("NOP_Test", ["ea",]);
 testDictionary.Add("LD_Tests", ["a9", "ad", "bd", "b9", "a5", "b5", "a1", "b1", "a2", "ae", "be", "a6", "b6", "a0", "ac", "bc", "a4", "b4"]);
 testDictionary.Add("ST_Tests", ["8d", "9d", "99", "85", "95", "81", "91", "8e", "86", "96", "8c", "84", "94"]);
@@ -33,8 +33,6 @@ testDictionary.Add("ROR_Tests", ["6a", "6e", "7e", "66", "76"]);
 testDictionary.Add("BRANCH_Tests", ["10","00","90", "b0", "f0", "30", "d0",  "50", "70"]);
 testDictionary.Add("J__Tests", ["4c", "6c", "20"]);
 testDictionary.Add("RT_Tests", ["40", "60"]);
-*/
-//testDictionary.Add("Test", ["08"]);
 
 int testCount = 0;
 int testCountTotal = 0;
