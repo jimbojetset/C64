@@ -74,7 +74,7 @@
             pictureBox1.BackgroundImageLayout = ImageLayout.Stretch;
             pictureBox1.Location = new Point(507, 49);
             pictureBox1.Name = "pictureBox1";
-            pictureBox1.Size = new Size(591, 432);
+            pictureBox1.Size = new Size(640, 452);
             pictureBox1.TabIndex = 3;
             pictureBox1.TabStop = false;
             // 

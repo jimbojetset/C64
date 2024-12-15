@@ -15,8 +15,9 @@ namespace C64
         private byte _width = 40;//32;//40;
         private byte _height = 25;//16;//25;
         private _6502_CPU cpu;
-        private ushort _screenStartAddress = 0x3000;//0x8000;//0x400; // 0xC000
+        private ushort _screenStartAddress = 0x3280;//0x8000;//0x400; // 0xC000
         private bool displayRunning = true;
+        private int screenByteCount = 8000;
 
         public Form1()
         {
@@ -33,6 +34,7 @@ namespace C64
 
             cpu.memory.Load(@"ROMS\Electron\basic.rom", 0x8000, 16384, true);
             cpu.memory.Load(@"ROMS\Electron\os", 0xC000, 16384, true);
+            //cpu.memory.Load(@"ROMS\Electron\os2", 0xFC00, 1024, true);
 
             var processorThread = new Thread(() => cpu.Run())
             {
@@ -84,8 +86,8 @@ namespace C64
             displayRunning = true;
             while (displayRunning)
             {
-                byte[] screen = new byte[8000];
-                Buffer.BlockCopy(cpu.memory.memory, _screenStartAddress, screen,0, 8000);
+                byte[] screen = new byte[screenByteCount];
+                Buffer.BlockCopy(cpu.memory.memory, _screenStartAddress, screen,0, screenByteCount);
                 Bitmap bitmap = ConvertToBitmap(screen);
                 pictureBox1.BackgroundImage = bitmap;
                 var current = GetCurrentState2();
@@ -137,24 +139,26 @@ namespace C64
             HideCaret(textBox1.Handle);
         }
 
-        static Bitmap ConvertToBitmap(byte[] data)
+        private Bitmap ConvertToBitmap(byte[] data)
         {
-            if (data.Length != 8000)
-                throw new ArgumentException("Data must contain exactly 1000 bytes.");
+            var cursorLocation = cpu.memory.ReadWord(0xF3);
 
-            const int charsPerRow = 40;
-            const int charRows = 25;
+            if (data.Length != screenByteCount)
+                throw new ArgumentException("Data must contain exactly  bytes.");
+
+             int charsPerRow = _width;
+             int charRows = _height;
             const int bytesPerChar = 8;
             const int charWidth = 8;   // 8 pixels wide
-            const int charHeight = 7;  // 7 pixels tall
+            const int charHeight = 6;  // 6 pixels tall
 
             // Original image dimensions
-            const int originalWidth = charsPerRow * charWidth; // 40 * 8 = 320 pixels
-            const int originalHeight = charRows * charHeight;  // 25 * 7 = 175 pixels
+             int originalWidth = charsPerRow * charWidth; // 40 * 8 = 320 pixels
+             int originalHeight = charRows * charHeight;  // 25 * 7 = 175 pixels
 
             // Target image dimensions
-            const int targetWidth = originalWidth; // 320 pixels
-            const int targetHeight = 175;          // As per your requirement
+             int targetWidth = originalWidth; // 320 pixels
+             int targetHeight = _width * 8;          // As per your requirement
 
             // Create a bitmap with the original dimensions
             Bitmap originalBitmap = new Bitmap(originalWidth, originalHeight);
@@ -164,6 +168,7 @@ namespace C64
                 new Rectangle(0, 0, originalBitmap.Width, originalBitmap.Height),
                 ImageLockMode.WriteOnly,
                 PixelFormat.Format24bppRgb);
+
 
             unsafe
             {
@@ -201,9 +206,12 @@ namespace C64
                                 int index = pixelY * stride + pixelX * bytesPerPixel;
 
                                 // Set pixel to white or black
-                                ptr[index + 0] = isSet ? (byte)255 : (byte)0; // Blue component
-                                ptr[index + 1] = isSet ? (byte)255 : (byte)0; // Green component
-                                ptr[index + 2] = isSet ? (byte)255 : (byte)0; // Red component
+                                if (isSet)
+                                {
+                                    ptr[index + 0] = isSet ? (byte)255 : (byte)0; // Blue component
+                                    ptr[index + 1] = isSet ? (byte)255 : (byte)0; // Green component
+                                    ptr[index + 2] = isSet ? (byte)255 : (byte)0; // Red component
+                                }
                             }
                         }
                     }
