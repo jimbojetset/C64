@@ -30,13 +30,15 @@
         {
             panel1 = new Panel();
             textBox1 = new TextBox();
+            label1 = new Label();
+            pictureBox1 = new PictureBox();
             panel1.SuspendLayout();
+            ((System.ComponentModel.ISupportInitialize)pictureBox1).BeginInit();
             SuspendLayout();
             // 
             // panel1
             // 
             panel1.Controls.Add(textBox1);
-            panel1.Dock = DockStyle.Fill;
             panel1.Location = new Point(0, 0);
             panel1.Name = "panel1";
             panel1.Size = new Size(416, 538);
@@ -58,22 +60,45 @@
             textBox1.WordWrap = false;
             textBox1.TextChanged += textBox1_TextChanged;
             // 
+            // label1
+            // 
+            label1.BorderStyle = BorderStyle.FixedSingle;
+            label1.Location = new Point(445, 22);
+            label1.Name = "label1";
+            label1.Size = new Size(718, 495);
+            label1.TabIndex = 2;
+            label1.Text = "label1";
+            // 
+            // pictureBox1
+            // 
+            pictureBox1.BackgroundImageLayout = ImageLayout.Stretch;
+            pictureBox1.Location = new Point(507, 49);
+            pictureBox1.Name = "pictureBox1";
+            pictureBox1.Size = new Size(591, 432);
+            pictureBox1.TabIndex = 3;
+            pictureBox1.TabStop = false;
+            // 
             // Form1
             // 
             AutoScaleDimensions = new SizeF(7F, 15F);
             AutoScaleMode = AutoScaleMode.Font;
-            ClientSize = new Size(416, 538);
+            ClientSize = new Size(1227, 538);
+            Controls.Add(pictureBox1);
+            Controls.Add(label1);
             Controls.Add(panel1);
             DoubleBuffered = true;
             Name = "Form1";
             Text = "Form1";
             panel1.ResumeLayout(false);
             panel1.PerformLayout();
+            ((System.ComponentModel.ISupportInitialize)pictureBox1).EndInit();
             ResumeLayout(false);
         }
 
         #endregion
         private Panel panel1;
         private TextBox textBox1;
+        private Label label1;
+        private PictureBox pictureBox1;
     }
 }

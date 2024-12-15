@@ -4,7 +4,7 @@ namespace _6502CPU
 {
     public class Memory
     {
-        private byte[] memory { get; set; }
+        public byte[] memory { get; set; }
         List<ROM> rom = new List<ROM>();
 
         public Memory(int size)
