@@ -31,8 +31,8 @@ namespace C64
             //cpu.memory.Load(@"ROMS\basic_rom.ROM", 0xC000, 4096, true);
 
 
-            cpu.memory.Load(@"ROMS\basic_electron.ROM", 0x8000, 16384, true);
-            cpu.memory.Load(@"ROMS\os_electron.ROM", 0xC000, 16384, true);
+            cpu.memory.Load(@"ROMS\Electron\basic.rom", 0x8000, 16384, true);
+            cpu.memory.Load(@"ROMS\Electron\os", 0xC000, 16384, true);
 
             var processorThread = new Thread(() => cpu.Run())
             {
@@ -146,15 +146,15 @@ namespace C64
             const int charRows = 25;
             const int bytesPerChar = 8;
             const int charWidth = 8;   // 8 pixels wide
-            const int charHeight = 8;  // 6 pixels tall
+            const int charHeight = 7;  // 7 pixels tall
 
             // Original image dimensions
             const int originalWidth = charsPerRow * charWidth; // 40 * 8 = 320 pixels
-            const int originalHeight = charRows * charHeight;  // 25 * 6 = 150 pixels
+            const int originalHeight = charRows * charHeight;  // 25 * 7 = 175 pixels
 
             // Target image dimensions
             const int targetWidth = originalWidth; // 320 pixels
-            const int targetHeight = 156;          // As per your requirement
+            const int targetHeight = 175;          // As per your requirement
 
             // Create a bitmap with the original dimensions
             Bitmap originalBitmap = new Bitmap(originalWidth, originalHeight);
