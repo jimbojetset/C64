@@ -14,14 +14,14 @@ namespace _6502CPU
 
         public void WriteByte(ulong addr, byte value)
         {
-            if(!IsReadOnly((int)addr))
+            if(!IsROM((int)addr))
                 memory[addr] = value;
         }
 
-        private bool IsReadOnly(int addr) // A D E
+        private bool IsROM(int addr) // A D E
         {
             foreach (var rom in rom)
-                if (addr >= rom.start && addr <= rom.start + rom.len) return true;
+                if (addr >= rom.StartAddr && addr <= rom.StartAddr + rom.Length) return true;
             return false;
         }
 
@@ -42,13 +42,13 @@ namespace _6502CPU
         {
             Array.Copy(File.ReadAllBytes(filePath), 0, memory, startAddr, length);
             if (readOnly)
-                rom.Add(new ROM() { start = startAddr, len = length});
+                rom.Add(new ROM() { StartAddr = startAddr, Length = length});
         }
     }
 
     internal class ROM
     {
-        public int start { get; set; }
-        public int len { get; set; }
+        public int StartAddr { get; set; }
+        public int Length { get; set; }
     }
 }

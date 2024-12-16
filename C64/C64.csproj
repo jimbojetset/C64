@@ -17,14 +17,8 @@
     <None Update="ROMS\BASIC.ROM">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
-    <None Update="ROMS\basic_electron.rom">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </None>
     <None Update="ROMS\basic_rom.rom">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </None>
-    <None Update="ROMS\B_BASIC200">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </None>
     <None Update="ROMS\CHAR.ROM">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
@@ -50,16 +44,10 @@
     <None Update="ROMS\Electron\sndrom">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
-    <None Update="ROMS\ELK100">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </None>
     <None Update="ROMS\KERNAL.ROM">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
     <None Update="ROMS\kernel_rom.rom">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </None>
-    <None Update="ROMS\os_electron.rom">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
   </ItemGroup>

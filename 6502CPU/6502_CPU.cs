@@ -40,10 +40,6 @@ namespace _6502CPU
 
                 Execute(GetNextInstruction());
 
-                //keyboard pullup
-                for (ulong x = 0; x < 32; x += 1)
-                    memory.WriteByte(0x3e0 + x, 0);
-
             }
         }
 
