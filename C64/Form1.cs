@@ -56,7 +56,7 @@ namespace C64
 
         private void Run()
         {
-            Thread.Sleep(10);
+            Thread.Sleep(100);
             displayRunning = true;
             while (displayRunning)
             {
@@ -141,6 +141,7 @@ namespace C64
 
         private Bitmap ConvertToBitmap(byte[] data)
         {
+
             var cursorLocation = cpu.memory.ReadWord(0xF3);
 
             if (data.Length != screenByteCount)
