@@ -7,7 +7,7 @@ _6502_CPU cpu = new _6502_CPU();
 // https://github.com/SingleStepTests/65x02/blob/main/6502/v1/28.json
 
 Dictionary<string, string[]> testDictionary = new Dictionary<string, string[]>();
-
+/*
 testDictionary.Add("NOP_Test", ["ea",]);
 testDictionary.Add("LD_Tests", ["a9", "ad", "bd", "b9", "a5", "b5", "a1", "b1", "a2", "ae", "be", "a6", "b6", "a0", "ac", "bc", "a4", "b4"]);
 testDictionary.Add("ST_Tests", ["8d", "9d", "99", "85", "95", "81", "91", "8e", "86", "96", "8c", "84", "94"]);
@@ -33,6 +33,9 @@ testDictionary.Add("ROR_Tests", ["6a", "6e", "7e", "66", "76"]);
 testDictionary.Add("BRANCH_Tests", ["10","00","90", "b0", "f0", "30", "d0",  "50", "70"]);
 testDictionary.Add("J__Tests", ["4c", "6c", "20"]);
 testDictionary.Add("RT_Tests", ["40", "60"]);
+*/
+
+testDictionary.Add("Test", ["00",]);
 
 int testCount = 0;
 int testCountTotal = 0;
@@ -58,7 +61,7 @@ foreach (KeyValuePair<string, string[]> testPlan in testDictionary)
 
         Console.Write("\r{0}   ", "Opcode " + opcodes + " of " + totalOpcodeCount);
 
-        string testData = File.ReadAllText(@"E:\6502\v1\" + test + ".json");
+        string testData = File.ReadAllText(@"D:\6502\v1\" + test + ".json");
 
         List<Data>? testList = JsonSerializer.Deserialize<List<Data>>(testData);
 
@@ -105,7 +108,7 @@ foreach (KeyValuePair<string, string[]> testPlan in testDictionary)
 
             // execute a single instruction
             cpu.GetNextInstruction();
-            cpu.Execute((byte)Convert.ToByte(test,16));
+            cpu.Execute((byte)Convert.ToByte(test, 16));
 
             bool pass = true;
             foreach (List<int> ramData in ram!)
@@ -120,17 +123,17 @@ foreach (KeyValuePair<string, string[]> testPlan in testDictionary)
                  outY != cpu.registers.Y ||
                  outS != cpu.registers.S ||
                  pass != true)
-                 
+
             {
 
-                if(!pass)
-                {
-                    Console.WriteLine();
-                    foreach (List<int> ramData in ram!)
-                    {
-                        Console.WriteLine(ramData[0] + " " + ramData[1] + " " + cpu.memory.ReadByte((ulong)ramData[0]));
-                   }
-                }
+                //if (!pass)
+                //{
+                //    Console.WriteLine();
+                //    foreach (List<int> ramData in ram!)
+                //    {
+                //        Console.WriteLine(ramData[0] + " " + ramData[1] + " " + cpu.memory.ReadByte((ulong)ramData[0]));
+                //    }
+               // }
 
                 if (!failedOpcodes.Contains(test))
                     failedOpcodes += test + " ";
