@@ -28,9 +28,8 @@ namespace C64
             cpu.memory.Load(@"ROMS\KERNAL.ROM", 0xE000, 0x2000, true);
             cpu.memory.Load(@"ROMS\CHAR.ROM", 0xD000, 0x1000, false);
 
-            //cpu.memory.Load(@"ROMS\kernel_rom.ROM", 0xF000, 4096, true);
-            //cpu.memory.Load(@"ROMS\basic_rom.ROM", 0xC000, 4096, true);
-
+            textBox1.ReadOnly = true;
+            textBox1.GotFocus += textBox1_GotFocus!;
 
             var processorThread = new Thread(() => cpu.Run())
             {
@@ -51,33 +50,28 @@ namespace C64
             displayRunning = true;
             while (displayRunning)
             {
-                var stopwatch = new Stopwatch();
-                stopwatch.Start();
-                var current = GetCurrentState();
+                Stopwatch sw = Stopwatch.StartNew();
+                var currentAdr = _screenStartAddress;
                 StringBuilder sb = new StringBuilder();
                 for (byte y = 0; y < _height; y += 1)
                 {
+                    sw.Restart();
                     for (byte x = 0; x < _width; x += 1)
                     {
-                        if (x >= _width || y >= _height) continue;
-                        sb.Append(current[x, y]);
+                        sb.Append(C64CharConverter.ConvertToAscii(cpu.memory.ReadByte(currentAdr++)));
                     }
                     sb.Append("\r\n");
+                    cpu.memory.WriteByte(0xD012, (byte)y);
+                    while (sw.ElapsedMilliseconds == 0) { }
                 }
                 textBox1.Invoke((MethodInvoker)delegate { textBox1.Text = sb.ToString(); });
-                if (cpu.memory.ReadByte(0xD012) != 0x0)
-                    cpu.memory.WriteByte(0xD012, (byte)0x0);
             }
         }
 
-        private char[,] GetCurrentState()
+        private void textBox1_GotFocus(object sender, EventArgs e)
         {
-            var result = new char[_width, _height];
-            var currentAdr = _screenStartAddress;
-            for (byte y = 0; y < _height; y++)
-                for (byte x = 0; x < _width; x++)
-                    result[x, y] = C64CharConverter.ConvertToAscii(cpu.memory.ReadByte(currentAdr++));
-            return result;
+            ((System.Windows.Forms.TextBox)sender).Parent!.Focus();
         }
+
     }
 }
