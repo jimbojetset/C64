@@ -21,12 +21,12 @@ namespace _6502CPU
         private List<ulong> IRQ_Buffer = new List<ulong>();
         private List<ulong> NMI_Buffer = new List<ulong>();
 
-        public void InitiateIRQ(ulong value)
+        public void InitiateIRQ(ulong value = 0xFFFE)
         {
             IRQ_Buffer.Add(value);
         }
 
-        public void InitiateNMI(ulong value)
+        public void InitiateNMI(ulong value = 0xFFFA)
         {
             NMI_Buffer.Add(value);
         }
