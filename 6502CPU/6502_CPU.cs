@@ -19,8 +19,21 @@ namespace _6502CPU
         private bool running = true;
         public bool Running { get; set; }
 
-        public bool CIA_IRQ { get; set; }
-        public bool CIA_NMI { get; set; }
+        private List<ulong> IRQ_Buffer = new List<ulong>();
+        private List<ulong> NMI_Buffer = new List<ulong>();
+
+        private int NMI_Ctr = 0;
+
+        public void InitiateIRQ(ulong value)
+        {
+            IRQ_Buffer.Add(value);
+        }
+
+        public void InitiateNMI(ulong value)
+        {
+            NMI_Buffer.Add(value);
+        }
+
 
         private int cyclesThisOperation = 0;
 
@@ -42,12 +55,24 @@ namespace _6502CPU
             running = true;
             while (running)
             {
-                if (CIA_NMI)
-                    ProcessNMI();
-                if (CIA_IRQ)
-                    if (!registers.Flags.I)
+                while (NMI_Buffer.Count > 0)
+                {
+                    ulong value = NMI_Buffer[0];
+                    NMI_Buffer.RemoveAt(0);
+                    if(value != 0xFFFA)
+                        ProcessNMI(value);
+                    else
+                        ProcessNMI();
+                }
+                while (IRQ_Buffer.Count > 0 && !registers.Flags.I)
+                {
+                    ulong value = IRQ_Buffer[0];
+                    IRQ_Buffer.RemoveAt(0);
+                    if (value != 0xFFFE)
+                        ProcessIRQ(value);
+                    else
                         ProcessIRQ();
-                cyclesThisOperation = 0;
+                }
                 Execute(GetNextInstruction());
             }
         }
@@ -642,25 +667,23 @@ namespace _6502CPU
             return ReadByteFromMemory((ulong)(registers.S + 0x100));
         }
 
-        private void ProcessNMI()
+        private void ProcessNMI(ulong value = 0xFFFA)
         {
             PushToStack((byte)((registers.PC >> 8) & 0xFF));
             PushToStack((byte)(registers.PC & 0xFF));
             PushToStack(registers.P);
             registers.Flags.I = true;
-            registers.PC = (ushort)(ReadByteFromMemory(0xFFFA) | (ReadByteFromMemory(0xFFFB) << 8));
-            CIA_NMI = false;
+            registers.PC = (ushort)(ReadByteFromMemory(value) | (ReadByteFromMemory(value + 1) << 8));
             cyclesThisOperation += 7;
         }
 
-        private void ProcessIRQ()
+        private void ProcessIRQ(ulong value = 0xFFFE)
         {
             PushToStack((byte)((registers.PC >> 8) & 0xFF)); 
             PushToStack((byte)(registers.PC & 0xFF));        
             PushToStack((byte)(registers.P | 0x20)); 
             registers.Flags.I = true;
-            registers.PC = (ushort)(ReadByteFromMemory(0xFFFE) | (ReadByteFromMemory(0xFFFF) << 8));
-            CIA_IRQ = false;
+            registers.PC = (ushort)(ReadByteFromMemory(value) | (ReadByteFromMemory(value + 1) << 8));
             cyclesThisOperation += 7;
         }
 
