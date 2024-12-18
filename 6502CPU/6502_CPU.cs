@@ -6,6 +6,8 @@
 
 // https://github.com/santatamas/C64-Emulator/blob/master/C64Emulator/C64Emulator.Presentation/Program.cs
 
+using System.Numerics;
+
 namespace _6502CPU
 {
     public class _6502_CPU
@@ -19,7 +21,6 @@ namespace _6502CPU
 
         public bool CIA_IRQ { get; set; }
         public bool CIA_NMI { get; set; }
-        public bool VIC_IRQ { get; set; }
 
         private int cyclesThisOperation = 0;
 
@@ -41,14 +42,13 @@ namespace _6502CPU
             running = true;
             while (running)
             {
-                if (CIA_IRQ || VIC_IRQ)
-                    if (!registers.Flags.I)
-                        ProcessIRQ();
                 if (CIA_NMI)
                     ProcessNMI();
+                if (CIA_IRQ)
+                    if (!registers.Flags.I)
+                        ProcessIRQ();
                 cyclesThisOperation = 0;
                 Execute(GetNextInstruction());
-
             }
         }
 
@@ -599,11 +599,26 @@ namespace _6502CPU
             }
         }
 
+        private void IncrementProgramCounter(ulong value = 1)
+        {
+            registers.PC += value;
+            if (registers.PC >= 65536) registers.PC = registers.PC - 65536;
+        }
+
+        private byte ReadByteFromMemory(ulong addr)
+        {
+            return memory.ReadByte(addr);
+        }
+
+        private void WriteByteToMemory(ulong addr, byte value)
+        {
+            memory.WriteByte(addr, value);
+        }
+
         public byte GetNextInstruction()
         {
-            cyclesThisOperation += 1;
-            byte value = memory.ReadByte(registers.PC);
-            registers.IncPC();
+            byte value = ReadByteFromMemory(registers.PC);
+            IncrementProgramCounter();
             return value;
         }
 
@@ -615,42 +630,43 @@ namespace _6502CPU
             return value3 & 0xFFFF;
         }
 
-        private void StackPush(byte value)
+        private void PushToStack(byte value)
         {
-            memory.WriteByte((ulong)(registers.S + 0x100), value);
+            WriteByteToMemory((ulong)(registers.S + 0x100), value);
             registers.S--;
         }
 
-        private byte StackPop()
+        private byte PopFromStack()
         {
             registers.S++;
-            return memory.ReadByte((ulong)(registers.S + 0x100));
+            return ReadByteFromMemory((ulong)(registers.S + 0x100));
         }
 
         private void ProcessNMI()
         {
-            StackPush((byte)((registers.PC >> 8) & 0xFF));
-            StackPush((byte)(registers.PC & 0xFF));
-            StackPush(registers.P);
+            PushToStack((byte)((registers.PC >> 8) & 0xFF));
+            PushToStack((byte)(registers.PC & 0xFF));
+            PushToStack(registers.P);
             registers.Flags.I = true;
-            registers.PC = (ushort)(memory.ReadByte(0xFFFA) | (memory.ReadByte(0xFFFB) << 8));
+            registers.PC = (ushort)(ReadByteFromMemory(0xFFFA) | (ReadByteFromMemory(0xFFFB) << 8));
             CIA_NMI = false;
+            cyclesThisOperation += 7;
         }
 
         private void ProcessIRQ()
         {
-            StackPush((byte)((registers.PC >> 8) & 0xFF)); 
-            StackPush((byte)(registers.PC & 0xFF));        
-            StackPush((byte)(registers.P | 0x20)); 
+            PushToStack((byte)((registers.PC >> 8) & 0xFF)); 
+            PushToStack((byte)(registers.PC & 0xFF));        
+            PushToStack((byte)(registers.P | 0x20)); 
             registers.Flags.I = true;
-            registers.PC = (ushort)(memory.ReadByte(0xFFFE) | (memory.ReadByte(0xFFFF) << 8));
+            registers.PC = (ushort)(ReadByteFromMemory(0xFFFE) | (ReadByteFromMemory(0xFFFF) << 8));
             CIA_IRQ = false;
-            VIC_IRQ = false;
+            cyclesThisOperation += 7;
         }
 
         private bool CrossBoundary(ulong addr1, ulong addr2)
         {
-            return ((addr1 & 0xff00) != (addr2 & 0xff00));
+            return (addr1 & 0xff00) != (addr2 & 0xff00);
         }
 
         #region Addressing Modes
@@ -672,13 +688,13 @@ namespace _6502CPU
             if ((addr & 0x00FF) == 0xFF)
             {
                 cyclesThisOperation += 2;
-                lo = memory.ReadByte((addr & 0xFF00) + 0xFF);
-                hi = memory.ReadByte((addr & 0xFF00));
+                lo = ReadByteFromMemory((addr & 0xFF00) + 0xFF);
+                hi = ReadByteFromMemory((addr & 0xFF00));
             }
             else
             {
-                lo = memory.ReadByte(addr);
-                hi = memory.ReadByte((addr + 1));
+                lo = ReadByteFromMemory(addr);
+                hi = ReadByteFromMemory((addr + 1));
             }
             ulong value = (ulong)((hi << 8) | lo);
             return value & 0xFFFF;
@@ -713,16 +729,16 @@ namespace _6502CPU
         private ulong X_Indexed_Zero_Page_Indirect()
         {
             byte value = (byte)(GetNextInstruction() + registers.X);
-            byte value1 = memory.ReadByte(value);
-            byte value2 = (byte)(memory.ReadByte(value += 1) & 0xFF);
+            byte value1 = ReadByteFromMemory(value);
+            byte value2 = (byte)(ReadByteFromMemory(value += 1) & 0xFF);
             ulong addr = (ulong)((value2 << 8) | value1);
             return addr & 0xFFFF;
         }
         private ulong Zero_Page_Indirect_Y_Indexed(bool checkBoundary = true)
         {
             byte value = GetNextInstruction();
-            byte value1 = memory.ReadByte(value);
-            byte value2 = (byte)(memory.ReadByte(value += 1) & 0xFF);
+            byte value1 = ReadByteFromMemory(value);
+            byte value2 = (byte)(ReadByteFromMemory(value += 1) & 0xFF);
             ulong value3 = (ulong)((value2 << 8) | value1);
             ulong addr = value3 + registers.Y;
             if (CrossBoundary(addr, registers.PC + 1) && checkBoundary) { cyclesThisOperation += 1; }
@@ -746,43 +762,43 @@ namespace _6502CPU
         }
         private void LDA_AB()
         {
-            registers.A = memory.ReadByte(Absolute());
+            registers.A = ReadByteFromMemory(Absolute());
             Set_FlagsNZ(registers.A);
             cyclesThisOperation += 4;
         }
         private void LDA_ABX()
         {
-            registers.A = memory.ReadByte(X_Indexed_Absolute());
+            registers.A = ReadByteFromMemory(X_Indexed_Absolute());
             Set_FlagsNZ(registers.A);
             cyclesThisOperation += 4;
         }
         private void LDA_ABY()
         {
-            registers.A = memory.ReadByte(Y_Indexed_Absolute());
+            registers.A = ReadByteFromMemory(Y_Indexed_Absolute());
             Set_FlagsNZ(registers.A);
             cyclesThisOperation += 4;
         }
         private void LDA_ZP()
         {
-            registers.A = memory.ReadByte(Zero_Page());
+            registers.A = ReadByteFromMemory(Zero_Page());
             Set_FlagsNZ(registers.A);
             cyclesThisOperation += 3;
         }
         private void LDA_ZPX()
         {
-            registers.A = memory.ReadByte(X_Indexed_Zero_Page());
+            registers.A = ReadByteFromMemory(X_Indexed_Zero_Page());
             Set_FlagsNZ(registers.A);
             cyclesThisOperation += 4;
         }
         private void LDA_ZPIX()
         {
-            registers.A = memory.ReadByte(X_Indexed_Zero_Page_Indirect());
+            registers.A = ReadByteFromMemory(X_Indexed_Zero_Page_Indirect());
             Set_FlagsNZ(registers.A);
             cyclesThisOperation += 6;
         }
         private void LDA_ZPIY()
         {
-            registers.A = memory.ReadByte(Zero_Page_Indirect_Y_Indexed());
+            registers.A = ReadByteFromMemory(Zero_Page_Indirect_Y_Indexed());
             Set_FlagsNZ(registers.A);
             cyclesThisOperation += 5;
         }
@@ -794,25 +810,25 @@ namespace _6502CPU
         }
         private void LDX_AB()
         {
-            registers.X = memory.ReadByte(Absolute());
+            registers.X = ReadByteFromMemory(Absolute());
             Set_FlagsNZ(registers.X);
             cyclesThisOperation += 4;
         }
         private void LDX_ABY()
         {
-            registers.X = memory.ReadByte(Y_Indexed_Absolute());
+            registers.X = ReadByteFromMemory(Y_Indexed_Absolute());
             Set_FlagsNZ(registers.X);
             cyclesThisOperation += 4;
         }
         private void LDX_ZP()
         {
-            registers.X = memory.ReadByte(Zero_Page());
+            registers.X = ReadByteFromMemory(Zero_Page());
             Set_FlagsNZ(registers.X);
             cyclesThisOperation += 3;
         }
         private void LDX_ZPY()
         {
-            registers.X = memory.ReadByte(Y_Indexed_Zero_Page());
+            registers.X = ReadByteFromMemory(Y_Indexed_Zero_Page());
             Set_FlagsNZ(registers.X);
             cyclesThisOperation += 4;
         }
@@ -824,25 +840,25 @@ namespace _6502CPU
         }
         private void LDY_AB()
         {
-            registers.Y = memory.ReadByte(Absolute());
+            registers.Y = ReadByteFromMemory(Absolute());
             Set_FlagsNZ(registers.Y);
             cyclesThisOperation += 4;
         }
         private void LDY_ABX()
         {
-            registers.Y = memory.ReadByte(X_Indexed_Absolute());
+            registers.Y = ReadByteFromMemory(X_Indexed_Absolute());
             Set_FlagsNZ(registers.Y);
             cyclesThisOperation += 4;
         }
         private void LDY_ZP()
         {
-            registers.Y = memory.ReadByte(Zero_Page());
+            registers.Y = ReadByteFromMemory(Zero_Page());
             Set_FlagsNZ(registers.Y);
             cyclesThisOperation += 3;
         }
         private void LDY_ZPX()
         {
-            registers.Y = memory.ReadByte(X_Indexed_Zero_Page());
+            registers.Y = ReadByteFromMemory(X_Indexed_Zero_Page());
             Set_FlagsNZ(registers.Y);
             cyclesThisOperation += 4;
         }
@@ -851,67 +867,67 @@ namespace _6502CPU
         #region ST*
         private void STA_AB()
         {
-            memory.WriteByte(Absolute(), registers.A);
+            WriteByteToMemory(Absolute(), registers.A);
             cyclesThisOperation += 4;
         }
         private void STA_ABX()
         {
-            memory.WriteByte(X_Indexed_Absolute(false), registers.A);
+            WriteByteToMemory(X_Indexed_Absolute(false), registers.A);
             cyclesThisOperation += 5;
         }
         private void STA_ABY()
         {
-            memory.WriteByte(Y_Indexed_Absolute(false), registers.A);
+            WriteByteToMemory(Y_Indexed_Absolute(false), registers.A);
             cyclesThisOperation += 5;
         }
         private void STA_ZP()
         {
-            memory.WriteByte(Zero_Page(), registers.A);
+            WriteByteToMemory(Zero_Page(), registers.A);
             cyclesThisOperation += 3;
         }
         private void STA_ZPX()
         {
-            memory.WriteByte(X_Indexed_Zero_Page(), registers.A);
+            WriteByteToMemory(X_Indexed_Zero_Page(), registers.A);
             cyclesThisOperation += 4;
         }
         private void STA_ZPIX()
         {
-            memory.WriteByte(X_Indexed_Zero_Page_Indirect(), registers.A);
+            WriteByteToMemory(X_Indexed_Zero_Page_Indirect(), registers.A);
             cyclesThisOperation += 6;
         }
         private void STA_ZPIY()
         {
-            memory.WriteByte(Zero_Page_Indirect_Y_Indexed(false), registers.A);
+            WriteByteToMemory(Zero_Page_Indirect_Y_Indexed(false), registers.A);
             cyclesThisOperation += 6;
         }
         private void STX_AB()
         {
-            memory.WriteByte(Absolute(), registers.X);
+            WriteByteToMemory(Absolute(), registers.X);
             cyclesThisOperation += 4;
         }
         private void STX_ZP()
         {
-            memory.WriteByte(Zero_Page(), registers.X);
+            WriteByteToMemory(Zero_Page(), registers.X);
             cyclesThisOperation += 3;
         }
         private void STX_ZPY()
         {
-            memory.WriteByte(Y_Indexed_Zero_Page(), registers.X);
+            WriteByteToMemory(Y_Indexed_Zero_Page(), registers.X);
             cyclesThisOperation += 4;
         }
         private void STY_AB()
         {
-            memory.WriteByte(Absolute(), registers.Y);
+            WriteByteToMemory(Absolute(), registers.Y);
             cyclesThisOperation += 4;
         }
         private void STY_ZP()
         {
-            memory.WriteByte(Zero_Page(), registers.Y);
+            WriteByteToMemory(Zero_Page(), registers.Y);
             cyclesThisOperation += 3;
         }
         private void STY_ZPX()
         {
-            memory.WriteByte(X_Indexed_Zero_Page(), registers.Y);
+            WriteByteToMemory(X_Indexed_Zero_Page(), registers.Y);
             cyclesThisOperation += 4;
         }
         #endregion
@@ -974,7 +990,7 @@ namespace _6502CPU
         #region PH*
         private void PHA()
         {
-            StackPush(registers.A);
+            PushToStack(registers.A);
             cyclesThisOperation += 3;
         }
         private void PHP()
@@ -982,7 +998,7 @@ namespace _6502CPU
             byte addr = registers.Flags.GetFlagsAsByte();
             addr = (byte)(addr | (1 << 4));
             addr = (byte)(addr | (1 << 5));
-            StackPush(addr);
+            PushToStack(addr);
             cyclesThisOperation += 3;
         }
         #endregion
@@ -990,13 +1006,13 @@ namespace _6502CPU
         #region PL*
         private void PLA()
         {
-            registers.A = StackPop();
+            registers.A = PopFromStack();
             Set_FlagsNZ(registers.A);
             cyclesThisOperation += 4;
         }
         private void PLP()
         {
-            byte value = StackPop();
+            byte value = PopFromStack();
             registers.Flags.SetFlagsFromByte(value, 0xCF); //ignore bits 5 & 6
             cyclesThisOperation += 4;
         }
@@ -1029,36 +1045,36 @@ namespace _6502CPU
         private void DECA()
         {
             ulong addr = Absolute();
-            byte value1 = memory.ReadByte(addr);
+            byte value1 = ReadByteFromMemory(addr);
             byte value2 = (byte)((value1 + (~0x01)) + 1);
-            memory.WriteByte(addr, value2);
+            WriteByteToMemory(addr, value2);
             Set_FlagsNZ(value2);
             cyclesThisOperation += 6;
         }
         private void DECXA()
         {
             ulong addr = X_Indexed_Absolute();
-            byte value1 = memory.ReadByte(addr);
+            byte value1 = ReadByteFromMemory(addr);
             byte value2 = (byte)((value1 + (~0x01)) + 1);
-            memory.WriteByte(addr, value2);
+            WriteByteToMemory(addr, value2);
             Set_FlagsNZ(value2);
             cyclesThisOperation += 7;
         }
         private void DECZP()
         {
             ulong addr = Zero_Page();
-            byte value1 = memory.ReadByte(addr);
+            byte value1 = ReadByteFromMemory(addr);
             byte value2 = (byte)((value1 + (~0x01)) + 1);
-            memory.WriteByte(addr, value2);
+            WriteByteToMemory(addr, value2);
             Set_FlagsNZ(value2);
             cyclesThisOperation += 5;
         }
         private void DECXZP()
         {
             ulong addr = X_Indexed_Zero_Page();
-            byte value1 = memory.ReadByte(addr);
+            byte value1 = ReadByteFromMemory(addr);
             byte value2 = (byte)((value1 + (~0x01)) + 1);
-            memory.WriteByte(addr, value2);
+            WriteByteToMemory(addr, value2);
             Set_FlagsNZ(value2);
             cyclesThisOperation += 6;
         }
@@ -1085,40 +1101,40 @@ namespace _6502CPU
         private void INCA()
         {
             ulong addr = Absolute();
-            byte value1 = memory.ReadByte(addr);
+            byte value1 = ReadByteFromMemory(addr);
             value1++;
             value1 = (byte)(value1 & 0xFF);
-            memory.WriteByte(addr, value1);
+            WriteByteToMemory(addr, value1);
             Set_FlagsNZ(value1);
             cyclesThisOperation += 6;
         }
         private void INCXA()
         {
             ulong addr = X_Indexed_Absolute();
-            byte value1 = memory.ReadByte(addr);
+            byte value1 = ReadByteFromMemory(addr);
             value1++;
             value1 = (byte)(value1 & 0xFF);
-            memory.WriteByte(addr, value1);
+            WriteByteToMemory(addr, value1);
             Set_FlagsNZ(value1);
             cyclesThisOperation += 7;
         }
         private void INCZP()
         {
             ulong addr = Zero_Page();
-            byte value1 = memory.ReadByte(addr);
+            byte value1 = ReadByteFromMemory(addr);
             value1++;
             value1 = (byte)(value1 & 0xFF);
-            memory.WriteByte(addr, value1);
+            WriteByteToMemory(addr, value1);
             Set_FlagsNZ(value1);
             cyclesThisOperation += 5;
         }
         private void INCXZP()
         {
             ulong addr = X_Indexed_Zero_Page();
-            byte value1 = memory.ReadByte(addr);
+            byte value1 = ReadByteFromMemory(addr);
             value1++;
             value1 = (byte)(value1 & 0xFF);
-            memory.WriteByte(addr, value1);
+            WriteByteToMemory(addr, value1);
             Set_FlagsNZ(value1);
             cyclesThisOperation += 6;
         }
@@ -1151,7 +1167,7 @@ namespace _6502CPU
         }
         private void CMPA()
         {
-            byte addr = memory.ReadByte(Absolute());
+            byte addr = ReadByteFromMemory(Absolute());
             byte value2 = (byte)(registers.A - addr);
             registers.Flags.C = (addr <= registers.A);
             Set_FlagsNZ(value2);
@@ -1159,7 +1175,7 @@ namespace _6502CPU
         }
         private void CMPXA()
         {
-            byte addr = memory.ReadByte(X_Indexed_Absolute());
+            byte addr = ReadByteFromMemory(X_Indexed_Absolute());
             byte value2 = (byte)(registers.A - addr);
             registers.Flags.C = (addr <= registers.A);
             Set_FlagsNZ(value2);
@@ -1167,7 +1183,7 @@ namespace _6502CPU
         }
         private void CMPYA()
         {
-            byte addr = memory.ReadByte(Y_Indexed_Absolute());
+            byte addr = ReadByteFromMemory(Y_Indexed_Absolute());
             byte value2 = (byte)(registers.A - addr);
             registers.Flags.C = (addr <= registers.A);
             Set_FlagsNZ(value2);
@@ -1175,7 +1191,7 @@ namespace _6502CPU
         }
         private void CMPZ()
         {
-            byte addr = memory.ReadByte(Zero_Page());
+            byte addr = ReadByteFromMemory(Zero_Page());
             byte value2 = (byte)(registers.A - addr);
             registers.Flags.C = (addr <= registers.A);
             Set_FlagsNZ(value2);
@@ -1183,7 +1199,7 @@ namespace _6502CPU
         }
         private void CMPXZ()
         {
-            byte addr = memory.ReadByte(X_Indexed_Zero_Page());
+            byte addr = ReadByteFromMemory(X_Indexed_Zero_Page());
             byte value2 = (byte)(registers.A - addr);
             registers.Flags.C = (addr <= registers.A);
             Set_FlagsNZ(value2);
@@ -1191,7 +1207,7 @@ namespace _6502CPU
         }
         private void CMPXZI()
         {
-            byte addr = memory.ReadByte(X_Indexed_Zero_Page_Indirect());
+            byte addr = ReadByteFromMemory(X_Indexed_Zero_Page_Indirect());
             byte value2 = (byte)(registers.A - addr);
             registers.Flags.C = (addr <= registers.A);
             Set_FlagsNZ(value2);
@@ -1199,7 +1215,7 @@ namespace _6502CPU
         }
         private void CMPYZI()
         {
-            byte addr = memory.ReadByte(Zero_Page_Indirect_Y_Indexed());
+            byte addr = ReadByteFromMemory(Zero_Page_Indirect_Y_Indexed());
             byte value2 = (byte)(registers.A - addr);
             registers.Flags.C = (addr <= registers.A);
             Set_FlagsNZ(value2);
@@ -1218,7 +1234,7 @@ namespace _6502CPU
         }
         private void CPXA()
         {
-            byte addr = memory.ReadByte(Absolute());
+            byte addr = ReadByteFromMemory(Absolute());
             byte value = (byte)(registers.X - addr);
             registers.Flags.C = (registers.X >= value);
             Set_FlagsNZ(value);
@@ -1226,7 +1242,7 @@ namespace _6502CPU
         }
         private void CPXZ()
         {
-            byte addr = memory.ReadByte(Zero_Page());
+            byte addr = ReadByteFromMemory(Zero_Page());
             byte value = (byte)(registers.X - addr);
             registers.Flags.C = (registers.X >= value);
             Set_FlagsNZ(value);
@@ -1245,7 +1261,7 @@ namespace _6502CPU
         }
         private void CPYA()
         {
-            byte addr = memory.ReadByte(Absolute());
+            byte addr = ReadByteFromMemory(Absolute());
             byte value = (byte)((registers.Y + (~addr)) + 1);
             registers.Flags.C = (registers.Y >= value);
             Set_FlagsNZ(value);
@@ -1253,7 +1269,7 @@ namespace _6502CPU
         }
         private void CPYZ()
         {
-            byte addr = memory.ReadByte(Zero_Page());
+            byte addr = ReadByteFromMemory(Zero_Page());
             byte value = (byte)((registers.Y + (~addr)) + 1);
             registers.Flags.C = (registers.Y >= value);
             Set_FlagsNZ(value);
@@ -1266,41 +1282,49 @@ namespace _6502CPU
         {
             byte value = Immediate();
             ADC(value);
+            cyclesThisOperation += 2;
         }
         private void ADCA()
         {
-            byte value = memory.ReadByte(Absolute());
+            byte value = ReadByteFromMemory(Absolute());
             ADC(value);
+            cyclesThisOperation += 4;
         }
         private void ADCXA()
         {
-            byte value = memory.ReadByte(X_Indexed_Absolute());
+            byte value = ReadByteFromMemory(X_Indexed_Absolute());
             ADC(value);
+            cyclesThisOperation += 4;
         }
         private void ADCYA()
         {
-            byte value = memory.ReadByte(Y_Indexed_Absolute());
+            byte value = ReadByteFromMemory(Y_Indexed_Absolute());
             ADC(value);
+            cyclesThisOperation += 4;
         }
         private void ADCZ()
         {
-            byte value = memory.ReadByte(Zero_Page());
+            byte value = ReadByteFromMemory(Zero_Page());
             ADC(value);
+            cyclesThisOperation += 3;
         }
         private void ADCXZ()
         {
-            byte value = memory.ReadByte(X_Indexed_Zero_Page());
+            byte value = ReadByteFromMemory(X_Indexed_Zero_Page());
             ADC(value);
+            cyclesThisOperation += 4;
         }
         private void ADCXZI()
         {
-            byte value = memory.ReadByte(X_Indexed_Zero_Page_Indirect());
+            byte value = ReadByteFromMemory(X_Indexed_Zero_Page_Indirect());
             ADC(value);
+            cyclesThisOperation += 6;
         }
         private void ADCYZI()
         {
-            byte value = memory.ReadByte(Zero_Page_Indirect_Y_Indexed());
+            byte value = ReadByteFromMemory(Zero_Page_Indirect_Y_Indexed());
             ADC(value);
+            cyclesThisOperation += 5;
         }
         private void ADC(byte value)
         {
@@ -1337,41 +1361,49 @@ namespace _6502CPU
         {
             byte value = Immediate();
             SBC(value);
+            cyclesThisOperation += 3;
         }
         private void SBCA()
         {
-            byte value = memory.ReadByte(Absolute());
+            byte value = ReadByteFromMemory(Absolute());
             SBC(value);
+            cyclesThisOperation += 4;
         }
         private void SBCXA()
         {
-            byte value = memory.ReadByte(X_Indexed_Absolute());
+            byte value = ReadByteFromMemory(X_Indexed_Absolute());
             SBC(value);
+            cyclesThisOperation += 4;
         }
         private void SBCYA()
         {
-            byte value = memory.ReadByte(Y_Indexed_Absolute());
+            byte value = ReadByteFromMemory(Y_Indexed_Absolute());
             SBC(value);
+            cyclesThisOperation += 4;
         }
         private void SBCZ()
         {
-            byte value = memory.ReadByte(Zero_Page());
+            byte value = ReadByteFromMemory(Zero_Page());
             SBC(value);
+            cyclesThisOperation += 3;
         }
         private void SBCXZ()
         {
-            byte value = memory.ReadByte(X_Indexed_Zero_Page());
+            byte value = ReadByteFromMemory(X_Indexed_Zero_Page());
             SBC(value);
+            cyclesThisOperation += 4;
         }
         private void SBCXZI()
         {
-            byte value = memory.ReadByte(X_Indexed_Zero_Page_Indirect());
+            byte value = ReadByteFromMemory(X_Indexed_Zero_Page_Indirect());
             SBC(value);
+            cyclesThisOperation += 6;
         }
         private void SBCYZI()
         {
-            byte value = memory.ReadByte(Zero_Page_Indirect_Y_Indexed());
+            byte value = ReadByteFromMemory(Zero_Page_Indirect_Y_Indexed());
             SBC(value);
+            cyclesThisOperation += 5;
         }
         private void SBC(byte value)
         {
@@ -1409,55 +1441,63 @@ namespace _6502CPU
             byte value = (byte)(registers.A ^ addr);
             registers.A = value;
             Set_FlagsNZ(value);
+            cyclesThisOperation += 2;
         }
         private void EORA()
         {
-            byte addr = memory.ReadByte(Absolute());
+            byte addr = ReadByteFromMemory(Absolute());
             byte value = (byte)(registers.A ^ addr);
             registers.A = value;
             Set_FlagsNZ(value);
+            cyclesThisOperation += 4;
         }
         private void EORXA()
         {
-            byte addr = memory.ReadByte(X_Indexed_Absolute());
+            byte addr = ReadByteFromMemory(X_Indexed_Absolute());
             byte value = (byte)(registers.A ^ addr);
             registers.A = value;
             Set_FlagsNZ(value);
+            cyclesThisOperation += 4;
         }
         private void EORYA()
         {
-            byte addr = memory.ReadByte(Y_Indexed_Absolute());
+            byte addr = ReadByteFromMemory(Y_Indexed_Absolute());
             byte value = (byte)(registers.A ^ addr);
             registers.A = value;
             Set_FlagsNZ(value);
+            cyclesThisOperation += 4;
         }
         private void EORZ()
         {
-            byte addr = memory.ReadByte(Zero_Page());
+            byte addr = ReadByteFromMemory(Zero_Page());
             byte value = (byte)(registers.A ^ addr);
             registers.A = value;
             Set_FlagsNZ(value);
+            cyclesThisOperation += 3;
         }
         private void EORXZ()
         {
-            byte addr = memory.ReadByte(X_Indexed_Zero_Page());
+            byte addr = ReadByteFromMemory(X_Indexed_Zero_Page());
             byte value = (byte)(registers.A ^ addr);
             registers.A = value;
             Set_FlagsNZ(value);
+            cyclesThisOperation += 4;
         }
         private void EORXZI()
         {
-            byte addr = memory.ReadByte(X_Indexed_Zero_Page_Indirect());
+            byte addr = ReadByteFromMemory(X_Indexed_Zero_Page_Indirect());
             byte value = (byte)(registers.A ^ addr);
             registers.A = value;
             Set_FlagsNZ(value);
+            cyclesThisOperation += 6;
         }
         private void EORYZI()
         {
-            byte addr = memory.ReadByte(Zero_Page_Indirect_Y_Indexed());
+            byte addr = ReadByteFromMemory(Zero_Page_Indirect_Y_Indexed());
             byte value = (byte)(registers.A ^ addr);
             registers.A = value;
             Set_FlagsNZ(value);
+            cyclesThisOperation += 5;
         }
         #endregion
 
@@ -1468,55 +1508,63 @@ namespace _6502CPU
             byte value = (byte)(registers.A | addr);
             registers.A = value;
             Set_FlagsNZ(value);
+            cyclesThisOperation += 2;
         }
         private void ORAA()
         {
-            byte addr = memory.ReadByte(Absolute());
+            byte addr = ReadByteFromMemory(Absolute());
             byte value = (byte)(registers.A | addr);
             registers.A = value;
             Set_FlagsNZ(value);
+            cyclesThisOperation += 4;
         }
         private void ORAXA()
         {
-            byte addr = memory.ReadByte(X_Indexed_Absolute());
+            byte addr = ReadByteFromMemory(X_Indexed_Absolute());
             byte value = (byte)(registers.A | addr);
             registers.A = value;
             Set_FlagsNZ(value);
+            cyclesThisOperation += 4;
         }
         private void ORAYA()
         {
-            byte addr = memory.ReadByte(Y_Indexed_Absolute());
+            byte addr = ReadByteFromMemory(Y_Indexed_Absolute());
             byte value = (byte)(registers.A | addr);
             registers.A = value;
             Set_FlagsNZ(value);
+            cyclesThisOperation += 4;
         }
         private void ORAZ()
         {
-            byte addr = memory.ReadByte(Zero_Page());
+            byte addr = ReadByteFromMemory(Zero_Page());
             byte value = (byte)(registers.A | addr);
             registers.A = value;
             Set_FlagsNZ(value);
+            cyclesThisOperation += 3;
         }
         private void ORAXZ()
         {
-            byte addr = memory.ReadByte(X_Indexed_Zero_Page());
+            byte addr = ReadByteFromMemory(X_Indexed_Zero_Page());
             byte value = (byte)(registers.A | addr);
             registers.A = value;
             Set_FlagsNZ(value);
+            cyclesThisOperation += 4;
         }
         private void ORAXZI()
         {
-            byte addr = memory.ReadByte(X_Indexed_Zero_Page_Indirect());
+            byte addr = ReadByteFromMemory(X_Indexed_Zero_Page_Indirect());
             byte value = (byte)(registers.A | addr);
             registers.A = value;
             Set_FlagsNZ(value);
+            cyclesThisOperation += 6;
         }
         private void ORAYZI()
         {
-            byte addr = memory.ReadByte(Zero_Page_Indirect_Y_Indexed());
+            byte addr = ReadByteFromMemory(Zero_Page_Indirect_Y_Indexed());
             byte value = (byte)(registers.A | addr);
             registers.A = value;
             Set_FlagsNZ(value);
+            cyclesThisOperation += 5;
         }
         #endregion
 
@@ -1527,74 +1575,84 @@ namespace _6502CPU
             byte value = (byte)(registers.A & addr);
             registers.A = value;
             Set_FlagsNZ(value);
+            cyclesThisOperation += 2;
         }
         private void ANDA()
         {
-            byte addr = memory.ReadByte(Absolute());
+            byte addr = ReadByteFromMemory(Absolute());
             byte value = (byte)(registers.A & addr);
             registers.A = value;
             Set_FlagsNZ(value);
+            cyclesThisOperation += 4;
         }
         private void ANDXA()
         {
-            byte addr = memory.ReadByte(X_Indexed_Absolute());
+            byte addr = ReadByteFromMemory(X_Indexed_Absolute());
             byte value = (byte)(registers.A & addr);
             registers.A = value;
             Set_FlagsNZ(value);
+            cyclesThisOperation += 4;
         }
         private void ANDYA()
         {
-            byte addr = memory.ReadByte(Y_Indexed_Absolute());
+            byte addr = ReadByteFromMemory(Y_Indexed_Absolute());
             byte value = (byte)(registers.A & addr);
             registers.A = value;
             Set_FlagsNZ(value);
+            cyclesThisOperation += 4;
         }
         private void ANDZ()
         {
-            byte addr = memory.ReadByte(Zero_Page());
+            byte addr = ReadByteFromMemory(Zero_Page());
             byte value = (byte)(registers.A & addr);
             registers.A = value;
             Set_FlagsNZ(value);
+            cyclesThisOperation += 3;
         }
         private void ANDXZ()
         {
-            byte addr = memory.ReadByte(X_Indexed_Zero_Page());
+            byte addr = ReadByteFromMemory(X_Indexed_Zero_Page());
             byte value = (byte)(registers.A & addr);
             registers.A = value;
             Set_FlagsNZ(value);
+            cyclesThisOperation += 4;
         }
         private void ANDXZI()
         {
-            byte addr = memory.ReadByte(X_Indexed_Zero_Page_Indirect());
+            byte addr = ReadByteFromMemory(X_Indexed_Zero_Page_Indirect());
             byte value = (byte)(registers.A & addr);
             registers.A = value;
             Set_FlagsNZ(value);
+            cyclesThisOperation += 6;
         }
         private void ANDYZI()
         {
-            byte addr = memory.ReadByte(Zero_Page_Indirect_Y_Indexed());
+            byte addr = ReadByteFromMemory(Zero_Page_Indirect_Y_Indexed());
             byte value = (byte)(registers.A & addr);
             registers.A = value;
             Set_FlagsNZ(value);
+            cyclesThisOperation += 5;
         }
         #endregion
 
         #region BIT
         private void BITA()
         {
-            byte addr = memory.ReadByte(Absolute());
+            byte addr = ReadByteFromMemory(Absolute());
             byte value = (byte)(registers.A & addr);
             registers.Flags.N = ((addr & (1 << 7)) != 0);
             registers.Flags.V = ((addr & (1 << 6)) != 0);
             registers.Flags.Z = (value == 0);
+            cyclesThisOperation += 4;
         }
         private void BITZ()
         {
-            byte addr = memory.ReadByte(Zero_Page());
+            byte addr = ReadByteFromMemory(Zero_Page());
             byte value = (byte)(registers.A & addr);
             registers.Flags.N = ((addr & (1 << 7)) != 0);
             registers.Flags.V = ((addr & (1 << 6)) != 0);
             registers.Flags.Z = (value == 0);
+            cyclesThisOperation += 3;
         }
         #endregion
 
@@ -1608,50 +1666,55 @@ namespace _6502CPU
             value ^= (byte)((-0 ^ value) & (1 << 0));
             registers.Flags.Z = (value == 0);
             registers.A = (byte)value;
+            cyclesThisOperation += 2;
         }
         private void ASLA()
         {
             ulong addr = Absolute();
-            byte value = memory.ReadByte(addr);
+            byte value = ReadByteFromMemory(addr);
             registers.Flags.N = ((value & (1 << 6)) != 0);
             registers.Flags.C = ((value & (1 << 7)) != 0);
             byte value2 = (byte)(value << 1);
             value2 ^= (byte)((-0 ^ value2) & (1 << 0));
             registers.Flags.Z = (value2 == 0);
-            memory.WriteByte(addr, value2);
+            WriteByteToMemory(addr, value2);
+            cyclesThisOperation += 6;
         }
         private void ASLXA()
         {
-            ulong addr = X_Indexed_Absolute();
-            byte value = memory.ReadByte(addr);
+            ulong addr = X_Indexed_Absolute(false);
+            byte value = ReadByteFromMemory(addr);
             registers.Flags.N = ((value & (1 << 6)) != 0);
             registers.Flags.C = ((value & (1 << 7)) != 0);
             byte value2 = (byte)(value << 1);
             value2 ^= (byte)((-0 ^ value2) & (1 << 0));
             registers.Flags.Z = (value2 == 0);
-            memory.WriteByte(addr, value2);
+            WriteByteToMemory(addr, value2);
+            cyclesThisOperation += 7;
         }
         private void ASLZ()
         {
             ulong addr = Zero_Page();
-            byte value = memory.ReadByte(addr);
+            byte value = ReadByteFromMemory(addr);
             registers.Flags.N = ((value & (1 << 6)) != 0);
             registers.Flags.C = ((value & (1 << 7)) != 0);
             byte value2 = (byte)(value << 1);
             value2 ^= (byte)((-0 ^ value2) & (1 << 0));
             registers.Flags.Z = (value2 == 0);
-            memory.WriteByte(addr, value2);
+            WriteByteToMemory(addr, value2);
+            cyclesThisOperation += 5;
         }
         private void ASLXZ()
         {
             ulong addr = X_Indexed_Zero_Page();
-            byte value = memory.ReadByte(addr);
+            byte value = ReadByteFromMemory(addr);
             registers.Flags.N = ((value & (1 << 6)) != 0);
             registers.Flags.C = ((value & (1 << 7)) != 0);
             byte value2 = (byte)(value << 1);
             value2 ^= (byte)((-0 ^ value2) & (1 << 0));
             registers.Flags.Z = (value2 == 0);
-            memory.WriteByte(addr, value2);
+            WriteByteToMemory(addr, value2);
+            cyclesThisOperation += 6;
         }
         #endregion
 
@@ -1665,50 +1728,55 @@ namespace _6502CPU
             value ^= (byte)((-0 ^ value) & (1 << 7));
             registers.Flags.Z = (value == 0);
             registers.A = (byte)value;
+            cyclesThisOperation += 2;
         }
         private void LSRA()
         {
             ulong addr = Absolute();
-            byte value = memory.ReadByte(addr);
+            byte value = ReadByteFromMemory(addr);
             registers.Flags.N = false;
             registers.Flags.C = ((value & (1 << 0)) != 0);
             byte value2 = (byte)(value >> 1);
             value2 ^= (byte)((-0 ^ value2) & (1 << 7));
             registers.Flags.Z = (value2 == 0);
-            memory.WriteByte(addr, value2);
+            WriteByteToMemory(addr, value2);
+            cyclesThisOperation += 6;
         }
         private void LSRXA()
         {
-            ulong addr = X_Indexed_Absolute();
-            byte value = memory.ReadByte(addr);
+            ulong addr = X_Indexed_Absolute(false);
+            byte value = ReadByteFromMemory(addr);
             registers.Flags.N = false;
             registers.Flags.C = ((value & (1 << 0)) != 0);
             byte value2 = (byte)(value >> 1);
             value2 ^= (byte)((-0 ^ value2) & (1 << 7));
             registers.Flags.Z = (value2 == 0);
-            memory.WriteByte(addr, value2);
+            WriteByteToMemory(addr, value2);
+            cyclesThisOperation += 7;
         }
         private void LSRZ()
         {
             ulong addr = Zero_Page();
-            byte value = memory.ReadByte(addr);
+            byte value = ReadByteFromMemory(addr);
             registers.Flags.N = false;
             registers.Flags.C = ((value & (1 << 0)) != 0);
             byte value2 = (byte)(value >> 1);
             value2 ^= (byte)((-0 ^ value2) & (1 << 7));
             registers.Flags.Z = (value2 == 0);
-            memory.WriteByte(addr, value2);
+            WriteByteToMemory(addr, value2);
+            cyclesThisOperation += 5;
         }
         private void LSRXZ()
         {
             ulong addr = X_Indexed_Zero_Page();
-            byte value = memory.ReadByte(addr);
+            byte value = ReadByteFromMemory(addr);
             registers.Flags.N = false;
             registers.Flags.C = ((value & (1 << 0)) != 0);
             byte value2 = (byte)(value >> 1);
             value2 ^= (byte)((-0 ^ value2) & (1 << 7));
             registers.Flags.Z = (value2 == 0);
-            memory.WriteByte(addr, value2);
+            WriteByteToMemory(addr, value2);
+            cyclesThisOperation += 6;
         }
         #endregion
 
@@ -1721,46 +1789,51 @@ namespace _6502CPU
             registers.Flags.C = ((addr & (1 << 7)) != 0);
             Set_FlagsNZ(value);
             registers.A = (byte)value;
+            cyclesThisOperation += 2;
         }
         private void ROLA()
         {
             ulong addr = Absolute();
-            byte value = memory.ReadByte(addr);
+            byte value = ReadByteFromMemory(addr);
             int carry = registers.Flags.C == true ? 1 : 0;
             byte value2 = (byte)((value << 1) + carry);
             registers.Flags.C = ((value & (1 << 7)) != 0);
             Set_FlagsNZ(value2);
-            memory.WriteByte(addr, value2);
+            WriteByteToMemory(addr, value2);
+            cyclesThisOperation += 6;
         }
         private void ROLXA()
         {
-            ulong addr = X_Indexed_Absolute();
-            byte value = memory.ReadByte(addr);
+            ulong addr = X_Indexed_Absolute(false);
+            byte value = ReadByteFromMemory(addr);
             int carry = registers.Flags.C == true ? 1 : 0;
             byte value2 = (byte)((value << 1) + carry);
             registers.Flags.C = ((value & (1 << 7)) != 0);
             Set_FlagsNZ(value2);
-            memory.WriteByte(addr, value2);
+            WriteByteToMemory(addr, value2);
+            cyclesThisOperation += 7;
         }
         private void ROLZ()
         {
             ulong addr = Zero_Page();
-            byte value = memory.ReadByte(addr);
+            byte value = ReadByteFromMemory(addr);
             int carry = registers.Flags.C == true ? 1 : 0;
             byte value2 = (byte)((value << 1) + carry);
             registers.Flags.C = ((value & (1 << 7)) != 0);
             Set_FlagsNZ(value2);
-            memory.WriteByte(addr, value2);
+            WriteByteToMemory(addr, value2);
+            cyclesThisOperation += 5;
         }
         private void ROLXZ()
         {
             ulong addr = X_Indexed_Zero_Page();
-            byte value = memory.ReadByte(addr);
+            byte value = ReadByteFromMemory(addr);
             int carry = registers.Flags.C == true ? 1 : 0;
             byte value2 = (byte)((value << 1) + carry);
             registers.Flags.C = ((value & (1 << 7)) != 0);
             Set_FlagsNZ(value2);
-            memory.WriteByte(addr, value2);
+            WriteByteToMemory(addr, value2);
+            cyclesThisOperation += 6;
         }
         #endregion
 
@@ -1774,50 +1847,55 @@ namespace _6502CPU
             registers.Flags.C = ((addr & (1 << 0)) != 0);
             Set_FlagsNZ(value);
             registers.A = (byte)value;
+            cyclesThisOperation += 2;
         }
         private void RORA()
         {
             ulong addr = Absolute();
-            byte value = memory.ReadByte(addr);
+            byte value = ReadByteFromMemory(addr);
             byte value2 = (byte)(value >> 1);
             if (registers.Flags.C)
                 value2 += 0x80;
             registers.Flags.C = ((value & (1 << 0)) != 0);
             Set_FlagsNZ(value2);
-            memory.WriteByte(addr, value2);
+            WriteByteToMemory(addr, value2);
+            cyclesThisOperation += 7;
         }
         private void RORXA()
         {
-            ulong addr = X_Indexed_Absolute();
-            byte value = memory.ReadByte(addr);
+            ulong addr = X_Indexed_Absolute(false);
+            byte value = ReadByteFromMemory(addr);
             byte value2 = (byte)(value >> 1);
             if (registers.Flags.C)
                 value2 += 0x80;
             registers.Flags.C = ((value & (1 << 0)) != 0);
             Set_FlagsNZ(value2);
-            memory.WriteByte(addr, value2);
+            WriteByteToMemory(addr, value2);
+            cyclesThisOperation += 7;
         }
         private void RORZ()
         {
             ulong addr = Zero_Page();
-            byte value = memory.ReadByte(addr);
+            byte value = ReadByteFromMemory(addr);
             byte value2 = (byte)(value >> 1);
             if (registers.Flags.C)
                 value2 += 0x80;
             registers.Flags.C = ((value & (1 << 0)) != 0);
             Set_FlagsNZ(value2);
-            memory.WriteByte(addr, value2);
+            WriteByteToMemory(addr, value2);
+            cyclesThisOperation += 5;
         }
         private void RORXZ()
         {
             ulong addr = X_Indexed_Zero_Page();
-            byte value = memory.ReadByte(addr);
+            byte value = ReadByteFromMemory(addr);
             byte value2 = (byte)(value >> 1);
             if (registers.Flags.C)
                 value2 += 0x80;
             registers.Flags.C = ((value & (1 << 0)) != 0);
             Set_FlagsNZ(value2);
-            memory.WriteByte(addr, value2);
+            WriteByteToMemory(addr, value2);
+            cyclesThisOperation += 6;
         }
         #endregion
 
@@ -1825,74 +1903,82 @@ namespace _6502CPU
         private void BCC()
         {
             cyclesThisOperation += 2;
-            byte value = memory.ReadByte(registers.PC);
-            registers.IncPC();
+            byte value = ReadByteFromMemory(registers.PC);
+            IncrementProgramCounter();
             if (!registers.Flags.C)
                 Branch(value);
-        }
+            cyclesThisOperation += 4;        }
         private void BCS()
         {
             cyclesThisOperation += 2;
-            byte value = memory.ReadByte(registers.PC);
-            registers.IncPC();
+            byte value = ReadByteFromMemory(registers.PC);
+            IncrementProgramCounter();
             if (registers.Flags.C)
                 Branch(value);
         }
         private void BEQ()
         {
             cyclesThisOperation += 2;
-            byte value = memory.ReadByte(registers.PC);
-            registers.IncPC();
+            byte value = ReadByteFromMemory(registers.PC);
+            IncrementProgramCounter();
             if (registers.Flags.Z)
                 Branch(value);
         }
         private void BMI()
         {
-            byte value = memory.ReadByte(registers.PC);
+            byte value = ReadByteFromMemory(registers.PC);
             cyclesThisOperation += 2;
-            registers.IncPC();
+            IncrementProgramCounter();
             if (registers.Flags.N)
                 Branch(value);
         }
         private void BNE()
         {
             cyclesThisOperation += 2;
-            byte value = memory.ReadByte(registers.PC);
-            registers.IncPC();
+            byte value = ReadByteFromMemory(registers.PC);
+            IncrementProgramCounter();
             if (!registers.Flags.Z)
                 Branch(value);
         }
         private void BPL()
         {
             cyclesThisOperation += 2;
-            byte value = memory.ReadByte(registers.PC);
-            registers.IncPC();
+            byte value = ReadByteFromMemory(registers.PC);
+            IncrementProgramCounter();
             if (!registers.Flags.N)
                 Branch(value);
         }
         private void BVC()
         {
             cyclesThisOperation += 2;
-            byte value = memory.ReadByte(registers.PC);
-            registers.IncPC();
+            byte value = ReadByteFromMemory(registers.PC);
+            IncrementProgramCounter();
             if (!registers.Flags.V)
                 Branch(value);
         }
         private void BVS()
         {
             cyclesThisOperation += 2;
-            byte value = memory.ReadByte(registers.PC);
-            registers.IncPC();
+            byte value = ReadByteFromMemory(registers.PC);
+            IncrementProgramCounter();
             if (registers.Flags.V)
                 Branch(value);
         }
         private void BRK()
         {
-            Break(true, 0xFFFE);
+            IncrementProgramCounter();
+            registers.Flags.B = true;
+            PushToStack((byte)((registers.PC >> 8) & 0xFF));
+            PushToStack((byte)(registers.PC & 0xFF));
+            PushToStack(registers.P);
+            registers.Flags.B = false;
+            registers.Flags.I = true;
+            registers.PC = (ulong)(ReadByteFromMemory(0xFFFE) + ReadByteFromMemory(0xFFFF) * 0x100);
+            cyclesThisOperation += 7;
         }
         private void Branch(ulong value)
         {
-            cyclesThisOperation += 1;
+            cyclesThisOperation += 2;
             if ((value & 0x80) == 0)
                 registers.PC = (registers.PC + value) & 0xFFFF;
             else
@@ -1906,16 +1992,6 @@ namespace _6502CPU
             if (CrossBoundary(value, registers.PC))
                 cyclesThisOperation += 1;
         }
-
-        private void Break(bool isBreak, ulong vector = 0xFFFA)
-        {
-            registers.IncPC();
-            registers.Flags.B = true;
-            ProcessNMI();
-            registers.Flags.B = !isBreak;
-            registers.Flags.I = true;
-            registers.PC = (ulong)(memory.ReadByte(vector) + memory.ReadByte(vector + 1) * 0x100);
-        }
         #endregion
 
         #region J**
@@ -1923,40 +1999,45 @@ namespace _6502CPU
         {
             ulong value = Absolute();
             registers.PC = value;
+            cyclesThisOperation += 3;
         }
         private void JMPAI()
         {
             ulong addr = AbsoluteIndirect();
             registers.PC = addr;
+            cyclesThisOperation += 5;
         }
         private void JSRA()
         {
-            byte pclo = memory.ReadByte(registers.PC);
+            byte pclo = ReadByteFromMemory(registers.PC);
             registers.PC++;
             byte hi = (byte)(((registers.PC) >> 8) & 0xFF);
-            StackPush(hi);
+            PushToStack(hi);
             byte lo = (byte)((registers.PC) & 0xFF);
-            StackPush(lo);
-            byte pchi = memory.ReadByte(registers.PC);
+            PushToStack(lo);
+            byte pchi = ReadByteFromMemory(registers.PC);
             registers.PC = (ulong)((pchi << 8) | pclo);
+            cyclesThisOperation += 6;
         }
         #endregion
 
         #region RT*
         private void RTI()
         {
-            byte flags = StackPop();
-            byte lo = StackPop();
-            byte hi = StackPop();
+            byte flags = PopFromStack();
+            byte lo = PopFromStack();
+            byte hi = PopFromStack();
             registers.PC = (ulong)((hi << 8) | lo);
             registers.Flags.SetFlagsFromByte(flags, 0b11001111);
+            cyclesThisOperation += 6;
         }
         private void RTS()
         {
-            byte lo = StackPop();
-            byte hi = StackPop();
+            byte lo = PopFromStack();
+            byte hi = PopFromStack();
             registers.PC = (ulong)((hi << 8) | lo);
             registers.PC++;
+            cyclesThisOperation += 6;
         }
         #endregion
 
