@@ -6,7 +6,6 @@
 
 // https://github.com/santatamas/C64-Emulator/blob/master/C64Emulator/C64Emulator.Presentation/Program.cs
 
-using System.Numerics;
 
 namespace _6502CPU
 {
@@ -17,12 +16,10 @@ namespace _6502CPU
         public Memory memory = new Memory(0x10000);
 
         private bool running = true;
-        public bool Running { get; set; }
+        public bool Running { get { return running; } }
 
         private List<ulong> IRQ_Buffer = new List<ulong>();
         private List<ulong> NMI_Buffer = new List<ulong>();
-
-        private int NMI_Ctr = 0;
 
         public void InitiateIRQ(ulong value)
         {
@@ -33,7 +30,6 @@ namespace _6502CPU
         {
             NMI_Buffer.Add(value);
         }
-
 
         private int cyclesThisOperation = 0;
 
@@ -55,6 +51,7 @@ namespace _6502CPU
             running = true;
             while (running)
             {
+                cyclesThisOperation = 0;
                 while (NMI_Buffer.Count > 0)
                 {
                     ulong value = NMI_Buffer[0];
@@ -92,7 +89,6 @@ namespace _6502CPU
                 #region LD*
                 case 0xA9:
                     LDA_IM();
-                    cyclesThisOperation += 2;
                     break;
                 case 0xAD:
                     LDA_AB();

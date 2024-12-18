@@ -17,6 +17,7 @@ namespace C64
         private _6502_CPU cpu;
         private ushort _screenStartAddress = 0x400;//0x8000; // 0x0400
         private bool displayRunning = true;
+        public bool V_Sync = false;
 
         public Form1()
         {
@@ -36,7 +37,7 @@ namespace C64
                 IsBackground = true
             };
             processorThread.Start();
-
+            while (textBox1.Handle == 0) { }
             var runThread = new Thread(() => Run())
             {
                 IsBackground = true
@@ -50,6 +51,8 @@ namespace C64
             displayRunning = true;
             while (displayRunning)
             {
+                var stopwatch = new Stopwatch();
+                stopwatch.Start();
                 var current = GetCurrentState();
                 StringBuilder sb = new StringBuilder();
                 for (byte y = 0; y < _height; y += 1)
@@ -64,9 +67,6 @@ namespace C64
                 textBox1.Invoke((MethodInvoker)delegate { textBox1.Text = sb.ToString(); });
                 if (cpu.memory.ReadByte(0xD012) != 0x0)
                     cpu.memory.WriteByte(0xD012, (byte)0x0);
-
-                //cpu.CIA_IRQ = true;
-                Thread.Sleep(16);
             }
         }
 

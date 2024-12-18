@@ -28,39 +28,41 @@
         /// </summary>
         private void InitializeComponent()
         {
-            panel1 = new Panel();
             textBox1 = new TextBox();
+            panel1 = new Panel();
             panel1.SuspendLayout();
             SuspendLayout();
             // 
-            // panel1
-            // 
-            panel1.Controls.Add(textBox1);
-            panel1.Location = new Point(0, 0);
-            panel1.Name = "panel1";
-            panel1.Size = new Size(416, 538);
-            panel1.TabIndex = 1;
-            // 
             // textBox1
             // 
-            textBox1.BackColor = Color.DarkSlateBlue;
+            textBox1.BackColor = Color.Blue;
+            textBox1.BorderStyle = BorderStyle.None;
             textBox1.CausesValidation = false;
             textBox1.Dock = DockStyle.Fill;
-            textBox1.Font = new Font("Consolas", 14.25F, FontStyle.Regular, GraphicsUnit.Point, 0);
+            textBox1.Font = new Font("C64 Pro Mono", 12F, FontStyle.Regular, GraphicsUnit.Point, 0);
             textBox1.ForeColor = Color.GhostWhite;
             textBox1.Location = new Point(0, 0);
             textBox1.Multiline = true;
             textBox1.Name = "textBox1";
             textBox1.ReadOnly = true;
-            textBox1.Size = new Size(416, 538);
+            textBox1.Size = new Size(641, 400);
             textBox1.TabIndex = 0;
             textBox1.WordWrap = false;
+            // 
+            // panel1
+            // 
+            panel1.Controls.Add(textBox1);
+            panel1.Location = new Point(61, 49);
+            panel1.Name = "panel1";
+            panel1.Size = new Size(641, 400);
+            panel1.TabIndex = 1;
             // 
             // Form1
             // 
             AutoScaleDimensions = new SizeF(7F, 15F);
             AutoScaleMode = AutoScaleMode.Font;
-            ClientSize = new Size(417, 538);
+            BackColor = Color.MediumSlateBlue;
+            ClientSize = new Size(768, 503);
             Controls.Add(panel1);
             DoubleBuffered = true;
             Name = "Form1";
@@ -71,7 +73,7 @@
         }
 
         #endregion
-        private Panel panel1;
         private TextBox textBox1;
+        private Panel panel1;
     }
 }
