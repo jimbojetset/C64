@@ -5,7 +5,7 @@ namespace _6502CPU
     public class Memory
     {
         public byte[] memory { get; set; }
-        List<ROM> rom = new List<ROM>();
+        readonly List<ROM> rom = new List<ROM>();
 
         public Memory(int size)
         {

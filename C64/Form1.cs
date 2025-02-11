@@ -12,10 +12,10 @@ namespace C64
     public partial class Form1 : Form
     {
 
-        private byte _width = 40;//32;//40;
-        private byte _height = 25;//16;//25;
+        private byte _width = 40;
+        private byte _height = 25;
         private _6502_CPU cpu;
-        private ushort _screenStartAddress = 0x400;//0x8000; // 0x0400
+        private ushort _screenStartAddress = 0x400;
         private bool displayRunning = true;
         public bool V_Sync = false;
 
@@ -27,10 +27,6 @@ namespace C64
             cpu.memory.Load(@"ROMS\BASIC.ROM", 0xA000, 0x2000, true);
             cpu.memory.Load(@"ROMS\KERNAL.ROM", 0xE000, 0x2000, true);
             cpu.memory.Load(@"ROMS\CHAR.ROM", 0xD000, 0x1000, false);
-
-            //cpu.memory.Load(@"ROMS\kernel_rom.ROM", 0xF000, 4096, true);
-            //cpu.memory.Load(@"ROMS\basic_rom.ROM", 0xC000, 4096, true);
-
 
             var processorThread = new Thread(() => cpu.Run())
             {
@@ -49,6 +45,7 @@ namespace C64
         private void Run()
         {
             displayRunning = true;
+            byte cnt = 0xFF;
             while (displayRunning)
             {
                 var stopwatch = new Stopwatch();
@@ -65,8 +62,8 @@ namespace C64
                     sb.Append("\r\n");
                 }
                 textBox1.Invoke((MethodInvoker)delegate { textBox1.Text = sb.ToString(); });
-                if (cpu.memory.ReadByte(0xD012) != 0x0)
-                    cpu.memory.WriteByte(0xD012, (byte)0x0);
+                cpu.memory.WriteByte(0xD012, (byte)(cnt & 0xFF));
+                cnt--;
             }
         }
 

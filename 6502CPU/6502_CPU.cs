@@ -1,11 +1,4 @@
-﻿// https://www.masswerk.at/6502/6502_instruction_set.html
-
-// https://www.pagetable.com/c64ref/6502/?tab=2
-
-// https://github.com/aaronmell/6502Net/blob/master/Processor/Processor.cs
-
-// https://github.com/santatamas/C64-Emulator/blob/master/C64Emulator/C64Emulator.Presentation/Program.cs
-
+﻿using System.Diagnostics;
 
 namespace _6502CPU
 {
@@ -18,8 +11,8 @@ namespace _6502CPU
         private bool running = true;
         public bool Running { get { return running; } }
 
-        private List<ulong> IRQ_Buffer = new List<ulong>();
-        private List<ulong> NMI_Buffer = new List<ulong>();
+        private readonly List<ulong> IRQ_Buffer = new List<ulong>();
+        private readonly List<ulong> NMI_Buffer = new List<ulong>();
 
         public void InitiateIRQ(ulong value)
         {
@@ -51,7 +44,10 @@ namespace _6502CPU
             running = true;
             while (running)
             {
+                Stopwatch s = new Stopwatch();
+                s.Start();
                 cyclesThisOperation = 0;
+
                 while (NMI_Buffer.Count > 0)
                 {
                     ulong value = NMI_Buffer[0];
@@ -70,7 +66,9 @@ namespace _6502CPU
                     else
                         ProcessIRQ();
                 }
+
                 Execute(GetNextInstruction());
+
             }
         }
 
@@ -683,7 +681,7 @@ namespace _6502CPU
             cyclesThisOperation += 7;
         }
 
-        private bool CrossBoundary(ulong addr1, ulong addr2)
+        private static bool CrossBoundary(ulong addr1, ulong addr2)
         {
             return (addr1 & 0xff00) != (addr2 & 0xff00);
         }
