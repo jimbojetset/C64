@@ -1,4 +1,8 @@
-﻿namespace C64
+﻿// Copyright (c) 2025 James Booth
+// All rights reserved.
+// This code is the property of James Booth and may not be used, copied, or distributed without permission.
+
+namespace C64
 {
     partial class Form1
     {

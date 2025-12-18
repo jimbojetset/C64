@@ -1,3 +1,7 @@
+// Copyright (c) 2025 James Booth
+// All rights reserved.
+// This code is the property of James Booth and may not be used, copied, or distributed without permission.
+
 using _6502CPU;
 using System;
 using static System.Windows.Forms.VisualStyles.VisualStyleElement;

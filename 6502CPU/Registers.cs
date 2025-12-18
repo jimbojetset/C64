@@ -1,4 +1,8 @@
-﻿namespace _6502CPU
+﻿// Copyright (c) 2025 James Booth
+// All rights reserved.
+// This code is the property of James Booth and may not be used, copied, or distributed without permission.
+
+namespace _6502CPU
 {
     public class Registers
     {

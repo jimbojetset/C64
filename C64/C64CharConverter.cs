@@ -1,4 +1,8 @@
-﻿using System;
+﻿// Copyright (c) 2025 James Booth
+// All rights reserved.
+// This code is the property of James Booth and may not be used, copied, or distributed without permission.
+
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
