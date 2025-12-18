@@ -613,6 +613,302 @@ namespace _6502CPU
 
                 #endregion
 
+                #region Undocumented Opcodes
+
+                #region LAX - Load A and X
+                case 0xA7:
+                    LAX_ZP();
+                    break;
+                case 0xB7:
+                    LAX_ZPY();
+                    break;
+                case 0xAF:
+                    LAX_AB();
+                    break;
+                case 0xBF:
+                    LAX_ABY();
+                    break;
+                case 0xA3:
+                    LAX_ZPIX();
+                    break;
+                case 0xB3:
+                    LAX_ZPIY();
+                    break;
+                #endregion
+
+                #region SAX - Store A AND X
+                case 0x87:
+                    SAX_ZP();
+                    break;
+                case 0x97:
+                    SAX_ZPY();
+                    break;
+                case 0x8F:
+                    SAX_AB();
+                    break;
+                case 0x83:
+                    SAX_ZPIX();
+                    break;
+                #endregion
+
+                #region DCP - DEC then CMP
+                case 0xC7:
+                    DCP_ZP();
+                    break;
+                case 0xD7:
+                    DCP_ZPX();
+                    break;
+                case 0xCF:
+                    DCP_AB();
+                    break;
+                case 0xDF:
+                    DCP_ABX();
+                    break;
+                case 0xDB:
+                    DCP_ABY();
+                    break;
+                case 0xC3:
+                    DCP_ZPIX();
+                    break;
+                case 0xD3:
+                    DCP_ZPIY();
+                    break;
+                #endregion
+
+                #region ISC/ISB - INC then SBC
+                case 0xE7:
+                    ISC_ZP();
+                    break;
+                case 0xF7:
+                    ISC_ZPX();
+                    break;
+                case 0xEF:
+                    ISC_AB();
+                    break;
+                case 0xFF:
+                    ISC_ABX();
+                    break;
+                case 0xFB:
+                    ISC_ABY();
+                    break;
+                case 0xE3:
+                    ISC_ZPIX();
+                    break;
+                case 0xF3:
+                    ISC_ZPIY();
+                    break;
+                #endregion
+
+                #region SLO - ASL then ORA
+                case 0x07:
+                    SLO_ZP();
+                    break;
+                case 0x17:
+                    SLO_ZPX();
+                    break;
+                case 0x0F:
+                    SLO_AB();
+                    break;
+                case 0x1F:
+                    SLO_ABX();
+                    break;
+                case 0x1B:
+                    SLO_ABY();
+                    break;
+                case 0x03:
+                    SLO_ZPIX();
+                    break;
+                case 0x13:
+                    SLO_ZPIY();
+                    break;
+                #endregion
+
+                #region RLA - ROL then AND
+                case 0x27:
+                    RLA_ZP();
+                    break;
+                case 0x37:
+                    RLA_ZPX();
+                    break;
+                case 0x2F:
+                    RLA_AB();
+                    break;
+                case 0x3F:
+                    RLA_ABX();
+                    break;
+                case 0x3B:
+                    RLA_ABY();
+                    break;
+                case 0x23:
+                    RLA_ZPIX();
+                    break;
+                case 0x33:
+                    RLA_ZPIY();
+                    break;
+                #endregion
+
+                #region SRE - LSR then EOR
+                case 0x47:
+                    SRE_ZP();
+                    break;
+                case 0x57:
+                    SRE_ZPX();
+                    break;
+                case 0x4F:
+                    SRE_AB();
+                    break;
+                case 0x5F:
+                    SRE_ABX();
+                    break;
+                case 0x5B:
+                    SRE_ABY();
+                    break;
+                case 0x43:
+                    SRE_ZPIX();
+                    break;
+                case 0x53:
+                    SRE_ZPIY();
+                    break;
+                #endregion
+
+                #region RRA - ROR then ADC
+                case 0x67:
+                    RRA_ZP();
+                    break;
+                case 0x77:
+                    RRA_ZPX();
+                    break;
+                case 0x6F:
+                    RRA_AB();
+                    break;
+                case 0x7F:
+                    RRA_ABX();
+                    break;
+                case 0x7B:
+                    RRA_ABY();
+                    break;
+                case 0x63:
+                    RRA_ZPIX();
+                    break;
+                case 0x73:
+                    RRA_ZPIY();
+                    break;
+                #endregion
+
+                #region Undocumented NOPs
+                case 0x1A:
+                case 0x3A:
+                case 0x5A:
+                case 0x7A:
+                case 0xDA:
+                case 0xFA:
+                    NOP();
+                    break;
+                case 0x04:
+                case 0x44:
+                case 0x64:
+                    NOP_ZP();
+                    break;
+                case 0x14:
+                case 0x34:
+                case 0x54:
+                case 0x74:
+                case 0xD4:
+                case 0xF4:
+                    NOP_ZPX();
+                    break;
+                case 0x0C:
+                    NOP_AB();
+                    break;
+                case 0x1C:
+                case 0x3C:
+                case 0x5C:
+                case 0x7C:
+                case 0xDC:
+                case 0xFC:
+                    NOP_ABX();
+                    break;
+                case 0x80:
+                case 0x82:
+                case 0x89:
+                case 0xC2:
+                case 0xE2:
+                    NOP_IM();
+                    break;
+                #endregion
+
+                #region SBC Undocumented
+                case 0xEB:
+                    SBCI();
+                    break;
+                #endregion
+
+                #region ANC - AND then copy N to C
+                case 0x0B:
+                case 0x2B:
+                    ANC();
+                    break;
+                #endregion
+
+                #region ALR - AND then LSR
+                case 0x4B:
+                    ALR();
+                    break;
+                #endregion
+
+                #region ARR - AND then ROR
+                case 0x6B:
+                    ARR();
+                    break;
+                #endregion
+
+                #region XAA - Transfer X to A then AND
+                case 0x8B:
+                    XAA();
+                    break;
+                #endregion
+
+                #region AXS - (A AND X) - value
+                case 0xCB:
+                    AXS();
+                    break;
+                #endregion
+
+                #region AHX - A AND X AND H
+                case 0x9F:
+                    AHX_ABY();
+                    break;
+                case 0x93:
+                    AHX_ZPIY();
+                    break;
+                #endregion
+
+                #region SHY - Y AND H
+                case 0x9C:
+                    SHY();
+                    break;
+                #endregion
+
+                #region SHX - X AND H
+                case 0x9E:
+                    SHX();
+                    break;
+                #endregion
+
+                #region TAS - Transfer A AND X to S, then A AND X AND H
+                case 0x9B:
+                    TAS();
+                    break;
+                #endregion
+
+                #region LAS - (value AND S) to A, X, and S
+                case 0xBB:
+                    LAS();
+                    break;
+                #endregion
+
+                #endregion
+
                 default:
                     break;
             }
@@ -2055,6 +2351,736 @@ namespace _6502CPU
             registers.PC = (ulong)((hi << 8) | lo);
             registers.PC++;
             cyclesThisOperation += 6;
+        }
+        #endregion
+
+        #endregion
+
+        #region Undocumented Opcodes Implementation
+
+        #region LAX - Load A and X
+        private void LAX_ZP()
+        {
+            byte value = ReadByteFromMemory(Zero_Page());
+            registers.A = value;
+            registers.X = value;
+            Set_FlagsNZ(value);
+            cyclesThisOperation += 3;
+        }
+        private void LAX_ZPY()
+        {
+            byte value = ReadByteFromMemory(Y_Indexed_Zero_Page());
+            registers.A = value;
+            registers.X = value;
+            Set_FlagsNZ(value);
+            cyclesThisOperation += 4;
+        }
+        private void LAX_AB()
+        {
+            byte value = ReadByteFromMemory(Absolute());
+            registers.A = value;
+            registers.X = value;
+            Set_FlagsNZ(value);
+            cyclesThisOperation += 4;
+        }
+        private void LAX_ABY()
+        {
+            byte value = ReadByteFromMemory(Y_Indexed_Absolute());
+            registers.A = value;
+            registers.X = value;
+            Set_FlagsNZ(value);
+            cyclesThisOperation += 4;
+        }
+        private void LAX_ZPIX()
+        {
+            byte value = ReadByteFromMemory(X_Indexed_Zero_Page_Indirect());
+            registers.A = value;
+            registers.X = value;
+            Set_FlagsNZ(value);
+            cyclesThisOperation += 6;
+        }
+        private void LAX_ZPIY()
+        {
+            byte value = ReadByteFromMemory(Zero_Page_Indirect_Y_Indexed());
+            registers.A = value;
+            registers.X = value;
+            Set_FlagsNZ(value);
+            cyclesThisOperation += 5;
+        }
+        #endregion
+
+        #region SAX - Store A AND X
+        private void SAX_ZP()
+        {
+            byte value = (byte)(registers.A & registers.X);
+            WriteByteToMemory(Zero_Page(), value);
+            cyclesThisOperation += 3;
+        }
+        private void SAX_ZPY()
+        {
+            byte value = (byte)(registers.A & registers.X);
+            WriteByteToMemory(Y_Indexed_Zero_Page(), value);
+            cyclesThisOperation += 4;
+        }
+        private void SAX_AB()
+        {
+            byte value = (byte)(registers.A & registers.X);
+            WriteByteToMemory(Absolute(), value);
+            cyclesThisOperation += 4;
+        }
+        private void SAX_ZPIX()
+        {
+            byte value = (byte)(registers.A & registers.X);
+            WriteByteToMemory(X_Indexed_Zero_Page_Indirect(), value);
+            cyclesThisOperation += 6;
+        }
+        #endregion
+
+        #region DCP - DEC then CMP
+        private void DCP_ZP()
+        {
+            ulong addr = Zero_Page();
+            byte value = ReadByteFromMemory(addr);
+            value = (byte)((value + (~0x01)) + 1);
+            WriteByteToMemory(addr, value);
+            byte result = (byte)(registers.A - value);
+            registers.Flags.C = (value <= registers.A);
+            Set_FlagsNZ(result);
+            cyclesThisOperation += 5;
+        }
+        private void DCP_ZPX()
+        {
+            ulong addr = X_Indexed_Zero_Page();
+            byte value = ReadByteFromMemory(addr);
+            value = (byte)((value + (~0x01)) + 1);
+            WriteByteToMemory(addr, value);
+            byte result = (byte)(registers.A - value);
+            registers.Flags.C = (value <= registers.A);
+            Set_FlagsNZ(result);
+            cyclesThisOperation += 6;
+        }
+        private void DCP_AB()
+        {
+            ulong addr = Absolute();
+            byte value = ReadByteFromMemory(addr);
+            value = (byte)((value + (~0x01)) + 1);
+            WriteByteToMemory(addr, value);
+            byte result = (byte)(registers.A - value);
+            registers.Flags.C = (value <= registers.A);
+            Set_FlagsNZ(result);
+            cyclesThisOperation += 6;
+        }
+        private void DCP_ABX()
+        {
+            ulong addr = X_Indexed_Absolute(false);
+            byte value = ReadByteFromMemory(addr);
+            value = (byte)((value + (~0x01)) + 1);
+            WriteByteToMemory(addr, value);
+            byte result = (byte)(registers.A - value);
+            registers.Flags.C = (value <= registers.A);
+            Set_FlagsNZ(result);
+            cyclesThisOperation += 7;
+        }
+        private void DCP_ABY()
+        {
+            ulong addr = Y_Indexed_Absolute(false);
+            byte value = ReadByteFromMemory(addr);
+            value = (byte)((value + (~0x01)) + 1);
+            WriteByteToMemory(addr, value);
+            byte result = (byte)(registers.A - value);
+            registers.Flags.C = (value <= registers.A);
+            Set_FlagsNZ(result);
+            cyclesThisOperation += 7;
+        }
+        private void DCP_ZPIX()
+        {
+            ulong addr = X_Indexed_Zero_Page_Indirect();
+            byte value = ReadByteFromMemory(addr);
+            value = (byte)((value + (~0x01)) + 1);
+            WriteByteToMemory(addr, value);
+            byte result = (byte)(registers.A - value);
+            registers.Flags.C = (value <= registers.A);
+            Set_FlagsNZ(result);
+            cyclesThisOperation += 8;
+        }
+        private void DCP_ZPIY()
+        {
+            ulong addr = Zero_Page_Indirect_Y_Indexed(false);
+            byte value = ReadByteFromMemory(addr);
+            value = (byte)((value + (~0x01)) + 1);
+            WriteByteToMemory(addr, value);
+            byte result = (byte)(registers.A - value);
+            registers.Flags.C = (value <= registers.A);
+            Set_FlagsNZ(result);
+            cyclesThisOperation += 8;
+        }
+        #endregion
+
+        #region ISC/ISB - INC then SBC
+        private void ISC_ZP()
+        {
+            ulong addr = Zero_Page();
+            byte value = ReadByteFromMemory(addr);
+            value++;
+            value = (byte)(value & 0xFF);
+            WriteByteToMemory(addr, value);
+            SBC(value);
+            cyclesThisOperation += 5;
+        }
+        private void ISC_ZPX()
+        {
+            ulong addr = X_Indexed_Zero_Page();
+            byte value = ReadByteFromMemory(addr);
+            value++;
+            value = (byte)(value & 0xFF);
+            WriteByteToMemory(addr, value);
+            SBC(value);
+            cyclesThisOperation += 6;
+        }
+        private void ISC_AB()
+        {
+            ulong addr = Absolute();
+            byte value = ReadByteFromMemory(addr);
+            value++;
+            value = (byte)(value & 0xFF);
+            WriteByteToMemory(addr, value);
+            SBC(value);
+            cyclesThisOperation += 6;
+        }
+        private void ISC_ABX()
+        {
+            ulong addr = X_Indexed_Absolute(false);
+            byte value = ReadByteFromMemory(addr);
+            value++;
+            value = (byte)(value & 0xFF);
+            WriteByteToMemory(addr, value);
+            SBC(value);
+            cyclesThisOperation += 7;
+        }
+        private void ISC_ABY()
+        {
+            ulong addr = Y_Indexed_Absolute(false);
+            byte value = ReadByteFromMemory(addr);
+            value++;
+            value = (byte)(value & 0xFF);
+            WriteByteToMemory(addr, value);
+            SBC(value);
+            cyclesThisOperation += 7;
+        }
+        private void ISC_ZPIX()
+        {
+            ulong addr = X_Indexed_Zero_Page_Indirect();
+            byte value = ReadByteFromMemory(addr);
+            value++;
+            value = (byte)(value & 0xFF);
+            WriteByteToMemory(addr, value);
+            SBC(value);
+            cyclesThisOperation += 8;
+        }
+        private void ISC_ZPIY()
+        {
+            ulong addr = Zero_Page_Indirect_Y_Indexed(false);
+            byte value = ReadByteFromMemory(addr);
+            value++;
+            value = (byte)(value & 0xFF);
+            WriteByteToMemory(addr, value);
+            SBC(value);
+            cyclesThisOperation += 8;
+        }
+        #endregion
+
+        #region SLO - ASL then ORA
+        private void SLO_ZP()
+        {
+            ulong addr = Zero_Page();
+            byte value = ReadByteFromMemory(addr);
+            registers.Flags.C = ((value & (1 << 7)) != 0);
+            value = (byte)(value << 1);
+            WriteByteToMemory(addr, value);
+            registers.A = (byte)(registers.A | value);
+            Set_FlagsNZ(registers.A);
+            cyclesThisOperation += 5;
+        }
+        private void SLO_ZPX()
+        {
+            ulong addr = X_Indexed_Zero_Page();
+            byte value = ReadByteFromMemory(addr);
+            registers.Flags.C = ((value & (1 << 7)) != 0);
+            value = (byte)(value << 1);
+            WriteByteToMemory(addr, value);
+            registers.A = (byte)(registers.A | value);
+            Set_FlagsNZ(registers.A);
+            cyclesThisOperation += 6;
+        }
+        private void SLO_AB()
+        {
+            ulong addr = Absolute();
+            byte value = ReadByteFromMemory(addr);
+            registers.Flags.C = ((value & (1 << 7)) != 0);
+            value = (byte)(value << 1);
+            WriteByteToMemory(addr, value);
+            registers.A = (byte)(registers.A | value);
+            Set_FlagsNZ(registers.A);
+            cyclesThisOperation += 6;
+        }
+        private void SLO_ABX()
+        {
+            ulong addr = X_Indexed_Absolute(false);
+            byte value = ReadByteFromMemory(addr);
+            registers.Flags.C = ((value & (1 << 7)) != 0);
+            value = (byte)(value << 1);
+            WriteByteToMemory(addr, value);
+            registers.A = (byte)(registers.A | value);
+            Set_FlagsNZ(registers.A);
+            cyclesThisOperation += 7;
+        }
+        private void SLO_ABY()
+        {
+            ulong addr = Y_Indexed_Absolute(false);
+            byte value = ReadByteFromMemory(addr);
+            registers.Flags.C = ((value & (1 << 7)) != 0);
+            value = (byte)(value << 1);
+            WriteByteToMemory(addr, value);
+            registers.A = (byte)(registers.A | value);
+            Set_FlagsNZ(registers.A);
+            cyclesThisOperation += 7;
+        }
+        private void SLO_ZPIX()
+        {
+            ulong addr = X_Indexed_Zero_Page_Indirect();
+            byte value = ReadByteFromMemory(addr);
+            registers.Flags.C = ((value & (1 << 7)) != 0);
+            value = (byte)(value << 1);
+            WriteByteToMemory(addr, value);
+            registers.A = (byte)(registers.A | value);
+            Set_FlagsNZ(registers.A);
+            cyclesThisOperation += 8;
+        }
+        private void SLO_ZPIY()
+        {
+            ulong addr = Zero_Page_Indirect_Y_Indexed(false);
+            byte value = ReadByteFromMemory(addr);
+            registers.Flags.C = ((value & (1 << 7)) != 0);
+            value = (byte)(value << 1);
+            WriteByteToMemory(addr, value);
+            registers.A = (byte)(registers.A | value);
+            Set_FlagsNZ(registers.A);
+            cyclesThisOperation += 8;
+        }
+        #endregion
+
+        #region RLA - ROL then AND
+        private void RLA_ZP()
+        {
+            ulong addr = Zero_Page();
+            byte value = ReadByteFromMemory(addr);
+            int carry = registers.Flags.C ? 1 : 0;
+            byte value2 = (byte)((value << 1) + carry);
+            registers.Flags.C = ((value & (1 << 7)) != 0);
+            WriteByteToMemory(addr, value2);
+            registers.A = (byte)(registers.A & value2);
+            Set_FlagsNZ(registers.A);
+            cyclesThisOperation += 5;
+        }
+        private void RLA_ZPX()
+        {
+            ulong addr = X_Indexed_Zero_Page();
+            byte value = ReadByteFromMemory(addr);
+            int carry = registers.Flags.C ? 1 : 0;
+            byte value2 = (byte)((value << 1) + carry);
+            registers.Flags.C = ((value & (1 << 7)) != 0);
+            WriteByteToMemory(addr, value2);
+            registers.A = (byte)(registers.A & value2);
+            Set_FlagsNZ(registers.A);
+            cyclesThisOperation += 6;
+        }
+        private void RLA_AB()
+        {
+            ulong addr = Absolute();
+            byte value = ReadByteFromMemory(addr);
+            int carry = registers.Flags.C ? 1 : 0;
+            byte value2 = (byte)((value << 1) + carry);
+            registers.Flags.C = ((value & (1 << 7)) != 0);
+            WriteByteToMemory(addr, value2);
+            registers.A = (byte)(registers.A & value2);
+            Set_FlagsNZ(registers.A);
+            cyclesThisOperation += 6;
+        }
+        private void RLA_ABX()
+        {
+            ulong addr = X_Indexed_Absolute(false);
+            byte value = ReadByteFromMemory(addr);
+            int carry = registers.Flags.C ? 1 : 0;
+            byte value2 = (byte)((value << 1) + carry);
+            registers.Flags.C = ((value & (1 << 7)) != 0);
+            WriteByteToMemory(addr, value2);
+            registers.A = (byte)(registers.A & value2);
+            Set_FlagsNZ(registers.A);
+            cyclesThisOperation += 7;
+        }
+        private void RLA_ABY()
+        {
+            ulong addr = Y_Indexed_Absolute(false);
+            byte value = ReadByteFromMemory(addr);
+            int carry = registers.Flags.C ? 1 : 0;
+            byte value2 = (byte)((value << 1) + carry);
+            registers.Flags.C = ((value & (1 << 7)) != 0);
+            WriteByteToMemory(addr, value2);
+            registers.A = (byte)(registers.A & value2);
+            Set_FlagsNZ(registers.A);
+            cyclesThisOperation += 7;
+        }
+        private void RLA_ZPIX()
+        {
+            ulong addr = X_Indexed_Zero_Page_Indirect();
+            byte value = ReadByteFromMemory(addr);
+            int carry = registers.Flags.C ? 1 : 0;
+            byte value2 = (byte)((value << 1) + carry);
+            registers.Flags.C = ((value & (1 << 7)) != 0);
+            WriteByteToMemory(addr, value2);
+            registers.A = (byte)(registers.A & value2);
+            Set_FlagsNZ(registers.A);
+            cyclesThisOperation += 8;
+        }
+        private void RLA_ZPIY()
+        {
+            ulong addr = Zero_Page_Indirect_Y_Indexed(false);
+            byte value = ReadByteFromMemory(addr);
+            int carry = registers.Flags.C ? 1 : 0;
+            byte value2 = (byte)((value << 1) + carry);
+            registers.Flags.C = ((value & (1 << 7)) != 0);
+            WriteByteToMemory(addr, value2);
+            registers.A = (byte)(registers.A & value2);
+            Set_FlagsNZ(registers.A);
+            cyclesThisOperation += 8;
+        }
+        #endregion
+
+        #region SRE - LSR then EOR
+        private void SRE_ZP()
+        {
+            ulong addr = Zero_Page();
+            byte value = ReadByteFromMemory(addr);
+            registers.Flags.C = ((value & (1 << 0)) != 0);
+            value = (byte)(value >> 1);
+            WriteByteToMemory(addr, value);
+            registers.A = (byte)(registers.A ^ value);
+            Set_FlagsNZ(registers.A);
+            cyclesThisOperation += 5;
+        }
+        private void SRE_ZPX()
+        {
+            ulong addr = X_Indexed_Zero_Page();
+            byte value = ReadByteFromMemory(addr);
+            registers.Flags.C = ((value & (1 << 0)) != 0);
+            value = (byte)(value >> 1);
+            WriteByteToMemory(addr, value);
+            registers.A = (byte)(registers.A ^ value);
+            Set_FlagsNZ(registers.A);
+            cyclesThisOperation += 6;
+        }
+        private void SRE_AB()
+        {
+            ulong addr = Absolute();
+            byte value = ReadByteFromMemory(addr);
+            registers.Flags.C = ((value & (1 << 0)) != 0);
+            value = (byte)(value >> 1);
+            WriteByteToMemory(addr, value);
+            registers.A = (byte)(registers.A ^ value);
+            Set_FlagsNZ(registers.A);
+            cyclesThisOperation += 6;
+        }
+        private void SRE_ABX()
+        {
+            ulong addr = X_Indexed_Absolute(false);
+            byte value = ReadByteFromMemory(addr);
+            registers.Flags.C = ((value & (1 << 0)) != 0);
+            value = (byte)(value >> 1);
+            WriteByteToMemory(addr, value);
+            registers.A = (byte)(registers.A ^ value);
+            Set_FlagsNZ(registers.A);
+            cyclesThisOperation += 7;
+        }
+        private void SRE_ABY()
+        {
+            ulong addr = Y_Indexed_Absolute(false);
+            byte value = ReadByteFromMemory(addr);
+            registers.Flags.C = ((value & (1 << 0)) != 0);
+            value = (byte)(value >> 1);
+            WriteByteToMemory(addr, value);
+            registers.A = (byte)(registers.A ^ value);
+            Set_FlagsNZ(registers.A);
+            cyclesThisOperation += 7;
+        }
+        private void SRE_ZPIX()
+        {
+            ulong addr = X_Indexed_Zero_Page_Indirect();
+            byte value = ReadByteFromMemory(addr);
+            registers.Flags.C = ((value & (1 << 0)) != 0);
+            value = (byte)(value >> 1);
+            WriteByteToMemory(addr, value);
+            registers.A = (byte)(registers.A ^ value);
+            Set_FlagsNZ(registers.A);
+            cyclesThisOperation += 8;
+        }
+        private void SRE_ZPIY()
+        {
+            ulong addr = Zero_Page_Indirect_Y_Indexed(false);
+            byte value = ReadByteFromMemory(addr);
+            registers.Flags.C = ((value & (1 << 0)) != 0);
+            value = (byte)(value >> 1);
+            WriteByteToMemory(addr, value);
+            registers.A = (byte)(registers.A ^ value);
+            Set_FlagsNZ(registers.A);
+            cyclesThisOperation += 8;
+        }
+        #endregion
+
+        #region RRA - ROR then ADC
+        private void RRA_ZP()
+        {
+            ulong addr = Zero_Page();
+            byte value = ReadByteFromMemory(addr);
+            byte value2 = (byte)(value >> 1);
+            if (registers.Flags.C)
+                value2 += 0x80;
+            registers.Flags.C = ((value & (1 << 0)) != 0);
+            WriteByteToMemory(addr, value2);
+            ADC(value2);
+            cyclesThisOperation += 5;
+        }
+        private void RRA_ZPX()
+        {
+            ulong addr = X_Indexed_Zero_Page();
+            byte value = ReadByteFromMemory(addr);
+            byte value2 = (byte)(value >> 1);
+            if (registers.Flags.C)
+                value2 += 0x80;
+            registers.Flags.C = ((value & (1 << 0)) != 0);
+            WriteByteToMemory(addr, value2);
+            ADC(value2);
+            cyclesThisOperation += 6;
+        }
+        private void RRA_AB()
+        {
+            ulong addr = Absolute();
+            byte value = ReadByteFromMemory(addr);
+            byte value2 = (byte)(value >> 1);
+            if (registers.Flags.C)
+                value2 += 0x80;
+            registers.Flags.C = ((value & (1 << 0)) != 0);
+            WriteByteToMemory(addr, value2);
+            ADC(value2);
+            cyclesThisOperation += 6;
+        }
+        private void RRA_ABX()
+        {
+            ulong addr = X_Indexed_Absolute(false);
+            byte value = ReadByteFromMemory(addr);
+            byte value2 = (byte)(value >> 1);
+            if (registers.Flags.C)
+                value2 += 0x80;
+            registers.Flags.C = ((value & (1 << 0)) != 0);
+            WriteByteToMemory(addr, value2);
+            ADC(value2);
+            cyclesThisOperation += 7;
+        }
+        private void RRA_ABY()
+        {
+            ulong addr = Y_Indexed_Absolute(false);
+            byte value = ReadByteFromMemory(addr);
+            byte value2 = (byte)(value >> 1);
+            if (registers.Flags.C)
+                value2 += 0x80;
+            registers.Flags.C = ((value & (1 << 0)) != 0);
+            WriteByteToMemory(addr, value2);
+            ADC(value2);
+            cyclesThisOperation += 7;
+        }
+        private void RRA_ZPIX()
+        {
+            ulong addr = X_Indexed_Zero_Page_Indirect();
+            byte value = ReadByteFromMemory(addr);
+            byte value2 = (byte)(value >> 1);
+            if (registers.Flags.C)
+                value2 += 0x80;
+            registers.Flags.C = ((value & (1 << 0)) != 0);
+            WriteByteToMemory(addr, value2);
+            ADC(value2);
+            cyclesThisOperation += 8;
+        }
+        private void RRA_ZPIY()
+        {
+            ulong addr = Zero_Page_Indirect_Y_Indexed(false);
+            byte value = ReadByteFromMemory(addr);
+            byte value2 = (byte)(value >> 1);
+            if (registers.Flags.C)
+                value2 += 0x80;
+            registers.Flags.C = ((value & (1 << 0)) != 0);
+            WriteByteToMemory(addr, value2);
+            ADC(value2);
+            cyclesThisOperation += 8;
+        }
+        #endregion
+
+        #region Undocumented NOPs
+        private void NOP()
+        {
+            cyclesThisOperation += 2;
+        }
+        private void NOP_ZP()
+        {
+            Zero_Page();
+            cyclesThisOperation += 3;
+        }
+        private void NOP_ZPX()
+        {
+            X_Indexed_Zero_Page();
+            cyclesThisOperation += 4;
+        }
+        private void NOP_AB()
+        {
+            Absolute();
+            cyclesThisOperation += 4;
+        }
+        private void NOP_ABX()
+        {
+            X_Indexed_Absolute();
+            cyclesThisOperation += 4;
+        }
+        private void NOP_IM()
+        {
+            Immediate();
+            cyclesThisOperation += 2;
+        }
+        #endregion
+
+        #region ANC - AND then copy N to C
+        private void ANC()
+        {
+            byte value = Immediate();
+            registers.A = (byte)(registers.A & value);
+            Set_FlagsNZ(registers.A);
+            registers.Flags.C = registers.Flags.N;
+            cyclesThisOperation += 2;
+        }
+        #endregion
+
+        #region ALR - AND then LSR
+        private void ALR()
+        {
+            byte value = Immediate();
+            registers.A = (byte)(registers.A & value);
+            registers.Flags.C = ((registers.A & (1 << 0)) != 0);
+            registers.A = (byte)(registers.A >> 1);
+            Set_FlagsNZ(registers.A);
+            cyclesThisOperation += 2;
+        }
+        #endregion
+
+        #region ARR - AND then ROR
+        private void ARR()
+        {
+            byte value = Immediate();
+            registers.A = (byte)(registers.A & value);
+            byte result = (byte)(registers.A >> 1);
+            if (registers.Flags.C)
+                result += 0x80;
+            registers.A = result;
+            Set_FlagsNZ(registers.A);
+            registers.Flags.C = ((result & (1 << 6)) != 0);
+            registers.Flags.V = (((result & (1 << 6)) != 0) ^ ((result & (1 << 5)) != 0));
+            cyclesThisOperation += 2;
+        }
+        #endregion
+
+        #region XAA - Transfer X to A then AND (unstable)
+        private void XAA()
+        {
+            byte value = Immediate();
+            registers.A = registers.X;
+            registers.A = (byte)(registers.A & value);
+            Set_FlagsNZ(registers.A);
+            cyclesThisOperation += 2;
+        }
+        #endregion
+
+        #region AXS - (A AND X) - value
+        private void AXS()
+        {
+            byte value = Immediate();
+            byte temp = (byte)(registers.A & registers.X);
+            int result = temp - value;
+            registers.X = (byte)result;
+            registers.Flags.C = (result >= 0);
+            Set_FlagsNZ(registers.X);
+            cyclesThisOperation += 2;
+        }
+        #endregion
+
+        #region AHX - A AND X AND H (unstable)
+        private void AHX_ABY()
+        {
+            ulong addr = Y_Indexed_Absolute(false);
+            byte high = (byte)((addr >> 8) + 1);
+            byte value = (byte)(registers.A & registers.X & high);
+            WriteByteToMemory(addr, value);
+            cyclesThisOperation += 5;
+        }
+        private void AHX_ZPIY()
+        {
+            ulong addr = Zero_Page_Indirect_Y_Indexed(false);
+            byte high = (byte)((addr >> 8) + 1);
+            byte value = (byte)(registers.A & registers.X & high);
+            WriteByteToMemory(addr, value);
+            cyclesThisOperation += 6;
+        }
+        #endregion
+
+        #region SHY - Y AND H (unstable)
+        private void SHY()
+        {
+            ulong addr = X_Indexed_Absolute(false);
+            byte high = (byte)((addr >> 8) + 1);
+            byte value = (byte)(registers.Y & high);
+            WriteByteToMemory(addr, value);
+            cyclesThisOperation += 5;
+        }
+        #endregion
+
+        #region SHX - X AND H (unstable)
+        private void SHX()
+        {
+            ulong addr = Y_Indexed_Absolute(false);
+            byte high = (byte)((addr >> 8) + 1);
+            byte value = (byte)(registers.X & high);
+            WriteByteToMemory(addr, value);
+            cyclesThisOperation += 5;
+        }
+        #endregion
+
+        #region TAS - Transfer A AND X to S, then A AND X AND H (unstable)
+        private void TAS()
+        {
+            registers.S = (byte)(registers.A & registers.X);
+            ulong addr = Y_Indexed_Absolute(false);
+            byte high = (byte)((addr >> 8) + 1);
+            byte value = (byte)(registers.A & registers.X & high);
+            WriteByteToMemory(addr, value);
+            cyclesThisOperation += 5;
+        }
+        #endregion
+
+        #region LAS - (value AND S) to A, X, and S
+        private void LAS()
+        {
+            byte value = ReadByteFromMemory(Y_Indexed_Absolute());
+            byte result = (byte)(value & registers.S);
+            registers.A = result;
+            registers.X = result;
+            registers.S = result;
+            Set_FlagsNZ(result);
+            cyclesThisOperation += 4;
         }
         #endregion
 
