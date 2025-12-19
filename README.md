@@ -72,8 +72,8 @@ Tests automatically fetch test data from the [SingleStepTests repository](https:
 
 - [SingleStepTests/65x02](https://github.com/SingleStepTests/65x02) - Test data used for validation
 
-## Copyright
+## License
 
-Copyright (c) 2025 James Booth. All rights reserved.
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
-This code is the property of James Booth and may not be used, copied, or distributed without permission.
+Copyright (c) 2025 James Booth

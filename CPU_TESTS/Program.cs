@@ -1,6 +1,5 @@
 ﻿// Copyright (c) 2025 James Booth
-// All rights reserved.
-// This code is the property of James Booth and may not be used, copied, or distributed without permission.
+// Licensed under the MIT License. See LICENSE file in the project root for full license information.
 
 using _6502CPU;
 using JsonSerializer = System.Text.Json.JsonSerializer;
