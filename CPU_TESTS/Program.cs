@@ -11,7 +11,6 @@ _6502_CPU cpu = new _6502_CPU();
 
 Dictionary<string, string[]> testDictionary = new Dictionary<string, string[]>();
 
-/*
 testDictionary.Add("NOP_Test", ["ea",]);
 testDictionary.Add("LD_Tests", ["a9", "ad", "bd", "b9", "a5", "b5", "a1", "b1", "a2", "ae", "be", "a6", "b6", "a0", "ac", "bc", "a4", "b4"]);
 testDictionary.Add("ST_Tests", ["8d", "9d", "99", "85", "95", "81", "91", "8e", "86", "96", "8c", "84", "94"]);
@@ -59,9 +58,6 @@ testDictionary.Add("SHY_Tests", ["9c"]);
 testDictionary.Add("SHX_Tests", ["9e"]);
 testDictionary.Add("TAS_Tests", ["9b"]);
 testDictionary.Add("LAS_Tests", ["bb"]);
-*/
-
-testDictionary.Add("Tests", ["6b", "8b", "9f", "93", "9c", "9e", "9b", "bb"]);
 
 int testCount = 0;
 int testCountTotal = 0;
