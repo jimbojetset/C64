@@ -2986,14 +2986,35 @@ namespace _6502CPU
         private void ARR()
         {
             byte value = Immediate();
-            registers.A = (byte)(registers.A & value);
-            byte result = (byte)(registers.A >> 1);
+            byte andResult = (byte)(registers.A & value);
+            byte result = (byte)(andResult >> 1);
             if (registers.Flags.C)
                 result += 0x80;
-            registers.A = result;
-            Set_FlagsNZ(registers.A);
-            registers.Flags.C = ((result & (1 << 6)) != 0);
+            
+            // Set flags based on ROR result (before BCD adjustment)
+            Set_FlagsNZ(result);
             registers.Flags.V = (((result & (1 << 6)) != 0) ^ ((result & (1 << 5)) != 0));
+            registers.Flags.C = ((result & (1 << 6)) != 0);
+            
+            // Decimal mode BCD adjustment (affects A and C, but not N/Z/V)
+            if (registers.Flags.D)
+            {
+                byte lowAdjust = (byte)((andResult & 0x0F) + (andResult & 0x01));
+                byte highAdjust = (byte)((andResult & 0xF0) + (andResult & 0x10));
+                
+                if (lowAdjust > 5)
+                {
+                    result = (byte)((result & 0xF0) | ((result + 6) & 0x0F));
+                }
+                
+                if (highAdjust > 0x50)
+                {
+                    result = (byte)((result + 0x60) & 0xFF);
+                    registers.Flags.C = true;
+                }
+            }
+            
+            registers.A = result;
             cyclesThisOperation += 2;
         }
         #endregion
@@ -3002,8 +3023,10 @@ namespace _6502CPU
         private void XAA()
         {
             byte value = Immediate();
-            registers.A = registers.X;
-            registers.A = (byte)(registers.A & value);
+            // XAA is unstable - behavior varies by chip and conditions
+            // Most common behavior in test suite: A = X & imm
+            // Note: Real hardware may also involve old A value
+            registers.A = (byte)(registers.X & value);
             Set_FlagsNZ(registers.A);
             cyclesThisOperation += 2;
         }
