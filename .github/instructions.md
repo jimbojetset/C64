@@ -2,11 +2,11 @@
 
 ## Project Overview
 
-This is a cycle-accurate MOS 6502 CPU emulator written in C# (.NET 8.0), with a Commodore 64 Windows Forms frontend. The project implements the complete 6502 instruction set including documented and undocumented opcodes.
+This is a cycle-accurate MOS 6502 CPU emulator written in C# (.NET 8.0). The project implements the complete 6502 instruction set including documented and undocumented opcodes.
 
 ## Architecture
 
-### Three-Project Solution Structure
+### Two-Project Solution Structure
 
 1. **6502CPU** - Core CPU emulation library
    - [`6502_CPU.cs`](6502CPU/6502_CPU.cs) - Main CPU class with Execute() method containing ~256 opcode cases
@@ -14,12 +14,7 @@ This is a cycle-accurate MOS 6502 CPU emulator written in C# (.NET 8.0), with a 
    - [`Registers.cs`](6502CPU/Registers.cs) - PC, S, P, A, X, Y registers
    - [`Flags.cs`](6502CPU/Flags.cs) - Processor status flags (C, Z, I, D, B, V, N)
    
-2. **C64** - Windows Forms Commodore 64 emulator (`.csproj` targets `net8.0-windows`)
-   - Loads BASIC.ROM (0xA000), KERNAL.ROM (0xE000), CHAR.ROM (0xD000)
-   - Character-based display rendering from memory address 0x400
-   - [`C64CharConverter.cs`](C64/C64CharConverter.cs) - PETSCII to ASCII conversion
-   
-3. **CPU_TESTS** - JSON-based test suite using SingleStepTests format
+2. **CPU_TESTS** - JSON-based test suite using SingleStepTests format
    - Tests from https://github.com/SingleStepTests/65x02/
    - Validates initial/final register state and memory for each opcode
 
@@ -60,7 +55,7 @@ Located in [`6502_CPU.cs`](6502CPU/6502_CPU.cs) lines 690-770. These handle PC i
 The emulator tracks cycle counts:
 - `cyclesThisOperation` accumulates during instruction execution
 - Page boundary crossings add extra cycles (see `CrossBoundary()` checks)
-- Used for timing synchronization in C64 frontend
+- Can be used for timing synchronization in frontend applications
 
 ### ROM/RAM Memory Model
 
@@ -86,9 +81,6 @@ dotnet build 6502CPU.sln
 
 # Run CPU tests
 dotnet run --project CPU_TESTS/CPU_TESTS.csproj
-
-# Run C64 emulator (Windows only)
-dotnet run --project C64/C64.csproj
 
 # Run standalone CPU (basic test loop)
 dotnet run --project 6502CPU/6502CPU.csproj
@@ -155,4 +147,3 @@ Follow same implementation pattern as documented opcodes: addressing mode helper
 1. [`6502CPU/6502_CPU.cs`](6502CPU/6502_CPU.cs) - Start here, read `Execute()` switch and instruction implementations
 2. [`CPU_TESTS/Program.cs`](CPU_TESTS/Program.cs) - Understand test harness before modifying opcodes
 3. [`6502CPU/Memory.cs`](6502CPU/Memory.cs) - Memory model with ROM protection
-4. [`C64/Form1.cs`](C64/Form1.cs) - See how CPU integrates with frontend (threading, display loop)
