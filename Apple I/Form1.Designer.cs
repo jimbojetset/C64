@@ -1,4 +1,4 @@
-﻿namespace C64
+﻿namespace Apple_I
 {
     partial class Form1
     {
@@ -29,8 +29,6 @@
         private void InitializeComponent()
         {
             textBox1 = new TextBox();
-            panel1 = new Panel();
-            panel1.SuspendLayout();
             SuspendLayout();
             // 
             // textBox1
@@ -45,35 +43,24 @@
             textBox1.Multiline = true;
             textBox1.Name = "textBox1";
             textBox1.ReadOnly = true;
-            textBox1.Size = new Size(641, 400);
-            textBox1.TabIndex = 0;
+            textBox1.Size = new Size(800, 450);
+            textBox1.TabIndex = 1;
             textBox1.WordWrap = false;
-            // 
-            // panel1
-            // 
-            panel1.Controls.Add(textBox1);
-            panel1.Location = new Point(61, 49);
-            panel1.Name = "panel1";
-            panel1.Size = new Size(641, 400);
-            panel1.TabIndex = 1;
             // 
             // Form1
             // 
             AutoScaleDimensions = new SizeF(7F, 15F);
             AutoScaleMode = AutoScaleMode.Font;
-            BackColor = Color.MediumSlateBlue;
-            ClientSize = new Size(768, 503);
-            Controls.Add(panel1);
-            DoubleBuffered = true;
+            ClientSize = new Size(800, 450);
+            Controls.Add(textBox1);
             Name = "Form1";
             Text = "Form1";
-            panel1.ResumeLayout(false);
-            panel1.PerformLayout();
             ResumeLayout(false);
+            PerformLayout();
         }
 
         #endregion
+
         private TextBox textBox1;
-        private Panel panel1;
     }
 }

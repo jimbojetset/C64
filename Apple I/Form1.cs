@@ -1,16 +1,14 @@
 using _6502CPU;
 using System.Text;
 
-
-namespace C64
+namespace Apple_I
 {
     public partial class Form1 : Form
     {
-
         private byte _width = 40;
-        private byte _height = 25;
+        private byte _height = 24;
         private _6502_CPU cpu;
-        private ushort _screenStartAddress = 0x400;
+        private ushort _screenStartAddress = 0xD012;
         private bool displayRunning = true;
         public bool V_Sync = false;
 
@@ -19,9 +17,8 @@ namespace C64
             InitializeComponent();
 
             cpu = new _6502_CPU(1000000);
-            cpu.memory.Load(@"ROMS\basic.901226-01.bin", 0xA000, 0x2000, true);
-            cpu.memory.Load(@"ROMS\kernal.901227-03.bin", 0xE000, 0x2000, true);
-            cpu.memory.Load(@"ROMS\characters.901225-01.bin", 0xD000, 0x1000, false);
+            cpu.memory.Load(@"ROMS\basic.rom", 0xE000, 0x1000, true);
+            cpu.memory.Load(@"ROMS\monitor.rom", 0xFF00, 0x100, true);
 
             var processorThread = new Thread(() => cpu.Run())
             {
@@ -40,23 +37,14 @@ namespace C64
         private void Run()
         {
             displayRunning = true;
-            byte cnt = 0xFF;
+            int cnt = 0;
+            byte[] register = new byte[1024];
             while (displayRunning)
             {
-                var current = GetCurrentState();
-                StringBuilder sb = new StringBuilder();
-                for (byte y = 0; y < _height; y += 1)
-                {
-                    for (byte x = 0; x < _width; x += 1)
-                    {
-                        if (x >= _width || y >= _height) continue;
-                        sb.Append(current[x, y]);
-                    }
-                    sb.Append("\r\n");
-                }
-                textBox1.Invoke((MethodInvoker)delegate { textBox1.Text = sb.ToString(); });
-                cpu.memory.WriteByte(0xD012, (byte)(cnt & 0xFF));
-                cnt--;
+                register[cnt++] = cpu.memory.ReadByte(_screenStartAddress);
+                if (cnt > 1023) cnt = 0;
+                //StringBuilder sb = new StringBuilder();
+                //textBox1.Invoke((MethodInvoker)delegate { textBox1.Text = sb.ToString(); });
             }
         }
 

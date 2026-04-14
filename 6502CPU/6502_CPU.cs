@@ -8,8 +8,11 @@ namespace _6502CPU
 
         public Memory memory = new Memory(0x10000);
 
+
         private bool running = true;
         public bool Running { get { return running; } }
+
+        private readonly int clockFreq = 2000000; //1MHz
 
         private readonly List<ulong> IRQ_Buffer = new List<ulong>();
         private readonly List<ulong> NMI_Buffer = new List<ulong>();
@@ -26,15 +29,17 @@ namespace _6502CPU
 
         private int cyclesThisOperation = 0;
 
-        public _6502_CPU()
+        public _6502_CPU(int freq = 1000000)
         {
             Initialise();
+            clockFreq = freq;
         }
 
         public void Initialise()
         {
             registers = new Registers();
             registers.Clear();
+            registers.S = 0xFF;
             memory = new Memory(0x10000);
         }
 
@@ -47,28 +52,31 @@ namespace _6502CPU
                 Stopwatch s = new Stopwatch();
                 s.Start();
                 cyclesThisOperation = 0;
-
-                while (NMI_Buffer.Count > 0)
+                int maxCycles = (clockFreq / 1000) * 16;
+                while (cyclesThisOperation < maxCycles)
                 {
-                    ulong value = NMI_Buffer[0];
-                    NMI_Buffer.RemoveAt(0);
-                    if(value != 0xFFFA)
-                        ProcessNMI(value);
-                    else
-                        ProcessNMI();
-                }
-                while (IRQ_Buffer.Count > 0 && !registers.Flags.I)
-                {
-                    ulong value = IRQ_Buffer[0];
-                    IRQ_Buffer.RemoveAt(0);
-                    if (value != 0xFFFE)
-                        ProcessIRQ(value);
-                    else
-                        ProcessIRQ();
-                }
 
-                Execute(GetNextInstruction());
-
+                    while (NMI_Buffer.Count > 0)
+                    {
+                        ulong value = NMI_Buffer[0];
+                        NMI_Buffer.RemoveAt(0);
+                        if (value != 0xFFFA)
+                            ProcessNMI(value);
+                        else
+                            ProcessNMI();
+                    }
+                    while (IRQ_Buffer.Count > 0 && !registers.Flags.I)
+                    {
+                        ulong value = IRQ_Buffer[0];
+                        IRQ_Buffer.RemoveAt(0);
+                        if (value != 0xFFFE)
+                            ProcessIRQ(value);
+                        else
+                            ProcessIRQ();
+                    }
+                    Execute(GetNextByteInstruction());
+                }
+                while (s.ElapsedMilliseconds < 16) { }
             }
         }
 
@@ -611,90 +619,21 @@ namespace _6502CPU
                     break;
                 #endregion
 
-                #endregion
-
                 default:
                     break;
+                #endregion
             }
-        }
-
-        private void IncrementProgramCounter(ulong value = 1)
-        {
-            registers.PC += value;
-            if (registers.PC >= 65536) registers.PC = registers.PC - 65536;
-        }
-
-        private byte ReadByteFromMemory(ulong addr)
-        {
-            return memory.ReadByte(addr);
-        }
-
-        private void WriteByteToMemory(ulong addr, byte value)
-        {
-            memory.WriteByte(addr, value);
-        }
-
-        public byte GetNextInstruction()
-        {
-            byte value = ReadByteFromMemory(registers.PC);
-            IncrementProgramCounter();
-            return value;
-        }
-
-        private ulong GetInstructionWord()
-        {
-            byte value1 = GetNextInstruction();
-            byte value2 = GetNextInstruction();
-            ulong value3 = (ulong)(value1 + value2 * 0x100);// (value2 << 8) | value1);
-            return value3 & 0xFFFF;
-        }
-
-        private void PushToStack(byte value)
-        {
-            WriteByteToMemory((ulong)(registers.S + 0x100), value);
-            registers.S--;
-        }
-
-        private byte PopFromStack()
-        {
-            registers.S++;
-            return ReadByteFromMemory((ulong)(registers.S + 0x100));
-        }
-
-        private void ProcessNMI(ulong value = 0xFFFA)
-        {
-            PushToStack((byte)((registers.PC >> 8) & 0xFF));
-            PushToStack((byte)(registers.PC & 0xFF));
-            PushToStack(registers.P);
-            registers.Flags.I = true;
-            registers.PC = (ushort)(ReadByteFromMemory(value) | (ReadByteFromMemory(value + 1) << 8));
-            cyclesThisOperation += 7;
-        }
-
-        private void ProcessIRQ(ulong value = 0xFFFE)
-        {
-            PushToStack((byte)((registers.PC >> 8) & 0xFF)); 
-            PushToStack((byte)(registers.PC & 0xFF));        
-            PushToStack((byte)(registers.P | 0x20)); 
-            registers.Flags.I = true;
-            registers.PC = (ushort)(ReadByteFromMemory(value) | (ReadByteFromMemory(value + 1) << 8));
-            cyclesThisOperation += 7;
-        }
-
-        private static bool CrossBoundary(ulong addr1, ulong addr2)
-        {
-            return (addr1 & 0xff00) != (addr2 & 0xff00);
         }
 
         #region Addressing Modes
         private byte Immediate()
         {
-            byte addr = GetNextInstruction();
+            byte addr = GetNextByteInstruction();
             return addr;
         }
         private ulong Absolute()
         {
-            ulong addr = GetInstructionWord();
+            ulong addr = GetNextWordInstruction();
             return addr & 0xFFFF;
         }
         private ulong AbsoluteIndirect()
@@ -730,7 +669,7 @@ namespace _6502CPU
         }
         private byte Zero_Page()
         {
-            byte addr = GetNextInstruction();
+            byte addr = GetNextByteInstruction();
             return addr;
         }
         private byte X_Indexed_Zero_Page()
@@ -745,7 +684,7 @@ namespace _6502CPU
         }
         private ulong X_Indexed_Zero_Page_Indirect()
         {
-            byte value = (byte)(GetNextInstruction() + registers.X);
+            byte value = (byte)(GetNextByteInstruction() + registers.X);
             byte value1 = ReadByteFromMemory(value);
             byte value2 = (byte)(ReadByteFromMemory(value += 1) & 0xFF);
             ulong addr = (ulong)((value2 << 8) | value1);
@@ -753,7 +692,7 @@ namespace _6502CPU
         }
         private ulong Zero_Page_Indirect_Y_Indexed(bool checkBoundary = true)
         {
-            byte value = GetNextInstruction();
+            byte value = GetNextByteInstruction();
             byte value1 = ReadByteFromMemory(value);
             byte value2 = (byte)(ReadByteFromMemory(value += 1) & 0xFF);
             ulong value3 = (ulong)((value2 << 8) | value1);
@@ -1007,7 +946,7 @@ namespace _6502CPU
         #region PH*
         private void PHA()
         {
-            PushToStack(registers.A);
+            PushByteToStack(registers.A);
             cyclesThisOperation += 3;
         }
         private void PHP()
@@ -1015,7 +954,7 @@ namespace _6502CPU
             byte addr = registers.Flags.GetFlagsAsByte();
             addr = (byte)(addr | (1 << 4));
             addr = (byte)(addr | (1 << 5));
-            PushToStack(addr);
+            PushByteToStack(addr);
             cyclesThisOperation += 3;
         }
         #endregion
@@ -1023,13 +962,13 @@ namespace _6502CPU
         #region PL*
         private void PLA()
         {
-            registers.A = PopFromStack();
+            registers.A = PopByteFromStack();
             Set_FlagsNZ(registers.A);
             cyclesThisOperation += 4;
         }
         private void PLP()
         {
-            byte value = PopFromStack();
+            byte value = PopByteFromStack();
             registers.Flags.SetFlagsFromByte(value, 0xCF); //ignore bits 5 & 6
             cyclesThisOperation += 4;
         }
@@ -1985,9 +1924,9 @@ namespace _6502CPU
         {
             IncrementProgramCounter();
             registers.Flags.B = true;
-            PushToStack((byte)((registers.PC >> 8) & 0xFF));
-            PushToStack((byte)(registers.PC & 0xFF));
-            PushToStack(registers.P);
+            PushByteToStack((byte)((registers.PC >> 8) & 0xFF));
+            PushByteToStack((byte)(registers.PC & 0xFF));
+            PushByteToStack(registers.P);
             registers.Flags.B = false;
             registers.Flags.I = true;
             registers.PC = (ulong)(ReadByteFromMemory(0xFFFE) + ReadByteFromMemory(0xFFFF) * 0x100);
@@ -2029,9 +1968,9 @@ namespace _6502CPU
             byte pclo = ReadByteFromMemory(registers.PC);
             registers.PC++;
             byte hi = (byte)(((registers.PC) >> 8) & 0xFF);
-            PushToStack(hi);
+            PushByteToStack(hi);
             byte lo = (byte)((registers.PC) & 0xFF);
-            PushToStack(lo);
+            PushByteToStack(lo);
             byte pchi = ReadByteFromMemory(registers.PC);
             registers.PC = (ulong)((pchi << 8) | pclo);
             cyclesThisOperation += 6;
@@ -2041,17 +1980,17 @@ namespace _6502CPU
         #region RT*
         private void RTI()
         {
-            byte flags = PopFromStack();
-            byte lo = PopFromStack();
-            byte hi = PopFromStack();
+            byte flags = PopByteFromStack();
+            byte lo = PopByteFromStack();
+            byte hi = PopByteFromStack();
             registers.PC = (ulong)((hi << 8) | lo);
             registers.Flags.SetFlagsFromByte(flags, 0b11001111);
             cyclesThisOperation += 6;
         }
         private void RTS()
         {
-            byte lo = PopFromStack();
-            byte hi = PopFromStack();
+            byte lo = PopByteFromStack();
+            byte hi = PopByteFromStack();
             registers.PC = (ulong)((hi << 8) | lo);
             registers.PC++;
             cyclesThisOperation += 6;
@@ -2060,5 +1999,72 @@ namespace _6502CPU
 
         #endregion
 
+        private void IncrementProgramCounter(ulong value = 1)
+        {
+            registers.PC += value;
+            if (registers.PC >= 65536) registers.PC = registers.PC - 65536;
+        }
+
+        private byte ReadByteFromMemory(ulong addr)
+        {
+            return memory.ReadByte(addr);
+        }
+
+        private void WriteByteToMemory(ulong addr, byte value)
+        {
+            memory.WriteByte(addr, value);
+        }
+
+        public byte GetNextByteInstruction()
+        {
+            byte value = ReadByteFromMemory(registers.PC);
+            IncrementProgramCounter();
+            return value;
+        }
+
+        private ulong GetNextWordInstruction()
+        {
+            byte value1 = GetNextByteInstruction();
+            byte value2 = GetNextByteInstruction();
+            ulong value3 = (ulong)(value1 + value2 * 0x100);// (value2 << 8) | value1);
+            return value3 & 0xFFFF;
+        }
+
+        private void PushByteToStack(byte value)
+        {
+            WriteByteToMemory((ulong)(registers.S + 0x100), value);
+            registers.S--;
+        }
+
+        private byte PopByteFromStack()
+        {
+            registers.S++;
+            return ReadByteFromMemory((ulong)(registers.S + 0x100));
+        }
+
+        private void ProcessNMI(ulong value = 0xFFFA)
+        {
+            PushByteToStack((byte)((registers.PC >> 8) & 0xFF));
+            PushByteToStack((byte)(registers.PC & 0xFF));
+            PushByteToStack(registers.P);
+            registers.Flags.I = true;
+            registers.PC = (ushort)(ReadByteFromMemory(value) | (ReadByteFromMemory(value + 1) << 8));
+            cyclesThisOperation += 7;
+        }
+
+        private void ProcessIRQ(ulong value = 0xFFFE)
+        {
+            PushByteToStack((byte)((registers.PC >> 8) & 0xFF)); 
+            PushByteToStack((byte)(registers.PC & 0xFF));        
+            PushByteToStack((byte)(registers.P | 0x20)); 
+            registers.Flags.I = true;
+            registers.PC = (ushort)(ReadByteFromMemory(value) | (ReadByteFromMemory(value + 1) << 8));
+            cyclesThisOperation += 7;
+        }
+
+        private static bool CrossBoundary(ulong addr1, ulong addr2)
+        {
+            return (addr1 & 0xff00) != (addr2 & 0xff00);
+        }
     }
 }
