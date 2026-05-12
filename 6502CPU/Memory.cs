@@ -6,12 +6,7 @@ namespace _6502CPU
     public class Memory
     {
         public byte[] memory { get; set; }
-
-        // Shadow copies of each ROM region as originally loaded. Used by
-        // RestoreRoms() so a hard-reset can put the ROM bytes back after a
-        // running program has overwritten them (which it's allowed to do -
-        // see the WriteByte comment).
-        private readonly List<RomRegion> roms = new List<RomRegion>();
+        private readonly List<ROM> rom = new List<ROM>();
 
         // Optional write hook for the I/O range $D000-$DFFF. Returning true
         // tells WriteByte to suppress the actual store (useful for ACK
@@ -32,17 +27,12 @@ namespace _6502CPU
             memory = new byte[size];
         }
 
-        // On a real C64, RAM exists at every address $0000-$FFFF. ROMs
-        // (BASIC at $A000, CHAR at $D000, KERNAL at $E000) only overlay on
-        // READS, and only when the CPU port at $0001 says they're banked
-        // in. Writes ALWAYS reach the underlying RAM regardless of bank
-        // state. We don't model the bank register, so we approximate:
-        // writes go straight to memory[], even into ROM-loaded regions.
-        // RestoreRoms() puts the original ROM bytes back on hard reset so
-        // the KERNAL still boots cleanly after a program has trashed it.
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void WriteByte(ulong addr, byte value)
         {
+            // ROM protection still wins over everything else.
+            if (rom.Count != 0 && IsROM((int)addr)) return;
+
             // Hook only fires inside the I/O range to keep RAM writes fast.
             if (addr >= 0xD000 && addr < 0xE000 && OnIOWrite is not null)
             {
@@ -50,6 +40,19 @@ namespace _6502CPU
             }
 
             memory[addr] = value;
+        }
+
+        private bool IsROM(int addr)
+        {
+            // Use indexed for-loop to avoid enumerator allocation on each call.
+            var list = rom;
+            int count = list.Count;
+            for (int i = 0; i < count; i++)
+            {
+                var r = list[i];
+                if (addr >= r.StartAddr && addr <= r.StartAddr + r.Length) return true;
+            }
+            return false;
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -68,37 +71,17 @@ namespace _6502CPU
             return (ulong)(m[addr] | (m[addr + 1] << 8));
         }
 
-        // Loads a binary file into memory at startAddr. When isRom is true
-        // a shadow copy of the bytes is kept so a later RestoreRoms() can
-        // re-stamp them back over whatever the running program wrote.
-        public void Load(string filePath, int startAddr, int length, bool isRom)
+        public void Load(string filePath, int startAddr, int length, bool readOnly)
         {
-            byte[] data = File.ReadAllBytes(filePath);
-            Array.Copy(data, 0, memory, startAddr, length);
-            if (isRom)
-            {
-                byte[] shadow = new byte[length];
-                Array.Copy(data, 0, shadow, 0, length);
-                roms.Add(new RomRegion { StartAddr = startAddr, Bytes = shadow });
-            }
-        }
-
-        // Re-stamps each registered ROM region back into memory[], undoing
-        // any writes a running program may have done there. Call from a
-        // hard reset before re-running the KERNAL reset routine.
-        public void RestoreRoms()
-        {
-            for (int i = 0; i < roms.Count; i++)
-            {
-                var r = roms[i];
-                Array.Copy(r.Bytes, 0, memory, r.StartAddr, r.Bytes.Length);
-            }
+            Array.Copy(File.ReadAllBytes(filePath), 0, memory, startAddr, length);
+            if (readOnly)
+                rom.Add(new ROM() { StartAddr = startAddr, Length = length });
         }
     }
 
-    internal class RomRegion
+    internal class ROM
     {
-        public int StartAddr;
-        public byte[] Bytes = Array.Empty<byte>();
+        public int StartAddr { get; set; }
+        public int Length { get; set; }
     }
 }

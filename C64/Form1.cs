@@ -52,17 +52,42 @@ namespace C64
 
         private PictureBox? screenBox;
         private Bitmap? screenBitmap;
-        private readonly byte[] pixelBuf = new byte[ScreenW * ScreenH * 4];
 
-        private readonly bool[] fgMask = new bool[ScreenW * ScreenH];
+        // The raster thread now drives rendering scanline-by-scanline, so
+        // mid-frame writes from the game's raster IRQ handler (changing
+        // $D018, $D020, $D021, sprite positions, etc.) take effect on the
+        // remaining scanlines - making split-screen tricks and sprite
+        // multiplexers visible.
+        //
+        // renderBuf  - the raster thread writes here, one scanline at a
+        //              time, as that line is reached in the emulated frame.
+        // displayBuf - the UI thread blits from here. We swap at vsync so
+        //              the user always sees a complete frame, no tearing.
+        private byte[] renderBuf  = new byte[ScreenW * ScreenH * 4];
+        private byte[] displayBuf = new byte[ScreenW * ScreenH * 4];
+        private readonly object swapLock = new object();
 
-        private readonly byte[] spriteMask = new byte[ScreenW * ScreenH];
+        // Per-scanline foreground/sprite masks (320 entries each).
+        // Cleared at the start of every scanline.
+        private readonly bool[] fgLine     = new bool[ScreenW];
+        private readonly byte[] spriteLine = new byte[ScreenW];
 
-        private readonly byte[] scrollBuf = new byte[ScreenW * ScreenH * 4];
+        // PAL playfield: raster lines 51..250 inclusive are the visible
+        // 200-line playfield. Lines outside this range are top/bottom
+        // border; we just skip rendering them (the PictureBox letterboxes
+        // them visually with the default form background).
+        private const int VisibleTop    = 51;
+        private const int VisibleBottom = 250;
 
         private int rasterCompare;
         private int currentRasterLine;
-        private bool rasterIrqPendingThisFrame;
+
+        // CIA-1 timer-A IRQ mask state. The KERNAL enables this at boot
+        // (its 50/60 Hz jiffy clock IRQ). Games typically disable it via
+        // STA $DC0D #$7F so they get raster-only IRQs. Honouring this
+        // stops our 50 Hz IRQ thread from injecting unwanted interrupts
+        // that the game's handler interprets as raster events.
+        private bool ciaTimerAIrqEnabled = true;
 
         private readonly CancellationTokenSource cts = new CancellationTokenSource();
         private Thread? cpuThread;
@@ -187,6 +212,32 @@ namespace C64
                         cpu.memory.memory[0xD019] = next;
                         return true;
                     }
+                case 0xDC0D:
+                    {
+                        // CIA-1 ICR mask register. Real CIA semantics:
+                        //  bit 7 of the written value = "fill direction"
+                        //    1 -> set each bit listed in bits 0-4
+                        //    0 -> clear each bit listed in bits 0-4
+                        // Bit 0 of the mask is timer-A IRQ enable.
+                        bool fill = (value & 0x80) != 0;
+                        if ((value & 0x01) != 0) ciaTimerAIrqEnabled = fill;
+                        // Suppress the actual store - $DC0D's CPU-visible
+                        // value is the IRQ source latch, set by hardware,
+                        // cleared on read. The IRQ thread updates it.
+                        return true;
+                    }
+                case 0xDC0E:
+                case 0xDC0F:
+                    {
+                        // CIA-1 timer-A / timer-B control. We don't model
+                        // the actual timers, but recording the running
+                        // state stops games that explicitly stop and re-
+                        // start the timer from seeing stale IRQs.
+                        if (addr == 0xDC0E && (value & 0x01) == 0)
+                            ciaTimerAIrqEnabled = false;
+                        cpu.memory.memory[addr] = value;
+                        return true;
+                    }
             }
             return false;
         }
@@ -197,6 +248,14 @@ namespace C64
             {
                 case 0xD01E: // sprite-sprite collision latch
                 case 0xD01F: // sprite-data   collision latch
+                    cpu.memory.memory[addr] = 0;
+                    break;
+                case 0xDC0D: // CIA-1 ICR: reading returns latched sources
+                case 0xDD0D: // CIA-2 ICR: same semantics
+                    // Reading these clears all source bits and the master
+                    // IRQ bit. The game's IRQ handler reads $DC0D to ACK
+                    // the timer-A interrupt; without this clear it would
+                    // re-trigger on the next read.
                     cpu.memory.memory[addr] = 0;
                     break;
             }
@@ -228,7 +287,8 @@ namespace C64
             rasterThread = new Thread(() => RasterLoop(token))
             {
                 IsBackground = true,
-                Name = "VIC-II raster"
+                Name = "VIC-II raster",
+                Priority = ThreadPriority.AboveNormal,
             };
             rasterThread.Start();
 
@@ -265,9 +325,14 @@ namespace C64
                 d011 = (byte)((d011 & 0x7F) | (((line >> 8) & 1) << 7));
                 mem[0xD011] = d011;
 
-                if (line == rasterCompare && !rasterIrqPendingThisFrame)
+                // Raster IRQ fires on the line-matching edge. The CPU
+                // services it asynchronously - by the time we render the
+                // next few scanlines, the game's handler will likely have
+                // already updated VIC state (e.g. $D018, $D020, sprite Y)
+                // for the new region of screen, so our per-line snapshot
+                // picks up those changes automatically.
+                if (line == rasterCompare)
                 {
-                    rasterIrqPendingThisFrame = true;
                     bool rasterIrqEnabled = (mem[0xD01A] & 0x01) != 0;
                     if (rasterIrqEnabled)
                     {
@@ -276,17 +341,75 @@ namespace C64
                     }
                 }
 
+                // Render this scanline if it's inside the visible
+                // playfield. Lines outside are border - we just tick
+                // through them without writing pixels.
+                if (line >= VisibleTop && line <= VisibleBottom)
+                {
+                    RenderScanline(line - VisibleTop);
+                }
+
                 line++;
                 if (line >= PalRasterLines)
                 {
                     line = 0;
-                    rasterIrqPendingThisFrame = false;
+                    // End-of-frame: swap the just-rendered buffer with the
+                    // one the UI thread reads. Tiny lock window.
+                    lock (swapLock)
+                    {
+                        (renderBuf, displayBuf) = (displayBuf, renderBuf);
+                    }
                 }
 
                 while (Stopwatch.GetTimestamp() < next)
                     Thread.SpinWait(1);
                 next += ticksPerLine;
             }
+        }
+
+        // Dispatches per-scanline rendering based on the VIC-II mode at
+        // the moment this line is being drawn. Reading state per-line is
+        // what enables raster-split tricks and sprite multiplexers to
+        // appear correctly.
+        private void RenderScanline(int y)
+        {
+            byte[] mem = cpu.memory.memory;
+            byte d011 = mem[0xD011];
+            byte d016 = mem[0xD016];
+            byte d018 = mem[0xD018];
+            byte bg0  = (byte)(mem[0xD021] & 0x0F);
+            byte bg1  = (byte)(mem[0xD022] & 0x0F);
+            byte bg2  = (byte)(mem[0xD023] & 0x0F);
+            byte bg3  = (byte)(mem[0xD024] & 0x0F);
+
+            int bank = VicBankBase();
+            int screenAddr = bank + ((d018 >> 4) & 0x0F) * 0x400;
+            int charAddr   = bank + ((d018 >> 1) & 0x07) * 0x800;
+
+            bool screenOn = (d011 & 0x10) != 0;
+            bool bmm      = (d011 & 0x20) != 0;
+            bool ecm      = (d011 & 0x40) != 0;
+            bool mcm      = (d016 & 0x10) != 0;
+
+            // Clear per-line masks before rendering this scanline.
+            Array.Clear(fgLine, 0, fgLine.Length);
+            Array.Clear(spriteLine, 0, spriteLine.Length);
+
+            if (!screenOn)
+                FillLineSolid(y, bg0);
+            else if (bmm && mcm)
+                RenderLineMulticolorBitmap(y, screenAddr, bank, d018, bg0);
+            else if (bmm)
+                RenderLineHiresBitmap(y, screenAddr, bank, d018);
+            else if (ecm)
+                RenderLineExtendedBgText(y, screenAddr, charAddr, bg0, bg1, bg2, bg3);
+            else if (mcm)
+                RenderLineMulticolorText(y, screenAddr, charAddr, bg0, bg1, bg2);
+            else
+                RenderLineStandardText(y, screenAddr, charAddr, bg0);
+
+            if (screenOn)
+                RenderSpritesScanline(y, screenAddr, bank);
         }
 
         private void IrqLoop(CancellationToken token)
@@ -296,7 +419,21 @@ namespace C64
             while (!token.IsCancellationRequested)
             {
                 DrainKeyboardQueue();
-                cpu.InitiateIRQ(0xFFFE);
+
+                // Only deliver a CIA-1 timer-A IRQ when the game (or
+                // KERNAL) has the mask bit set. Games that program
+                // $DC0D = $7F before installing a raster IRQ no longer
+                // get spurious 50 Hz interrupts that would otherwise
+                // run their handler at the wrong scanline.
+                if (ciaTimerAIrqEnabled)
+                {
+                    byte[] mem = cpu.memory.memory;
+                    // Set the timer-A source bit + master flag in the
+                    // CIA-1 ICR shadow so a handler that reads $DC0D
+                    // sees a sensible value before ACKing.
+                    mem[0xDC0D] = (byte)(mem[0xDC0D] | 0x81);
+                    cpu.InitiateIRQ(0xFFFE);
+                }
 
                 long remaining = next - Stopwatch.GetTimestamp();
                 if (remaining > 0)
@@ -349,59 +486,15 @@ namespace C64
         {
             if (!IsHandleCreated || screenBox is null || screenBitmap is null) return;
 
-            byte[] mem = cpu.memory.memory;
-            byte d011 = mem[0xD011];
-            byte d016 = mem[0xD016];
-            byte d018 = mem[0xD018];
-            byte bg0 = (byte)(mem[0xD021] & 0x0F);
-            byte bg1 = (byte)(mem[0xD022] & 0x0F);
-            byte bg2 = (byte)(mem[0xD023] & 0x0F);
-            byte bg3 = (byte)(mem[0xD024] & 0x0F);
-
-            int bank = VicBankBase();
-            int screenAddr = bank + ((d018 >> 4) & 0x0F) * 0x400;
-            int charAddr = bank + ((d018 >> 1) & 0x07) * 0x800;
-
-            bool screenOn = (d011 & 0x10) != 0;
-            bool bmm = (d011 & 0x20) != 0;
-            bool ecm = (d011 & 0x40) != 0;
-            bool mcm = (d016 & 0x10) != 0;
-
-            int xScroll = d016 & 0x07;
-            int yScroll = (d011 & 0x07) - 3;
-
-            Array.Clear(fgMask, 0, fgMask.Length);
-            // Sprite occupancy mask is also per-frame; collision detection
-            // only considers sprites visible in the current frame.
-            Array.Clear(spriteMask, 0, spriteMask.Length);
-
-            if (!screenOn)
-                FillSolid(bg0);
-            else if (bmm && mcm)
-                RenderMulticolorBitmap(screenAddr, charAddr, bank, d018, bg0);
-            else if (bmm)
-                RenderHiresBitmap(screenAddr, bank, d018);
-            else if (ecm)
-                RenderExtendedBgText(screenAddr, charAddr, bg0, bg1, bg2, bg3);
-            else if (mcm)
-                RenderMulticolorText(screenAddr, charAddr, bg0, bg1, bg2);
-            else
-                RenderStandardText(screenAddr, charAddr, bg0);
-
-            // Sprite overlay (always rendered when display is on).
-            if (screenOn)
-                RenderSprites(screenAddr, bank);
-
-            // Apply smooth-scroll shift, if any. We do this after sprites so
-            // the entire composition scrolls together, matching how a real
-            // VIC moves its visible window relative to the display area.
-            if (xScroll != 0 || yScroll != 0)
-                ApplyScroll(xScroll, yScroll, bg0);
-
-            // Blit pixelBuf -> Bitmap once per frame.
+            // Per-scanline rendering is done by the raster thread into
+            // displayBuf (after frame swap). The UI's only job is to
+            // blit that buffer into the GDI+ bitmap and invalidate.
             var rect = new Rectangle(0, 0, ScreenW, ScreenH);
             BitmapData data = screenBitmap.LockBits(rect, ImageLockMode.WriteOnly, PixelFormat.Format32bppArgb);
-            Marshal.Copy(pixelBuf, 0, data.Scan0, pixelBuf.Length);
+            lock (swapLock)
+            {
+                Marshal.Copy(displayBuf, 0, data.Scan0, displayBuf.Length);
+            }
             screenBitmap.UnlockBits(data);
             screenBox.Invalidate();
         }
@@ -431,249 +524,223 @@ namespace C64
             }
         }
 
-        private void FillSolid(byte colorIdx)
+        private void FillLineSolid(int y, byte colorIdx)
         {
             int c = C64Palette[colorIdx & 0x0F];
-            for (int i = 0; i < pixelBuf.Length; i += 4)
+            int p = y * ScreenW * 4;
+            int end = p + ScreenW * 4;
+            while (p < end)
             {
-                pixelBuf[i] = (byte)c;
-                pixelBuf[i + 1] = (byte)(c >> 8);
-                pixelBuf[i + 2] = (byte)(c >> 16);
-                pixelBuf[i + 3] = 0xFF;
+                renderBuf[p]     = (byte)c;
+                renderBuf[p + 1] = (byte)(c >> 8);
+                renderBuf[p + 2] = (byte)(c >> 16);
+                renderBuf[p + 3] = 0xFF;
+                p += 4;
             }
         }
 
-        private void RenderStandardText(int screenAddr, int charAddr, byte bg)
+        private void RenderLineStandardText(int y, int screenAddr, int charAddr, byte bg)
         {
             byte[] mem = cpu.memory.memory;
             ResolveCharSource(charAddr, VicBankBase(), out byte[] cs, out int cb);
             int bgC = C64Palette[bg];
 
-            for (int row = 0; row < 25; row++)
-            {
-                int rowBase = row * 40;
-                for (int col = 0; col < 40; col++)
-                {
-                    byte code = mem[screenAddr + rowBase + col];
-                    int fgC = C64Palette[mem[0xD800 + rowBase + col] & 0x0F];
-                    int charPtr = cb + code * 8;
+            int row = y / 8;
+            int dy = y % 8;
+            int rowBase = row * 40;
+            int lineStart = y * ScreenW * 4;
+            int fgBase = 0;
 
-                    for (int dy = 0; dy < 8; dy++)
-                    {
-                        byte bits = cs[charPtr + dy];
-                        int py = row * 8 + dy;
-                        int p = (py * ScreenW + col * 8) * 4;
-                        int fgIdx = py * ScreenW + col * 8;
-                        for (int dx = 0; dx < 8; dx++)
-                        {
-                            bool on = (bits & (0x80 >> dx)) != 0;
-                            int c = on ? fgC : bgC;
-                            pixelBuf[p] = (byte)c;
-                            pixelBuf[p + 1] = (byte)(c >> 8);
-                            pixelBuf[p + 2] = (byte)(c >> 16);
-                            pixelBuf[p + 3] = 0xFF;
-                            fgMask[fgIdx] = on;
-                            p += 4;
-                            fgIdx++;
-                        }
-                    }
+            for (int col = 0; col < 40; col++)
+            {
+                byte code = mem[screenAddr + rowBase + col];
+                int fgC = C64Palette[mem[0xD800 + rowBase + col] & 0x0F];
+                byte bits = cs[cb + code * 8 + dy];
+                int p = lineStart + col * 32;
+                for (int dx = 0; dx < 8; dx++)
+                {
+                    bool on = (bits & (0x80 >> dx)) != 0;
+                    int c = on ? fgC : bgC;
+                    renderBuf[p]     = (byte)c;
+                    renderBuf[p + 1] = (byte)(c >> 8);
+                    renderBuf[p + 2] = (byte)(c >> 16);
+                    renderBuf[p + 3] = 0xFF;
+                    fgLine[fgBase + dx] = on;
+                    p += 4;
                 }
+                fgBase += 8;
             }
         }
 
-        private void RenderMulticolorText(int screenAddr, int charAddr, byte bg0, byte bg1, byte bg2)
+        private void RenderLineMulticolorText(int y, int screenAddr, int charAddr, byte bg0, byte bg1, byte bg2)
         {
             byte[] mem = cpu.memory.memory;
             ResolveCharSource(charAddr, VicBankBase(), out byte[] cs, out int cb);
             int bgC = C64Palette[bg0];
             int[] mcc = { bgC, C64Palette[bg1], C64Palette[bg2], 0 };
 
-            for (int row = 0; row < 25; row++)
-            {
-                int rowBase = row * 40;
-                for (int col = 0; col < 40; col++)
-                {
-                    byte code = mem[screenAddr + rowBase + col];
-                    byte colRam = (byte)(mem[0xD800 + rowBase + col] & 0x0F);
-                    bool cellMc = (colRam & 0x08) != 0;
-                    int fgC = C64Palette[colRam & (cellMc ? 0x07 : 0x0F)];
-                    int charPtr = cb + code * 8;
+            int row = y / 8;
+            int dy = y % 8;
+            int rowBase = row * 40;
+            int lineStart = y * ScreenW * 4;
+            int fgBase = 0;
 
-                    if (cellMc)
+            for (int col = 0; col < 40; col++)
+            {
+                byte code = mem[screenAddr + rowBase + col];
+                byte colRam = (byte)(mem[0xD800 + rowBase + col] & 0x0F);
+                bool cellMc = (colRam & 0x08) != 0;
+                int fgC = C64Palette[colRam & (cellMc ? 0x07 : 0x0F)];
+                byte bits = cs[cb + code * 8 + dy];
+                int p = lineStart + col * 32;
+
+                if (cellMc)
+                {
+                    mcc[3] = fgC;
+                    for (int pair = 0; pair < 4; pair++)
                     {
-                        mcc[3] = fgC;
-                        for (int dy = 0; dy < 8; dy++)
-                        {
-                            byte bits = cs[charPtr + dy];
-                            int py = row * 8 + dy;
-                            int p = (py * ScreenW + col * 8) * 4;
-                            int fgIdx = py * ScreenW + col * 8;
-                            for (int pair = 0; pair < 4; pair++)
-                            {
-                                int pix = (bits >> ((3 - pair) * 2)) & 0x03;
-                                int c = mcc[pix];
-                                bool fg = pix == 3; // priority: only mc colour 11 counts as fg
-                                pixelBuf[p] = (byte)c;
-                                pixelBuf[p + 1] = (byte)(c >> 8);
-                                pixelBuf[p + 2] = (byte)(c >> 16);
-                                pixelBuf[p + 3] = 0xFF;
-                                pixelBuf[p + 4] = (byte)c;
-                                pixelBuf[p + 5] = (byte)(c >> 8);
-                                pixelBuf[p + 6] = (byte)(c >> 16);
-                                pixelBuf[p + 7] = 0xFF;
-                                fgMask[fgIdx] = fg;
-                                fgMask[fgIdx + 1] = fg;
-                                p += 8;
-                                fgIdx += 2;
-                            }
-                        }
-                    }
-                    else
-                    {
-                        for (int dy = 0; dy < 8; dy++)
-                        {
-                            byte bits = cs[charPtr + dy];
-                            int py = row * 8 + dy;
-                            int p = (py * ScreenW + col * 8) * 4;
-                            int fgIdx = py * ScreenW + col * 8;
-                            for (int dx = 0; dx < 8; dx++)
-                            {
-                                bool on = (bits & (0x80 >> dx)) != 0;
-                                int c = on ? fgC : bgC;
-                                pixelBuf[p] = (byte)c;
-                                pixelBuf[p + 1] = (byte)(c >> 8);
-                                pixelBuf[p + 2] = (byte)(c >> 16);
-                                pixelBuf[p + 3] = 0xFF;
-                                fgMask[fgIdx] = on;
-                                p += 4;
-                                fgIdx++;
-                            }
-                        }
+                        int pix = (bits >> ((3 - pair) * 2)) & 0x03;
+                        int c = mcc[pix];
+                        bool fg = pix == 3;
+                        renderBuf[p]     = (byte)c;
+                        renderBuf[p + 1] = (byte)(c >> 8);
+                        renderBuf[p + 2] = (byte)(c >> 16);
+                        renderBuf[p + 3] = 0xFF;
+                        renderBuf[p + 4] = (byte)c;
+                        renderBuf[p + 5] = (byte)(c >> 8);
+                        renderBuf[p + 6] = (byte)(c >> 16);
+                        renderBuf[p + 7] = 0xFF;
+                        fgLine[fgBase + pair * 2]     = fg;
+                        fgLine[fgBase + pair * 2 + 1] = fg;
+                        p += 8;
                     }
                 }
+                else
+                {
+                    for (int dx = 0; dx < 8; dx++)
+                    {
+                        bool on = (bits & (0x80 >> dx)) != 0;
+                        int c = on ? fgC : bgC;
+                        renderBuf[p]     = (byte)c;
+                        renderBuf[p + 1] = (byte)(c >> 8);
+                        renderBuf[p + 2] = (byte)(c >> 16);
+                        renderBuf[p + 3] = 0xFF;
+                        fgLine[fgBase + dx] = on;
+                        p += 4;
+                    }
+                }
+                fgBase += 8;
             }
         }
 
-        private void RenderExtendedBgText(int screenAddr, int charAddr, byte bg0, byte bg1, byte bg2, byte bg3)
+        private void RenderLineExtendedBgText(int y, int screenAddr, int charAddr, byte bg0, byte bg1, byte bg2, byte bg3)
         {
             byte[] mem = cpu.memory.memory;
             ResolveCharSource(charAddr, VicBankBase(), out byte[] cs, out int cb);
             int[] bgC = { C64Palette[bg0], C64Palette[bg1], C64Palette[bg2], C64Palette[bg3] };
 
-            for (int row = 0; row < 25; row++)
-            {
-                int rowBase = row * 40;
-                for (int col = 0; col < 40; col++)
-                {
-                    byte code = mem[screenAddr + rowBase + col];
-                    int fgC = C64Palette[mem[0xD800 + rowBase + col] & 0x0F];
-                    int b = bgC[(code >> 6) & 0x03];
-                    int charPtr = cb + (code & 0x3F) * 8;
+            int row = y / 8;
+            int dy = y % 8;
+            int rowBase = row * 40;
+            int lineStart = y * ScreenW * 4;
+            int fgBase = 0;
 
-                    for (int dy = 0; dy < 8; dy++)
-                    {
-                        byte bits = cs[charPtr + dy];
-                        int py = row * 8 + dy;
-                        int p = (py * ScreenW + col * 8) * 4;
-                        int fgIdx = py * ScreenW + col * 8;
-                        for (int dx = 0; dx < 8; dx++)
-                        {
-                            bool on = (bits & (0x80 >> dx)) != 0;
-                            int c = on ? fgC : b;
-                            pixelBuf[p] = (byte)c;
-                            pixelBuf[p + 1] = (byte)(c >> 8);
-                            pixelBuf[p + 2] = (byte)(c >> 16);
-                            pixelBuf[p + 3] = 0xFF;
-                            fgMask[fgIdx] = on;
-                            p += 4;
-                            fgIdx++;
-                        }
-                    }
+            for (int col = 0; col < 40; col++)
+            {
+                byte code = mem[screenAddr + rowBase + col];
+                int fgC = C64Palette[mem[0xD800 + rowBase + col] & 0x0F];
+                int b = bgC[(code >> 6) & 0x03];
+                byte bits = cs[cb + (code & 0x3F) * 8 + dy];
+                int p = lineStart + col * 32;
+
+                for (int dx = 0; dx < 8; dx++)
+                {
+                    bool on = (bits & (0x80 >> dx)) != 0;
+                    int c = on ? fgC : b;
+                    renderBuf[p]     = (byte)c;
+                    renderBuf[p + 1] = (byte)(c >> 8);
+                    renderBuf[p + 2] = (byte)(c >> 16);
+                    renderBuf[p + 3] = 0xFF;
+                    fgLine[fgBase + dx] = on;
+                    p += 4;
                 }
+                fgBase += 8;
             }
         }
 
-        private void RenderHiresBitmap(int screenAddr, int bank, byte d018)
+        private void RenderLineHiresBitmap(int y, int screenAddr, int bank, byte d018)
         {
             byte[] mem = cpu.memory.memory;
             int bitmapAddr = bank + (((d018 & 0x08) != 0) ? 0x2000 : 0x0000);
 
-            for (int row = 0; row < 25; row++)
-            {
-                int rowBase = row * 40;
-                for (int col = 0; col < 40; col++)
-                {
-                    byte clr = mem[screenAddr + rowBase + col];
-                    int fgC = C64Palette[(clr >> 4) & 0x0F];
-                    int bgC = C64Palette[clr & 0x0F];
-                    int cellBase = bitmapAddr + (rowBase * 8) + col * 8;
+            int row = y / 8;
+            int dy = y % 8;
+            int rowBase = row * 40;
+            int lineStart = y * ScreenW * 4;
+            int fgBase = 0;
 
-                    for (int dy = 0; dy < 8; dy++)
-                    {
-                        byte bits = mem[cellBase + dy];
-                        int py = row * 8 + dy;
-                        int p = (py * ScreenW + col * 8) * 4;
-                        int fgIdx = py * ScreenW + col * 8;
-                        for (int dx = 0; dx < 8; dx++)
-                        {
-                            bool on = (bits & (0x80 >> dx)) != 0;
-                            int c = on ? fgC : bgC;
-                            pixelBuf[p] = (byte)c;
-                            pixelBuf[p + 1] = (byte)(c >> 8);
-                            pixelBuf[p + 2] = (byte)(c >> 16);
-                            pixelBuf[p + 3] = 0xFF;
-                            fgMask[fgIdx] = on;
-                            p += 4;
-                            fgIdx++;
-                        }
-                    }
+            for (int col = 0; col < 40; col++)
+            {
+                byte clr = mem[screenAddr + rowBase + col];
+                int fgC = C64Palette[(clr >> 4) & 0x0F];
+                int bgC = C64Palette[clr & 0x0F];
+                byte bits = mem[bitmapAddr + (rowBase * 8) + col * 8 + dy];
+                int p = lineStart + col * 32;
+
+                for (int dx = 0; dx < 8; dx++)
+                {
+                    bool on = (bits & (0x80 >> dx)) != 0;
+                    int c = on ? fgC : bgC;
+                    renderBuf[p]     = (byte)c;
+                    renderBuf[p + 1] = (byte)(c >> 8);
+                    renderBuf[p + 2] = (byte)(c >> 16);
+                    renderBuf[p + 3] = 0xFF;
+                    fgLine[fgBase + dx] = on;
+                    p += 4;
                 }
+                fgBase += 8;
             }
         }
 
-        private void RenderMulticolorBitmap(int screenAddr, int charAddr, int bank, byte d018, byte bg0)
+        private void RenderLineMulticolorBitmap(int y, int screenAddr, int bank, byte d018, byte bg0)
         {
             byte[] mem = cpu.memory.memory;
             int bitmapAddr = bank + (((d018 & 0x08) != 0) ? 0x2000 : 0x0000);
             int bgC = C64Palette[bg0];
 
-            for (int row = 0; row < 25; row++)
-            {
-                int rowBase = row * 40;
-                for (int col = 0; col < 40; col++)
-                {
-                    byte clr = mem[screenAddr + rowBase + col];
-                    int cFg1 = C64Palette[(clr >> 4) & 0x0F];
-                    int cFg2 = C64Palette[clr & 0x0F];
-                    int cFg3 = C64Palette[mem[0xD800 + rowBase + col] & 0x0F];
-                    int cellBase = bitmapAddr + (rowBase * 8) + col * 8;
+            int row = y / 8;
+            int dy = y % 8;
+            int rowBase = row * 40;
+            int lineStart = y * ScreenW * 4;
+            int fgBase = 0;
 
-                    for (int dy = 0; dy < 8; dy++)
-                    {
-                        byte bits = mem[cellBase + dy];
-                        int py = row * 8 + dy;
-                        int p = (py * ScreenW + col * 8) * 4;
-                        int fgIdx = py * ScreenW + col * 8;
-                        for (int pair = 0; pair < 4; pair++)
-                        {
-                            int pix = (bits >> ((3 - pair) * 2)) & 0x03;
-                            int c = pix switch { 0 => bgC, 1 => cFg1, 2 => cFg2, _ => cFg3 };
-                            bool fg = pix != 0;
-                            pixelBuf[p] = (byte)c;
-                            pixelBuf[p + 1] = (byte)(c >> 8);
-                            pixelBuf[p + 2] = (byte)(c >> 16);
-                            pixelBuf[p + 3] = 0xFF;
-                            pixelBuf[p + 4] = (byte)c;
-                            pixelBuf[p + 5] = (byte)(c >> 8);
-                            pixelBuf[p + 6] = (byte)(c >> 16);
-                            pixelBuf[p + 7] = 0xFF;
-                            fgMask[fgIdx] = fg;
-                            fgMask[fgIdx + 1] = fg;
-                            p += 8;
-                            fgIdx += 2;
-                        }
-                    }
+            for (int col = 0; col < 40; col++)
+            {
+                byte clr = mem[screenAddr + rowBase + col];
+                int cFg1 = C64Palette[(clr >> 4) & 0x0F];
+                int cFg2 = C64Palette[clr & 0x0F];
+                int cFg3 = C64Palette[mem[0xD800 + rowBase + col] & 0x0F];
+                byte bits = mem[bitmapAddr + (rowBase * 8) + col * 8 + dy];
+                int p = lineStart + col * 32;
+
+                for (int pair = 0; pair < 4; pair++)
+                {
+                    int pix = (bits >> ((3 - pair) * 2)) & 0x03;
+                    int c = pix switch { 0 => bgC, 1 => cFg1, 2 => cFg2, _ => cFg3 };
+                    bool fg = pix != 0;
+                    renderBuf[p]     = (byte)c;
+                    renderBuf[p + 1] = (byte)(c >> 8);
+                    renderBuf[p + 2] = (byte)(c >> 16);
+                    renderBuf[p + 3] = 0xFF;
+                    renderBuf[p + 4] = (byte)c;
+                    renderBuf[p + 5] = (byte)(c >> 8);
+                    renderBuf[p + 6] = (byte)(c >> 16);
+                    renderBuf[p + 7] = 0xFF;
+                    fgLine[fgBase + pair * 2]     = fg;
+                    fgLine[fgBase + pair * 2 + 1] = fg;
+                    p += 8;
                 }
+                fgBase += 8;
             }
         }
 
@@ -684,8 +751,11 @@ namespace C64
         // Sprites are 24x21 (single size) or 48x42 (expanded). Position
         // is given in display coords - to land on framebuffer (0,0) the
         // sprite (X,Y) must be (24,50). Bytes for each sprite live in the
-        // current VIC bank at (pointer * 64).
-        private void RenderSprites(int screenAddr, int bank)
+        // current VIC bank at (pointer * 64). Per-scanline rendering lets
+        // sprite multiplexers work: when a game writes new Y values to
+        // sprite registers in its IRQ handler, subsequent scanlines pick
+        // up the new positions automatically.
+        private void RenderSpritesScanline(int y, int screenAddr, int bank)
         {
             byte[] mem = cpu.memory.memory;
             byte enable = mem[0xD015];
@@ -698,12 +768,10 @@ namespace C64
             byte xHigh = mem[0xD010];
             int mc1 = C64Palette[mem[0xD025] & 0x0F];
             int mc2 = C64Palette[mem[0xD026] & 0x0F];
-
-            // Sprite pointers live at the top of the screen-RAM block.
             int pointerBase = screenAddr + 0x03F8;
 
-            // Render highest-numbered sprite first; lower numbers have
-            // priority so they paint last and overlay the others.
+            // Lower-numbered sprites have priority, so render highest-
+            // numbered first and let lower ones paint over.
             for (int s = 7; s >= 0; s--)
             {
                 int mask = 1 << s;
@@ -711,13 +779,8 @@ namespace C64
 
                 int sx = mem[0xD000 + s * 2] | (((xHigh & mask) != 0) ? 0x100 : 0);
                 int sy = mem[0xD000 + s * 2 + 1];
-
-                // Display coordinates -> framebuffer coordinates.
                 int fbX = sx - 24;
                 int fbY = sy - 50;
-
-                int spritePtr = mem[pointerBase + s];
-                int dataAddr = bank + spritePtr * 64;
 
                 bool xExp = (xExpand & mask) != 0;
                 bool yExp = (yExpand & mask) != 0;
@@ -725,134 +788,87 @@ namespace C64
                 bool behindBg = (priority & mask) != 0;
                 int color = C64Palette[mem[0xD027 + s] & 0x0F];
 
-                for (int row = 0; row < 21; row++)
+                int spriteHeight = yExp ? 42 : 21;
+                int spriteRow = y - fbY;
+                if (spriteRow < 0 || spriteRow >= spriteHeight) continue;
+
+                int row = yExp ? (spriteRow >> 1) : spriteRow;
+                int spritePtr = mem[pointerBase + s];
+                int dataAddr = bank + spritePtr * 64;
+                int rowAddr = dataAddr + row * 3;
+                int rowBits = (mem[rowAddr] << 16) | (mem[rowAddr + 1] << 8) | mem[rowAddr + 2];
+
+                if (mc)
                 {
-                    int rowAddr = dataAddr + row * 3;
-                    // 24 bits = 3 bytes per row.
-                    int rowBits = (mem[rowAddr] << 16) | (mem[rowAddr + 1] << 8) | mem[rowAddr + 2];
-
-                    int yRepeats = yExp ? 2 : 1;
-                    for (int yr = 0; yr < yRepeats; yr++)
+                    for (int p = 0; p < 12; p++)
                     {
-                        int destY = fbY + row * yRepeats + yr;
-                        if ((uint)destY >= ScreenH) continue;
-
-                        if (mc)
-                        {
-                            // 12 logical pixels, each 2 bits, doubled width.
-                            for (int p = 0; p < 12; p++)
-                            {
-                                int code = (rowBits >> ((11 - p) * 2)) & 0x03;
-                                if (code == 0) continue; // transparent
-                                int c = code switch { 1 => mc1, 2 => color, _ => mc2 };
-                                int basePix = p * 2 * (xExp ? 2 : 1);
-                                int width = 2 * (xExp ? 2 : 1);
-                                for (int w = 0; w < width; w++)
-                                    PaintSpritePixel(fbX + basePix + w, destY, c, behindBg, s);
-                            }
-                        }
-                        else
-                        {
-                            for (int p = 0; p < 24; p++)
-                            {
-                                if ((rowBits & (1 << (23 - p))) == 0) continue;
-                                int basePix = p * (xExp ? 2 : 1);
-                                int width = xExp ? 2 : 1;
-                                for (int w = 0; w < width; w++)
-                                    PaintSpritePixel(fbX + basePix + w, destY, color, behindBg, s);
-                            }
-                        }
+                        int code = (rowBits >> ((11 - p) * 2)) & 0x03;
+                        if (code == 0) continue;
+                        int c = code switch { 1 => mc1, 2 => color, _ => mc2 };
+                        int basePix = p * 2 * (xExp ? 2 : 1);
+                        int width = 2 * (xExp ? 2 : 1);
+                        for (int w = 0; w < width; w++)
+                            PaintSpritePixelLine(fbX + basePix + w, y, c, behindBg, s);
+                    }
+                }
+                else
+                {
+                    for (int p = 0; p < 24; p++)
+                    {
+                        if ((rowBits & (1 << (23 - p))) == 0) continue;
+                        int basePix = p * (xExp ? 2 : 1);
+                        int width = xExp ? 2 : 1;
+                        for (int w = 0; w < width; w++)
+                            PaintSpritePixelLine(fbX + basePix + w, y, color, behindBg, s);
                     }
                 }
             }
         }
 
-        private void PaintSpritePixel(int x, int y, int color, bool behindBg, int spriteIdx)
+        // Paint one sprite pixel at framebuffer (x, y). Updates the
+        // sprite-line occupancy and collision-detection registers; also
+        // honours the sprite-vs-background priority bit ($D01B).
+        private void PaintSpritePixelLine(int x, int y, int color, bool behindBg, int spriteIdx)
         {
-            if ((uint)x >= ScreenW || (uint)y >= ScreenH) return;
-            int idx = y * ScreenW + x;
+            if ((uint)x >= ScreenW) return;
             byte myBit = (byte)(1 << spriteIdx);
             byte[] mem = cpu.memory.memory;
 
-            // Sprite-sprite collision: this pixel already has another
-            // sprite's bit set. Latch both bits in $D01E and (if enabled)
-            // raise the IRQ. The latch is cleared by the CPU reading the
-            // register; until then no new IRQ fires (edge-triggered).
-            byte priorSprites = spriteMask[idx];
+            // Sprite-sprite collision: this scanline pixel already has
+            // another sprite's bit set. Real VIC detects collisions per
+            // pixel and per scanline, which is exactly what we do here.
+            byte priorSprites = spriteLine[x];
             if (priorSprites != 0)
             {
                 mem[0xD01E] |= (byte)(priorSprites | myBit);
                 if ((mem[0xD01A] & 0x04) != 0 && (mem[0xD019] & 0x04) == 0)
                 {
-                    mem[0xD019] |= 0x84; // bit 2 (source) + bit 7 (IRQ active)
+                    mem[0xD019] |= 0x84;
                     cpu.InitiateIRQ(0xFFFE);
                 }
             }
 
-            // Sprite-data collision: sprite pixel overlaps a foreground
-            // background pixel (i.e. fgMask is set).
-            if (fgMask[idx])
+            // Sprite-data collision: sprite over background-foreground.
+            if (fgLine[x])
             {
                 mem[0xD01F] |= myBit;
                 if ((mem[0xD01A] & 0x02) != 0 && (mem[0xD019] & 0x02) == 0)
                 {
-                    mem[0xD019] |= 0x82; // bit 1 (source) + bit 7 (IRQ active)
+                    mem[0xD019] |= 0x82;
                     cpu.InitiateIRQ(0xFFFE);
                 }
             }
 
-            spriteMask[idx] |= myBit;
+            spriteLine[x] |= myBit;
 
-            // Priority decision is independent of collision detection: even
-            // a hidden sprite pixel counts for collision purposes.
-            if (behindBg && fgMask[idx]) return;
+            // Priority decision is independent of collision detection.
+            if (behindBg && fgLine[x]) return;
 
-            int p = idx * 4;
-            pixelBuf[p]     = (byte)color;
-            pixelBuf[p + 1] = (byte)(color >> 8);
-            pixelBuf[p + 2] = (byte)(color >> 16);
-            pixelBuf[p + 3] = 0xFF;
-        }
-
-        // ------------------------------------------------------------
-        //  Smooth scroll
-        // ------------------------------------------------------------
-
-        // Shifts the framebuffer by (xs, ys) pixels, filling exposed
-        // edges with the background colour. Done after sprites so the
-        // entire composition scrolls together.
-        private void ApplyScroll(int xs, int ys, byte bg)
-        {
-            int bgC = C64Palette[bg & 0x0F];
-            // Fill scratch with bg.
-            for (int i = 0; i < scrollBuf.Length; i += 4)
-            {
-                scrollBuf[i] = (byte)bgC;
-                scrollBuf[i + 1] = (byte)(bgC >> 8);
-                scrollBuf[i + 2] = (byte)(bgC >> 16);
-                scrollBuf[i + 3] = 0xFF;
-            }
-
-            int copyRows = ScreenH - Math.Abs(ys);
-            int copyCols = ScreenW - Math.Abs(xs);
-            if (copyRows <= 0 || copyCols <= 0)
-            {
-                Array.Copy(scrollBuf, pixelBuf, pixelBuf.Length);
-                return;
-            }
-
-            int srcY = ys > 0 ? 0 : -ys;
-            int dstY = ys > 0 ? ys : 0;
-            int srcX = xs > 0 ? 0 : -xs;
-            int dstX = xs > 0 ? xs : 0;
-
-            for (int y = 0; y < copyRows; y++)
-            {
-                int srcOff = ((srcY + y) * ScreenW + srcX) * 4;
-                int dstOff = ((dstY + y) * ScreenW + dstX) * 4;
-                Buffer.BlockCopy(pixelBuf, srcOff, scrollBuf, dstOff, copyCols * 4);
-            }
-            Array.Copy(scrollBuf, pixelBuf, pixelBuf.Length);
+            int p = (y * ScreenW + x) * 4;
+            renderBuf[p]     = (byte)color;
+            renderBuf[p + 1] = (byte)(color >> 8);
+            renderBuf[p + 2] = (byte)(color >> 16);
+            renderBuf[p + 3] = 0xFF;
         }
 
         // ------------------------------------------------------------
@@ -867,7 +883,7 @@ namespace C64
         private void HardReset()
         {
             rasterCompare = 0;
-            rasterIrqPendingThisFrame = false;
+            ciaTimerAIrqEnabled = true; // KERNAL re-enables it during IOINIT
             cpu.RequestReset();
         }
 

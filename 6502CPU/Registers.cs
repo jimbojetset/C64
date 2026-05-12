@@ -19,11 +19,6 @@
         {
             PC = S = A = X = Y = 0;
             Flags.Clear();
-            // 6502 reset semantics: I-flag is set so interrupts are masked
-            // until the boot ROM explicitly does CLI. Clearing all flags
-            // would leave I=0 and any IRQ injected before the reset routine
-            // gets a chance to SEI would dispatch via an uninitialised RAM
-            // vector and BRK-loop forever.
             Flags.I = true;
         }
     }
