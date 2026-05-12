@@ -362,6 +362,7 @@ namespace C64
                     {
                         // CIA ICR mask register write semantics:
                         // bit7=1 sets mask bits in 0..4, bit7=0 clears them.
+                        bool raiseIrq = false;
                         lock (cia1Lock)
                         {
                             byte bits = (byte)(value & 0x1F);
@@ -369,7 +370,21 @@ namespace C64
                                 cia1IcrMask |= bits;
                             else
                                 cia1IcrMask = (byte)(cia1IcrMask & ~bits);
+
+                            // Bit 7 reflects "an enabled source is pending".
+                            if ((cia1IcrStatus & cia1IcrMask & 0x1F) != 0)
+                            {
+                                bool wasSet = (cia1IcrStatus & 0x80) != 0;
+                                cia1IcrStatus |= 0x80;
+                                if (!wasSet) raiseIrq = true;
+                            }
+                            else
+                            {
+                                cia1IcrStatus = (byte)(cia1IcrStatus & 0x7F);
+                            }
+                            cpu.memory.memory[0xDC0D] = cia1IcrStatus;
                         }
+                        if (raiseIrq) cpu.InitiateIRQ(0xFFFE);
                         return true;
                     }
                 case 0xDC04:
@@ -677,6 +692,12 @@ namespace C64
                         }
                     }
                 }
+
+                // Keep ICR bit7 as a derived IRQ-request state.
+                if ((cia1IcrStatus & cia1IcrMask & 0x1F) != 0)
+                    cia1IcrStatus |= 0x80;
+                else
+                    cia1IcrStatus = (byte)(cia1IcrStatus & 0x7F);
 
                 cpu.memory.memory[0xDC04] = (byte)(cia1TimerACounter & 0xFF);
                 cpu.memory.memory[0xDC05] = (byte)(cia1TimerACounter >> 8);
