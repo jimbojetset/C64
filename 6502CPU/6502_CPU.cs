@@ -1,9 +1,23 @@
-﻿using System.Diagnostics;
+﻿using System.Collections.Concurrent;
+using System.Diagnostics;
+using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
+using System.Runtime.Versioning;
 
 namespace _6502CPU
 {
     public class _6502_CPU
     {
+        [DllImport("winmm.dll", EntryPoint = "timeBeginPeriod")]
+        [SupportedOSPlatform("windows")]
+        private static extern uint TimeBeginPeriod(uint uMilliseconds);
+
+        [DllImport("winmm.dll", EntryPoint = "timeEndPeriod")]
+        [SupportedOSPlatform("windows")]
+        private static extern uint TimeEndPeriod(uint uMilliseconds);
+
+        private const uint TimerResolutionMs = 1;
+
         public Registers registers = new Registers();
 
         public Memory memory = new Memory(0x10000);
@@ -14,17 +28,20 @@ namespace _6502CPU
 
         private readonly int clockFreq = 2000000; //1MHz
 
-        private readonly List<ulong> IRQ_Buffer = new List<ulong>();
-        private readonly List<ulong> NMI_Buffer = new List<ulong>();
+        private readonly ConcurrentQueue<ulong> IRQ_Buffer = new ConcurrentQueue<ulong>();
+        private readonly ConcurrentQueue<ulong> NMI_Buffer = new ConcurrentQueue<ulong>();
+
+        private int irqPending;
 
         public void InitiateIRQ(ulong value)
         {
-            IRQ_Buffer.Add(value);
+            if (Interlocked.CompareExchange(ref irqPending, 1, 0) != 0) return;
+            IRQ_Buffer.Enqueue(value);
         }
 
         public void InitiateNMI(ulong value)
         {
-            NMI_Buffer.Add(value);
+            NMI_Buffer.Enqueue(value);
         }
 
         private int cyclesThisOperation = 0;
@@ -43,43 +60,133 @@ namespace _6502CPU
             memory = new Memory(0x10000);
         }
 
+        // Reset is now request-based so it's race-free even when called from
+        // a thread other than the CPU thread. RequestReset() flips a flag;
+        // the CPU thread services it at the top of its slice (safe point),
+        // optionally calling OnReset to let the host re-initialise hardware
+        // state (RAM, VIC, etc.) before the CPU re-reads its reset vector.
+        public Action? OnReset;
+        private int resetPending;
+
+        public void RequestReset() => Interlocked.Exchange(ref resetPending, 1);
+
+        // Cooperative stop. Sets the running flag so the CPU thread's main
+        // loop exits at the next slice boundary instead of being abort-ed
+        // by the .NET runtime at process exit (which can take seconds).
+        public void Stop() => running = false;
+
+        // Performed on the CPU thread inside the Run loop. Doing it here
+        // means OnReset, register clears and queue drains all happen
+        // serially with instruction execution - no concurrent reader of
+        // PC / Flags / memory can land in between.
+        private void DoReset()
+        {
+            OnReset?.Invoke();
+            registers.Clear();
+            registers.S = 0xFF;
+            // Clear() now sets I=true, but be explicit since it's critical.
+            registers.Flags.I = true;
+            registers.PC = memory.ReadWord(0xFFFC);
+
+            while (IRQ_Buffer.TryDequeue(out _)) { }
+            while (NMI_Buffer.TryDequeue(out _)) { }
+            Interlocked.Exchange(ref irqPending, 0);
+        }
+
+        private const int SliceMilliseconds = 16;
+
         public void Run(ulong startVector = 0xFFFC)
         {
             registers.PC = memory.ReadWord(startVector);
             running = true;
-            while (running)
-            {
-                Stopwatch s = new Stopwatch();
-                s.Start();
-                cyclesThisOperation = 0;
-                int maxCycles = (clockFreq / 1000) * 16;
-                while (cyclesThisOperation < maxCycles)
-                {
 
-                    while (NMI_Buffer.Count > 0)
+            int sliceCycles = (int)((long)clockFreq * SliceMilliseconds / 1000);
+            if (sliceCycles < 1) sliceCycles = 1;
+
+            long ticksPerSlice = Stopwatch.Frequency * SliceMilliseconds / 1000;
+
+            long nextDeadline = Stopwatch.GetTimestamp() + ticksPerSlice;
+
+            bool timerRaised = TryBeginHighResolutionTimer();
+            try
+            {
+                while (running)
+                {
+                    // Service a pending reset request at a safe point
+                    // before fetching the next instruction.
+                    if (Interlocked.Exchange(ref resetPending, 0) == 1)
                     {
-                        ulong value = NMI_Buffer[0];
-                        NMI_Buffer.RemoveAt(0);
-                        if (value != 0xFFFA)
-                            ProcessNMI(value);
-                        else
-                            ProcessNMI();
+                        DoReset();
+                        nextDeadline = Stopwatch.GetTimestamp() + ticksPerSlice;
                     }
-                    while (IRQ_Buffer.Count > 0 && !registers.Flags.I)
+
+                    cyclesThisOperation = 0;
+                    while (cyclesThisOperation < sliceCycles)
                     {
-                        ulong value = IRQ_Buffer[0];
-                        IRQ_Buffer.RemoveAt(0);
-                        if (value != 0xFFFE)
-                            ProcessIRQ(value);
-                        else
-                            ProcessIRQ();
+                        while (NMI_Buffer.TryDequeue(out ulong nmiValue))
+                        {
+                            if (nmiValue != 0xFFFA)
+                                ProcessNMI(nmiValue);
+                            else
+                                ProcessNMI();
+                        }
+                        while (!registers.Flags.I && IRQ_Buffer.TryDequeue(out ulong irqValue))
+                        {
+                            Interlocked.Exchange(ref irqPending, 0);
+                            if (irqValue != 0xFFFE)
+                                ProcessIRQ(irqValue);
+                            else
+                                ProcessIRQ();
+                        }
+                        Execute(GetNextByteInstruction());
                     }
-                    Execute(GetNextByteInstruction());
+
+                    WaitUntil(nextDeadline);
+
+                    nextDeadline += ticksPerSlice;
+
+                    long now = Stopwatch.GetTimestamp();
+                    if (nextDeadline < now - ticksPerSlice * 4)
+                        nextDeadline = now + ticksPerSlice;
                 }
-                while (s.ElapsedMilliseconds < 16) { }
+            }
+            finally
+            {
+                if (timerRaised) TryEndHighResolutionTimer();
             }
         }
 
+        private static bool TryBeginHighResolutionTimer()
+        {
+            if (!OperatingSystem.IsWindows()) return false;
+            try { return TimeBeginPeriod(TimerResolutionMs) == 0 /* TIMERR_NOERROR */; }
+            catch (DllNotFoundException) { return false; }
+            catch (EntryPointNotFoundException) { return false; }
+        }
+
+        private static void TryEndHighResolutionTimer()
+        {
+            if (!OperatingSystem.IsWindows()) return;
+            try { TimeEndPeriod(TimerResolutionMs); }
+            catch (DllNotFoundException) { }
+            catch (EntryPointNotFoundException) { }
+        }
+
+        private static void WaitUntil(long deadlineTicks)
+        {
+            long remaining = deadlineTicks - Stopwatch.GetTimestamp();
+            if (remaining <= 0) return;
+
+            long remainingMs = remaining * 1000 / Stopwatch.Frequency;
+
+            if (remainingMs > 1)
+                Thread.Sleep((int)(remainingMs - 1));
+
+            while (Stopwatch.GetTimestamp() < deadlineTicks)
+                Thread.SpinWait(64);
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveOptimization)]
         public void Execute(byte opcode)
         {        
             switch (opcode)
@@ -619,23 +726,256 @@ namespace _6502CPU
                     break;
                 #endregion
 
+                #region Illegal / undocumented opcodes
+                // C64 game code uses these heavily (LAX, DCP, SLO, ISC, SAX,
+                // etc.) for tighter inner loops. Without them we silently
+                // skip the instruction and the game's logic drifts off.
+
+                // ---- LAX: load A and X from memory together. ----
+                case 0xA3: LAX(X_Indexed_Zero_Page_Indirect());    cyclesThisOperation += 6; break;
+                case 0xA7: LAX(Zero_Page());                        cyclesThisOperation += 3; break;
+                case 0xAF: LAX(Absolute());                         cyclesThisOperation += 4; break;
+                case 0xB3: LAX(Zero_Page_Indirect_Y_Indexed());     cyclesThisOperation += 5; break;
+                case 0xB7: LAX(Y_Indexed_Zero_Page());              cyclesThisOperation += 4; break;
+                case 0xBF: LAX(Y_Indexed_Absolute());               cyclesThisOperation += 4; break;
+
+                // ---- SAX: store (A AND X) - no flags affected. ----
+                case 0x83: SAX(X_Indexed_Zero_Page_Indirect());     cyclesThisOperation += 6; break;
+                case 0x87: SAX(Zero_Page());                        cyclesThisOperation += 3; break;
+                case 0x8F: SAX(Absolute());                         cyclesThisOperation += 4; break;
+                case 0x97: SAX(Y_Indexed_Zero_Page());              cyclesThisOperation += 4; break;
+
+                // ---- DCP: DEC memory, CMP result with A. ----
+                case 0xC3: DCP(X_Indexed_Zero_Page_Indirect());     cyclesThisOperation += 8; break;
+                case 0xC7: DCP(Zero_Page());                        cyclesThisOperation += 5; break;
+                case 0xCF: DCP(Absolute());                         cyclesThisOperation += 6; break;
+                case 0xD3: DCP(Zero_Page_Indirect_Y_Indexed(false));cyclesThisOperation += 8; break;
+                case 0xD7: DCP(X_Indexed_Zero_Page());              cyclesThisOperation += 6; break;
+                case 0xDB: DCP(Y_Indexed_Absolute(false));          cyclesThisOperation += 7; break;
+                case 0xDF: DCP(X_Indexed_Absolute(false));          cyclesThisOperation += 7; break;
+
+                // ---- ISC/ISB: INC memory, SBC result from A. ----
+                case 0xE3: ISC(X_Indexed_Zero_Page_Indirect());     cyclesThisOperation += 8; break;
+                case 0xE7: ISC(Zero_Page());                        cyclesThisOperation += 5; break;
+                case 0xEF: ISC(Absolute());                         cyclesThisOperation += 6; break;
+                case 0xF3: ISC(Zero_Page_Indirect_Y_Indexed(false));cyclesThisOperation += 8; break;
+                case 0xF7: ISC(X_Indexed_Zero_Page());              cyclesThisOperation += 6; break;
+                case 0xFB: ISC(Y_Indexed_Absolute(false));          cyclesThisOperation += 7; break;
+                case 0xFF: ISC(X_Indexed_Absolute(false));          cyclesThisOperation += 7; break;
+
+                // ---- SLO: ASL memory, ORA result into A. ----
+                case 0x03: SLO(X_Indexed_Zero_Page_Indirect());     cyclesThisOperation += 8; break;
+                case 0x07: SLO(Zero_Page());                        cyclesThisOperation += 5; break;
+                case 0x0F: SLO(Absolute());                         cyclesThisOperation += 6; break;
+                case 0x13: SLO(Zero_Page_Indirect_Y_Indexed(false));cyclesThisOperation += 8; break;
+                case 0x17: SLO(X_Indexed_Zero_Page());              cyclesThisOperation += 6; break;
+                case 0x1B: SLO(Y_Indexed_Absolute(false));          cyclesThisOperation += 7; break;
+                case 0x1F: SLO(X_Indexed_Absolute(false));          cyclesThisOperation += 7; break;
+
+                // ---- SRE: LSR memory, EOR result into A. ----
+                case 0x43: SRE(X_Indexed_Zero_Page_Indirect());     cyclesThisOperation += 8; break;
+                case 0x47: SRE(Zero_Page());                        cyclesThisOperation += 5; break;
+                case 0x4F: SRE(Absolute());                         cyclesThisOperation += 6; break;
+                case 0x53: SRE(Zero_Page_Indirect_Y_Indexed(false));cyclesThisOperation += 8; break;
+                case 0x57: SRE(X_Indexed_Zero_Page());              cyclesThisOperation += 6; break;
+                case 0x5B: SRE(Y_Indexed_Absolute(false));          cyclesThisOperation += 7; break;
+                case 0x5F: SRE(X_Indexed_Absolute(false));          cyclesThisOperation += 7; break;
+
+                // ---- RLA: ROL memory, AND result into A. ----
+                case 0x23: RLA(X_Indexed_Zero_Page_Indirect());     cyclesThisOperation += 8; break;
+                case 0x27: RLA(Zero_Page());                        cyclesThisOperation += 5; break;
+                case 0x2F: RLA(Absolute());                         cyclesThisOperation += 6; break;
+                case 0x33: RLA(Zero_Page_Indirect_Y_Indexed(false));cyclesThisOperation += 8; break;
+                case 0x37: RLA(X_Indexed_Zero_Page());              cyclesThisOperation += 6; break;
+                case 0x3B: RLA(Y_Indexed_Absolute(false));          cyclesThisOperation += 7; break;
+                case 0x3F: RLA(X_Indexed_Absolute(false));          cyclesThisOperation += 7; break;
+
+                // ---- RRA: ROR memory, ADC result with A. ----
+                case 0x63: RRA(X_Indexed_Zero_Page_Indirect());     cyclesThisOperation += 8; break;
+                case 0x67: RRA(Zero_Page());                        cyclesThisOperation += 5; break;
+                case 0x6F: RRA(Absolute());                         cyclesThisOperation += 6; break;
+                case 0x73: RRA(Zero_Page_Indirect_Y_Indexed(false));cyclesThisOperation += 8; break;
+                case 0x77: RRA(X_Indexed_Zero_Page());              cyclesThisOperation += 6; break;
+                case 0x7B: RRA(Y_Indexed_Absolute(false));          cyclesThisOperation += 7; break;
+                case 0x7F: RRA(X_Indexed_Absolute(false));          cyclesThisOperation += 7; break;
+
+                // ---- Multi-byte NOPs. They consume their operand bytes
+                // so PC advances correctly; flags unaffected. ----
+                case 0x1A: case 0x3A: case 0x5A: case 0x7A:
+                case 0xDA: case 0xFA:
+                    cyclesThisOperation += 2; break;
+                case 0x80: case 0x82: case 0x89: case 0xC2: case 0xE2:
+                    Immediate();                cyclesThisOperation += 2; break;
+                case 0x04: case 0x44: case 0x64:
+                    Zero_Page();                cyclesThisOperation += 3; break;
+                case 0x14: case 0x34: case 0x54: case 0x74:
+                case 0xD4: case 0xF4:
+                    X_Indexed_Zero_Page();      cyclesThisOperation += 4; break;
+                case 0x0C:
+                    Absolute();                 cyclesThisOperation += 4; break;
+                case 0x1C: case 0x3C: case 0x5C: case 0x7C:
+                case 0xDC: case 0xFC:
+                    X_Indexed_Absolute();       cyclesThisOperation += 4; break;
+
+                // ---- Immediate-only logic ops. ----
+                case 0x0B: case 0x2B: ANC_IM(); cyclesThisOperation += 2; break;
+                case 0x4B:            ALR_IM(); cyclesThisOperation += 2; break;
+                case 0x6B:            ARR_IM(); cyclesThisOperation += 2; break;
+                case 0xCB:            AXS_IM(); cyclesThisOperation += 2; break;
+                case 0xEB:            SBCI();   /* duplicate of $E9 SBC #imm */ break;
+
+                // ---- JAM / KIL: real CPU halts. We treat as NOP so a
+                // game that mis-branches into one doesn't freeze the
+                // emulator; advances PC by one and burns a couple cycles.
+                case 0x02: case 0x12: case 0x22: case 0x32:
+                case 0x42: case 0x52: case 0x62: case 0x72:
+                case 0x92: case 0xB2: case 0xD2: case 0xF2:
+                    cyclesThisOperation += 2; break;
+                #endregion
+
                 default:
                     break;
                 #endregion
             }
         }
 
+        #region Illegal opcode helpers
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private void LAX(ulong addr)
+        {
+            byte v = ReadByteFromMemory(addr);
+            registers.A = v;
+            registers.X = v;
+            Set_FlagsNZ(v);
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private void SAX(ulong addr)
+        {
+            WriteByteToMemory(addr, (byte)(registers.A & registers.X));
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private void DCP(ulong addr)
+        {
+            byte v = (byte)(ReadByteFromMemory(addr) - 1);
+            WriteByteToMemory(addr, v);
+            int diff = registers.A - v;
+            registers.Flags.C = (diff & 0x100) == 0;
+            Set_FlagsNZ((byte)diff);
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private void ISC(ulong addr)
+        {
+            byte v = (byte)(ReadByteFromMemory(addr) + 1);
+            WriteByteToMemory(addr, v);
+            SBC(v);
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private void SLO(ulong addr)
+        {
+            byte v = ReadByteFromMemory(addr);
+            registers.Flags.C = (v & 0x80) != 0;
+            v <<= 1;
+            WriteByteToMemory(addr, v);
+            registers.A |= v;
+            Set_FlagsNZ(registers.A);
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private void SRE(ulong addr)
+        {
+            byte v = ReadByteFromMemory(addr);
+            registers.Flags.C = (v & 0x01) != 0;
+            v >>= 1;
+            WriteByteToMemory(addr, v);
+            registers.A ^= v;
+            Set_FlagsNZ(registers.A);
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private void RLA(ulong addr)
+        {
+            byte v = ReadByteFromMemory(addr);
+            bool oldC = registers.Flags.C;
+            registers.Flags.C = (v & 0x80) != 0;
+            v = (byte)((v << 1) | (oldC ? 1 : 0));
+            WriteByteToMemory(addr, v);
+            registers.A &= v;
+            Set_FlagsNZ(registers.A);
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private void RRA(ulong addr)
+        {
+            byte v = ReadByteFromMemory(addr);
+            bool oldC = registers.Flags.C;
+            registers.Flags.C = (v & 0x01) != 0;
+            v = (byte)((v >> 1) | (oldC ? 0x80 : 0));
+            WriteByteToMemory(addr, v);
+            ADC(v);
+        }
+
+        // ANC: AND with immediate, then copy bit 7 (N) into C. Used in
+        // some bit-test routines as a faster "AND # / BMI" pair.
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private void ANC_IM()
+        {
+            registers.A &= Immediate();
+            Set_FlagsNZ(registers.A);
+            registers.Flags.C = registers.Flags.N;
+        }
+
+        // ALR: AND with immediate, then LSR A.
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private void ALR_IM()
+        {
+            byte v = (byte)(registers.A & Immediate());
+            registers.Flags.C = (v & 0x01) != 0;
+            registers.A = (byte)(v >> 1);
+            Set_FlagsNZ(registers.A);
+        }
+
+        // ARR: AND with immediate, then ROR A. Has unusual flag effects:
+        // C = bit 6 of result; V = bit 6 XOR bit 5 of result.
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private void ARR_IM()
+        {
+            byte v = (byte)(registers.A & Immediate());
+            byte r = (byte)((v >> 1) | (registers.Flags.C ? 0x80 : 0));
+            registers.A = r;
+            Set_FlagsNZ(r);
+            registers.Flags.C = (r & 0x40) != 0;
+            registers.Flags.V = ((r ^ (r << 1)) & 0x40) != 0;
+        }
+
+        // AXS: X = (A AND X) - immediate. No borrow input; C set normally.
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private void AXS_IM()
+        {
+            int t = (registers.A & registers.X) - Immediate();
+            registers.X = (byte)t;
+            registers.Flags.C = (t & 0x100) == 0;
+            Set_FlagsNZ(registers.X);
+        }
+        #endregion
+
         #region Addressing Modes
+        [MethodImpl(MethodImplOptions.AggressiveOptimization)]
         private byte Immediate()
         {
             byte addr = GetNextByteInstruction();
             return addr;
         }
+        [MethodImpl(MethodImplOptions.AggressiveOptimization)]
         private ulong Absolute()
         {
             ulong addr = GetNextWordInstruction();
             return addr & 0xFFFF;
         }
+        [MethodImpl(MethodImplOptions.AggressiveOptimization)]
         private ulong AbsoluteIndirect()
         {
             ulong addr = Absolute();
@@ -655,33 +995,39 @@ namespace _6502CPU
             ulong value = (ulong)((hi << 8) | lo);
             return value & 0xFFFF;
         }
+        [MethodImpl(MethodImplOptions.AggressiveOptimization)]
         private ulong X_Indexed_Absolute(bool checkBoundary = true)
         {
             ulong addr = (Absolute() + registers.X);
             if (CrossBoundary(addr, registers.PC + 1) && checkBoundary) { cyclesThisOperation += 1; }
             return addr & 0xFFFF;
         }
+        [MethodImpl(MethodImplOptions.AggressiveOptimization)]
         private ulong Y_Indexed_Absolute(bool checkBoundary = true)
         {
             ulong addr = (Absolute() + registers.Y);
             if (CrossBoundary(addr, registers.PC + 1) && checkBoundary) { cyclesThisOperation += 1; }
             return addr & 0xFFFF;
         }
+        [MethodImpl(MethodImplOptions.AggressiveOptimization)]
         private byte Zero_Page()
         {
             byte addr = GetNextByteInstruction();
             return addr;
         }
+        [MethodImpl(MethodImplOptions.AggressiveOptimization)]
         private byte X_Indexed_Zero_Page()
         {
             byte addr = (byte)((Zero_Page() + registers.X) & 0xFF);
             return addr;
         }
+        [MethodImpl(MethodImplOptions.AggressiveOptimization)]
         private byte Y_Indexed_Zero_Page()
         {
             byte addr = (byte)((Zero_Page() + registers.Y) & 0xFF);
             return addr;
         }
+        [MethodImpl(MethodImplOptions.AggressiveOptimization)]
         private ulong X_Indexed_Zero_Page_Indirect()
         {
             byte value = (byte)(GetNextByteInstruction() + registers.X);
@@ -690,6 +1036,7 @@ namespace _6502CPU
             ulong addr = (ulong)((value2 << 8) | value1);
             return addr & 0xFFFF;
         }
+        [MethodImpl(MethodImplOptions.AggressiveOptimization)]
         private ulong Zero_Page_Indirect_Y_Indexed(bool checkBoundary = true)
         {
             byte value = GetNextByteInstruction();
@@ -700,10 +1047,11 @@ namespace _6502CPU
             if (CrossBoundary(addr, registers.PC + 1) && checkBoundary) { cyclesThisOperation += 1; }
             return addr & 0xFFFF;
         }
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private void Set_FlagsNZ(byte value)
         {
             registers.Flags.Z = (value == 0);
-            registers.Flags.N = ((value & (1 << 7)) != 0);
+            registers.Flags.N = ((value & 0x80) != 0);
         }
         #endregion
 
@@ -1036,17 +1384,14 @@ namespace _6502CPU
         }
         private void DEX()
         {
-            byte value1 = registers.X;
-            byte value2 = (byte)((value1 + (~0x01)) + 1);
+            byte value2 = (byte)(registers.X - 1);
             registers.X = value2;
             Set_FlagsNZ(value2);
             cyclesThisOperation += 2;
         }
         private void DEY()
         {
-            byte value1 = registers.Y;
-            byte value2 = (byte)((value1 + (~0x01)) + 1);
-            if (value2 < 0) value2 = (byte)(0xFF - value2);
+            byte value2 = (byte)(registers.Y - 1);
             registers.Y = value2;
             Set_FlagsNZ(value2);
             cyclesThisOperation += 2;
@@ -1059,7 +1404,6 @@ namespace _6502CPU
             ulong addr = Absolute();
             byte value1 = ReadByteFromMemory(addr);
             value1++;
-            value1 = (byte)(value1 & 0xFF);
             WriteByteToMemory(addr, value1);
             Set_FlagsNZ(value1);
             cyclesThisOperation += 6;
@@ -1069,7 +1413,6 @@ namespace _6502CPU
             ulong addr = X_Indexed_Absolute();
             byte value1 = ReadByteFromMemory(addr);
             value1++;
-            value1 = (byte)(value1 & 0xFF);
             WriteByteToMemory(addr, value1);
             Set_FlagsNZ(value1);
             cyclesThisOperation += 7;
@@ -1079,7 +1422,6 @@ namespace _6502CPU
             ulong addr = Zero_Page();
             byte value1 = ReadByteFromMemory(addr);
             value1++;
-            value1 = (byte)(value1 & 0xFF);
             WriteByteToMemory(addr, value1);
             Set_FlagsNZ(value1);
             cyclesThisOperation += 5;
@@ -1089,7 +1431,6 @@ namespace _6502CPU
             ulong addr = X_Indexed_Zero_Page();
             byte value1 = ReadByteFromMemory(addr);
             value1++;
-            value1 = (byte)(value1 & 0xFF);
             WriteByteToMemory(addr, value1);
             Set_FlagsNZ(value1);
             cyclesThisOperation += 6;
@@ -1097,7 +1438,6 @@ namespace _6502CPU
         private void INX()
         {
             byte value1 = (byte)(registers.X + 1);
-            if (value1 < 0) value1 = (byte)(0xFF - value1);
             registers.X = value1;
             Set_FlagsNZ(value1);
             cyclesThisOperation += 2;
@@ -1105,7 +1445,6 @@ namespace _6502CPU
         private void INY()
         {
             byte value1 = (byte)(registers.Y + 1);
-            if (value1 < 0) value1 = (byte)(0xFF - value1);
             registers.Y = value1;
             Set_FlagsNZ(value1);
             cyclesThisOperation += 2;
@@ -1619,9 +1958,8 @@ namespace _6502CPU
             registers.Flags.N = ((addr & (1 << 6)) != 0);
             registers.Flags.C = ((addr & (1 << 7)) != 0);
             byte value = (byte)(addr << 1);
-            value ^= (byte)((-0 ^ value) & (1 << 0));
             registers.Flags.Z = (value == 0);
-            registers.A = (byte)value;
+            registers.A = value;
             cyclesThisOperation += 2;
         }
         private void ASLA()
@@ -1631,7 +1969,6 @@ namespace _6502CPU
             registers.Flags.N = ((value & (1 << 6)) != 0);
             registers.Flags.C = ((value & (1 << 7)) != 0);
             byte value2 = (byte)(value << 1);
-            value2 ^= (byte)((-0 ^ value2) & (1 << 0));
             registers.Flags.Z = (value2 == 0);
             WriteByteToMemory(addr, value2);
             cyclesThisOperation += 6;
@@ -1643,7 +1980,6 @@ namespace _6502CPU
             registers.Flags.N = ((value & (1 << 6)) != 0);
             registers.Flags.C = ((value & (1 << 7)) != 0);
             byte value2 = (byte)(value << 1);
-            value2 ^= (byte)((-0 ^ value2) & (1 << 0));
             registers.Flags.Z = (value2 == 0);
             WriteByteToMemory(addr, value2);
             cyclesThisOperation += 7;
@@ -1655,7 +1991,6 @@ namespace _6502CPU
             registers.Flags.N = ((value & (1 << 6)) != 0);
             registers.Flags.C = ((value & (1 << 7)) != 0);
             byte value2 = (byte)(value << 1);
-            value2 ^= (byte)((-0 ^ value2) & (1 << 0));
             registers.Flags.Z = (value2 == 0);
             WriteByteToMemory(addr, value2);
             cyclesThisOperation += 5;
@@ -1667,7 +2002,6 @@ namespace _6502CPU
             registers.Flags.N = ((value & (1 << 6)) != 0);
             registers.Flags.C = ((value & (1 << 7)) != 0);
             byte value2 = (byte)(value << 1);
-            value2 ^= (byte)((-0 ^ value2) & (1 << 0));
             registers.Flags.Z = (value2 == 0);
             WriteByteToMemory(addr, value2);
             cyclesThisOperation += 6;
@@ -1681,9 +2015,8 @@ namespace _6502CPU
             registers.Flags.N = false;
             registers.Flags.C = ((addr & (1 << 0)) != 0);
             byte value = (byte)(addr >> 1);
-            value ^= (byte)((-0 ^ value) & (1 << 7));
             registers.Flags.Z = (value == 0);
-            registers.A = (byte)value;
+            registers.A = value;
             cyclesThisOperation += 2;
         }
         private void LSRA()
@@ -1693,7 +2026,6 @@ namespace _6502CPU
             registers.Flags.N = false;
             registers.Flags.C = ((value & (1 << 0)) != 0);
             byte value2 = (byte)(value >> 1);
-            value2 ^= (byte)((-0 ^ value2) & (1 << 7));
             registers.Flags.Z = (value2 == 0);
             WriteByteToMemory(addr, value2);
             cyclesThisOperation += 6;
@@ -1705,7 +2037,6 @@ namespace _6502CPU
             registers.Flags.N = false;
             registers.Flags.C = ((value & (1 << 0)) != 0);
             byte value2 = (byte)(value >> 1);
-            value2 ^= (byte)((-0 ^ value2) & (1 << 7));
             registers.Flags.Z = (value2 == 0);
             WriteByteToMemory(addr, value2);
             cyclesThisOperation += 7;
@@ -1863,7 +2194,7 @@ namespace _6502CPU
             IncrementProgramCounter();
             if (!registers.Flags.C)
                 Branch(value);
-            cyclesThisOperation += 4;        }
+        }
         private void BCS()
         {
             cyclesThisOperation += 2;
@@ -1923,11 +2254,12 @@ namespace _6502CPU
         private void BRK()
         {
             IncrementProgramCounter();
-            registers.Flags.B = true;
+            // BRK pushes the status byte with both B (bit 4) and the
+            // always-1 reserved bit (bit 5) set. RTI/PLP later restore
+            // these unchanged - they exist only on the stack.
             PushByteToStack((byte)((registers.PC >> 8) & 0xFF));
             PushByteToStack((byte)(registers.PC & 0xFF));
-            PushByteToStack(registers.P);
-            registers.Flags.B = false;
+            PushByteToStack((byte)(registers.P | 0x30));
             registers.Flags.I = true;
             registers.PC = (ulong)(ReadByteFromMemory(0xFFFE) + ReadByteFromMemory(0xFFFF) * 0x100);
             cyclesThisOperation += 7;
@@ -1935,16 +2267,9 @@ namespace _6502CPU
         private void Branch(ulong value)
         {
             cyclesThisOperation += 2;
-            if ((value & 0x80) == 0)
-                registers.PC = (registers.PC + value) & 0xFFFF;
-            else
-            {
-
-                int x = (byte)(~(value - 0x01)) * -1;
-                int y = (int)registers.PC;
-                y += x;
-                registers.PC = (ulong)y & 0xFFFF;
-            }
+            // Branch offset is a signed 8-bit value; cast handles both directions.
+            int offset = (sbyte)(byte)value;
+            registers.PC = (ulong)((long)registers.PC + offset) & 0xFFFF;
             if (CrossBoundary(value, registers.PC))
                 cyclesThisOperation += 1;
         }
@@ -1999,22 +2324,26 @@ namespace _6502CPU
 
         #endregion
 
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private void IncrementProgramCounter(ulong value = 1)
         {
-            registers.PC += value;
-            if (registers.PC >= 65536) registers.PC = registers.PC - 65536;
+            // Mask is branch-free and equivalent to wrapping the 16-bit PC.
+            registers.PC = (registers.PC + value) & 0xFFFF;
         }
 
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private byte ReadByteFromMemory(ulong addr)
         {
             return memory.ReadByte(addr);
         }
 
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private void WriteByteToMemory(ulong addr, byte value)
         {
             memory.WriteByte(addr, value);
         }
 
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public byte GetNextByteInstruction()
         {
             byte value = ReadByteFromMemory(registers.PC);
@@ -2022,20 +2351,22 @@ namespace _6502CPU
             return value;
         }
 
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private ulong GetNextWordInstruction()
         {
             byte value1 = GetNextByteInstruction();
             byte value2 = GetNextByteInstruction();
-            ulong value3 = (ulong)(value1 + value2 * 0x100);// (value2 << 8) | value1);
-            return value3 & 0xFFFF;
+            return (ulong)(value1 | (value2 << 8));
         }
 
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private void PushByteToStack(byte value)
         {
             WriteByteToMemory((ulong)(registers.S + 0x100), value);
             registers.S--;
         }
 
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private byte PopByteFromStack()
         {
             registers.S++;
@@ -2046,7 +2377,8 @@ namespace _6502CPU
         {
             PushByteToStack((byte)((registers.PC >> 8) & 0xFF));
             PushByteToStack((byte)(registers.PC & 0xFF));
-            PushByteToStack(registers.P);
+            // NMI push uses the same bit pattern as IRQ.
+            PushByteToStack((byte)((registers.P & 0xEF) | 0x20));
             registers.Flags.I = true;
             registers.PC = (ushort)(ReadByteFromMemory(value) | (ReadByteFromMemory(value + 1) << 8));
             cyclesThisOperation += 7;
@@ -2054,14 +2386,18 @@ namespace _6502CPU
 
         private void ProcessIRQ(ulong value = 0xFFFE)
         {
-            PushByteToStack((byte)((registers.PC >> 8) & 0xFF)); 
-            PushByteToStack((byte)(registers.PC & 0xFF));        
-            PushByteToStack((byte)(registers.P | 0x20)); 
+            PushByteToStack((byte)((registers.PC >> 8) & 0xFF));
+            PushByteToStack((byte)(registers.PC & 0xFF));
+            // IRQ push: B bit (4) clear, reserved bit (5) set. The KERNAL
+            // IRQ handler tests this exact bit on the stack to decide
+            // whether to dispatch via $0314 (IRQ) or $0316 (BRK).
+            PushByteToStack((byte)((registers.P & 0xEF) | 0x20));
             registers.Flags.I = true;
             registers.PC = (ushort)(ReadByteFromMemory(value) | (ReadByteFromMemory(value + 1) << 8));
             cyclesThisOperation += 7;
         }
 
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private static bool CrossBoundary(ulong addr1, ulong addr2)
         {
             return (addr1 & 0xff00) != (addr2 & 0xff00);
