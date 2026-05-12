@@ -5,8 +5,35 @@ namespace _6502CPU
 {
     public class Memory
     {
+        // The flat 64K address space. After banking is enabled, this
+        // buffer always holds the RAM-under-ROM; reads in banked-out
+        // regions return RAM from here, ROMs are kept separately below.
         public byte[] memory { get; set; }
+
+        // Legacy ROM-write protection ranges (used only when no banked
+        // ROM has been registered via LoadBankedROM). Kept so older test
+        // harnesses that called Load(..., readOnly: true) keep behaving.
         private readonly List<ROM> rom = new List<ROM>();
+
+        // ----- Banked ROM images for the 6510 -----
+        // The CPU's processor port at $01 chooses which of BASIC ROM,
+        // KERNAL ROM, character ROM or I/O is visible in the three
+        // banking windows ($A000-$BFFF, $D000-$DFFF, $E000-$FFFF).
+        // Storing each ROM in its own buffer lets writes to those
+        // addresses fall through to RAM-under-ROM in memory[] without
+        // corrupting the ROM image. Reads then select between ROM and
+        // RAM based on the current bank state.
+        private byte[]? basicRom;   // $A000-$BFFF (8 KiB)
+        private byte[]? kernalRom;  // $E000-$FFFF (8 KiB)
+        private byte[]? charRom;    // $D000-$DFFF (4 KiB)
+
+        // True once at least one banked ROM has been registered. While
+        // false, the legacy ReadByte/WriteByte path is used (memory[]
+        // mirrors ROMs, writes to ROM ranges blocked).
+        private bool bankingEnabled;
+
+        // Slot identifiers for LoadBankedROM.
+        public enum BankSlot { Basic, Kernal, Char }
 
         // Optional write hook for the I/O range $D000-$DFFF. Returning true
         // tells WriteByte to suppress the actual store (useful for ACK
@@ -14,6 +41,10 @@ namespace _6502CPU
         // hardware register separate from a CPU-visible compare register).
         // Returning false means the write proceeds normally.
         public Func<ulong, byte, bool>? OnIOWrite;
+
+        // Optional read hook for the I/O range $D000-$DFFF. When set,
+        // ReadByte uses the hook's return value as the CPU-visible byte.
+        public Func<ulong, byte, byte>? OnIORead;
 
         // Optional post-read hook for the I/O range $D000-$DFFF. Called
         // AFTER ReadByte has captured the value to return, so the hook may
@@ -27,16 +58,80 @@ namespace _6502CPU
             memory = new byte[size];
         }
 
+        // Loads a ROM into its own buffer and enables 6510-style banking.
+        // The ROM no longer lives inside memory[] - writes to its address
+        // range now land on RAM-under-ROM, and reads return the ROM only
+        // when the corresponding bit in the $01 processor port selects it.
+        public void LoadBankedROM(string filePath, BankSlot slot)
+        {
+            byte[] data = File.ReadAllBytes(filePath);
+            switch (slot)
+            {
+                case BankSlot.Basic:
+                    if (data.Length != 0x2000)
+                        throw new InvalidDataException($"BASIC ROM must be 8 KiB (got {data.Length}).");
+                    basicRom = data;
+                    break;
+                case BankSlot.Kernal:
+                    if (data.Length != 0x2000)
+                        throw new InvalidDataException($"KERNAL ROM must be 8 KiB (got {data.Length}).");
+                    kernalRom = data;
+                    break;
+                case BankSlot.Char:
+                    if (data.Length != 0x1000)
+                        throw new InvalidDataException($"Character ROM must be 4 KiB (got {data.Length}).");
+                    charRom = data;
+                    break;
+            }
+            bankingEnabled = true;
+        }
+
+        // Direct access to a banked ROM image (e.g. so the boot code can
+        // patch out RAMTAS in the KERNAL). Returns null if the slot has
+        // not been loaded yet.
+        public byte[]? GetBankedROM(BankSlot slot) => slot switch
+        {
+            BankSlot.Basic => basicRom,
+            BankSlot.Kernal => kernalRom,
+            BankSlot.Char => charRom,
+            _ => null
+        };
+
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void WriteByte(ulong addr, byte value)
         {
-            // ROM protection still wins over everything else.
-            if (rom.Count != 0 && IsROM((int)addr)) return;
-
-            // Hook only fires inside the I/O range to keep RAM writes fast.
-            if (addr >= 0xD000 && addr < 0xE000 && OnIOWrite is not null)
+            if (!bankingEnabled)
             {
-                if (OnIOWrite(addr, value)) return;
+                // Legacy behaviour: ROM ranges are write-protected via the
+                // rom list, and memory[] mirrors ROM bytes.
+                if (rom.Count != 0 && IsROM((int)addr)) return;
+
+                if (addr >= 0xD000 && addr < 0xE000 && OnIOWrite is not null)
+                {
+                    if (OnIOWrite(addr, value)) return;
+                }
+
+                memory[addr] = value;
+                return;
+            }
+
+            // 6510 banked-write path. RAM exists underneath every ROM,
+            // so writes to $A000-$BFFF / $E000-$FFFF always succeed (the
+            // RAM byte is what reads see when the ROM is banked out).
+            // Writes in $D000-$DFFF go to I/O if I/O is mapped, or to
+            // RAM underneath if ROM/RAM is selected there.
+            if (addr >= 0xD000 && addr < 0xE000)
+            {
+                if (Is_IO_Mapped())
+                {
+                    if (OnIOWrite is not null && OnIOWrite(addr, value)) return;
+                    memory[addr] = value;
+                    return;
+                }
+                // CHAR ROM or RAM selected at $D000-$DFFF: writes go to
+                // RAM underneath (CHAR ROM is read-only on real hardware).
+                memory[addr] = value;
+                return;
             }
 
             memory[addr] = value;
@@ -58,17 +153,81 @@ namespace _6502CPU
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public byte ReadByte(ulong addr)
         {
-            byte v = memory[addr];
-            if (addr >= 0xD000 && addr < 0xE000 && OnIOPostRead is not null)
-                OnIOPostRead(addr);
-            return v;
+            if (!bankingEnabled)
+            {
+                byte legacy = memory[addr];
+                if (addr >= 0xD000 && addr < 0xE000 && OnIORead is not null)
+                    legacy = OnIORead(addr, legacy);
+                if (addr >= 0xD000 && addr < 0xE000 && OnIOPostRead is not null)
+                    OnIOPostRead(addr);
+                return legacy;
+            }
+
+            // Hot paths first: zero page / stack / low RAM dominate.
+            if (addr < 0xA000) return memory[addr];
+
+            // $A000-$BFFF: BASIC ROM if both LORAM and HIRAM set.
+            if (addr < 0xC000)
+            {
+                byte port = memory[0x0001];
+                if (basicRom is not null && (port & 0x03) == 0x03)
+                    return basicRom[addr - 0xA000];
+                return memory[addr];
+            }
+
+            // $C000-$CFFF is plain RAM, never banked.
+            if (addr < 0xD000) return memory[addr];
+
+            // $D000-$DFFF: I/O, CHAR ROM, or RAM. See PLA truth table.
+            if (addr < 0xE000)
+            {
+                byte port = memory[0x0001];
+                int loHi = port & 0x03;            // LORAM | HIRAM
+                bool charen = (port & 0x04) != 0;
+                if (loHi == 0)
+                {
+                    // Both LORAM and HIRAM clear: RAM mapped.
+                    return memory[addr];
+                }
+                if (charen)
+                {
+                    // I/O mapped (the usual KERNAL configuration).
+                    byte v = memory[addr];
+                    if (OnIORead is not null) v = OnIORead(addr, v);
+                    if (OnIOPostRead is not null) OnIOPostRead(addr);
+                    return v;
+                }
+                // CHAREN=0: CHAR ROM visible (used while copying char
+                // bitmaps into RAM).
+                if (charRom is not null)
+                    return charRom[addr - 0xD000];
+                return memory[addr];
+            }
+
+            // $E000-$FFFF: KERNAL ROM if HIRAM set.
+            byte p2 = memory[0x0001];
+            if (kernalRom is not null && (p2 & 0x02) != 0)
+                return kernalRom[addr - 0xE000];
+            return memory[addr];
+        }
+
+        // True when the $D000-$DFFF window currently maps the I/O chips
+        // (the only configuration in which OnIOWrite must fire).
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private bool Is_IO_Mapped()
+        {
+            byte port = memory[0x0001];
+            int loHi = port & 0x03;
+            bool charen = (port & 0x04) != 0;
+            return loHi != 0 && charen;
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public ulong ReadWord(ulong addr)
         {
-            byte[] m = memory;
-            return (ulong)(m[addr] | (m[addr + 1] << 8));
+            // Honour banking on word reads (e.g. IRQ / NMI / RESET vector
+            // fetches at $FFFA / $FFFC / $FFFE).
+            return (ulong)(ReadByte(addr) | (ReadByte(addr + 1) << 8));
         }
 
         public void Load(string filePath, int startAddr, int length, bool readOnly)
