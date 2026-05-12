@@ -587,16 +587,17 @@ namespace C64
             uint remaining = ticks;
             while (remaining > 0 && (control & 0x01) != 0)
             {
-                uint current = counter;
-                if (current == 0) current = 0x10000u;
-
-                if (remaining < current)
+                // 6526 underflow occurs when the down-counter decrements
+                // from 0 to FFFF, so it takes (counter + 1) ticks to hit
+                // an underflow from any current counter value.
+                uint stepsToUnderflow = (uint)counter + 1u;
+                if (remaining < stepsToUnderflow)
                 {
-                    counter = (ushort)(current - remaining);
+                    counter = (ushort)(counter - remaining);
                     break;
                 }
 
-                remaining -= current;
+                remaining -= stepsToUnderflow;
                 underflows++;
                 counter = latch;
                 if (oneShot)
@@ -613,9 +614,10 @@ namespace C64
             bool raiseIrq = false;
             lock (cia1Lock)
             {
-                // CNT pulses available this slice. We model serial-output
-                // generated CNT pulses (CRA bit6) from timer-A underflow.
-                uint cntPulses = 0;
+                // CNT pulses available this slice. Without full external
+                // CNT wiring emulation, treat CNT as continuously pulsing
+                // while high so CNT-clock modes don't deadlock software.
+                uint cntPulses = cia1CntHigh ? cycles : 0u;
 
                 // Timer A input mode (CRA bit5): 0=PHI2, 1=CNT.
                 uint ticksA = (cia1Cra & 0x20) == 0 ? cycles : cntPulses;
@@ -635,9 +637,11 @@ namespace C64
                     }
                 }
 
-                // Serial output mode drives CNT pulses from timer-A underflow.
+                // Serial output mode can source CNT from Timer A underflow.
+                // Keep the stronger of the synthetic external pulse train
+                // and the CIA-generated pulses for compatibility.
                 if ((cia1Cra & 0x40) != 0 && underA > 0)
-                    cntPulses = (uint)underA;
+                    cntPulses = Math.Max(cntPulses, (uint)underA);
 
                 // Timer B input mode from CRB bits 6..5:
                 // 00 = PHI2
