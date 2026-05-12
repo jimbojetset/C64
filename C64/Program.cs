@@ -92,8 +92,9 @@ namespace C64
         private const int PalRasterLines = 312;
         private const int RasterLinesPerSecond = PalRasterLines * 50;
 
-        // KERNAL IRQ (CIA-1 timer A on a real C64) at PAL frame rate.
-        private const int IrqHz = 50;
+        // CIA helper thread cadence. Timer A is decremented by computed
+        // elapsed CPU cycles each tick, not by a fixed IRQ cadence.
+        private const int CiaTickHz = 1000;
 
         // C64 palette in 0xAARRGGBB (Pepto's calibrated colours).
         private static readonly int[] C64Palette =
@@ -148,10 +149,20 @@ namespace C64
         private volatile bool resetInProgress;
         private volatile bool rasterResyncPending;
 
-        // CIA-1 timer-A IRQ mask state. The KERNAL enables this at boot
-        // (its 50/60 Hz jiffy clock IRQ). Games typically disable it via
-        // STA $DC0D #$7F so they get raster-only IRQs.
-        private bool ciaTimerAIrqEnabled = true;
+        // CIA-1 timer A / ICR state.
+        private readonly object cia1Lock = new object();
+        private ushort cia1TimerALatch = 0xFFFF;
+        private ushort cia1TimerACounter = 0xFFFF;
+        private ushort cia1TimerBLatch = 0xFFFF;
+        private ushort cia1TimerBCounter = 0xFFFF;
+        private byte cia1Cra;
+        private byte cia1Crb;
+        private byte cia1IcrMask;
+        private byte cia1IcrStatus;
+        // CIA CNT pin model. Without a full IEC/serial implementation we
+        // approximate CNT as high and generate pulses when CIA serial
+        // output mode is active (CRA bit 6), clocked by timer-A underflow.
+        private bool cia1CntHigh = true;
 
         private readonly CancellationTokenSource cts = new CancellationTokenSource();
         private Thread? cpuThread;
@@ -244,6 +255,26 @@ namespace C64
             m[0xDC02] = cia1Ddra;
             m[0xDC03] = cia1Ddrb;
 
+            lock (cia1Lock)
+            {
+                cia1TimerALatch = 0xFFFF;
+                cia1TimerACounter = 0xFFFF;
+                cia1TimerBLatch = 0xFFFF;
+                cia1TimerBCounter = 0xFFFF;
+                cia1Cra = 0x00;
+                cia1Crb = 0x00;
+                cia1IcrMask = 0x00;
+                cia1IcrStatus = 0x00;
+                cia1CntHigh = true;
+            }
+            m[0xDC04] = 0xFF;
+            m[0xDC05] = 0xFF;
+            m[0xDC06] = 0xFF;
+            m[0xDC07] = 0xFF;
+            m[0xDC0D] = 0x00;
+            m[0xDC0E] = 0x00;
+            m[0xDC0F] = 0x00;
+
             // RAMTAS leaves behind these workspace pointers; mirror them.
             m[0x0281] = 0x00; m[0x0282] = 0x08; // MEMSTR = $0800
             m[0x0283] = 0x00; m[0x0284] = 0xA0; // MEMSIZ = $A000
@@ -329,28 +360,101 @@ namespace C64
                     }
                 case 0xDC0D:
                     {
-                        // CIA-1 ICR mask register. Real CIA semantics:
-                        //  bit 7 of the written value = "fill direction"
-                        //    1 -> set each bit listed in bits 0-4
-                        //    0 -> clear each bit listed in bits 0-4
-                        // Bit 0 of the mask is timer-A IRQ enable.
-                        bool fill = (value & 0x80) != 0;
-                        if ((value & 0x01) != 0) ciaTimerAIrqEnabled = fill;
-                        // Suppress the actual store - $DC0D's CPU-visible
-                        // value is the IRQ source latch, set by hardware,
-                        // cleared on read. The IRQ thread updates it.
+                        // CIA ICR mask register write semantics:
+                        // bit7=1 sets mask bits in 0..4, bit7=0 clears them.
+                        lock (cia1Lock)
+                        {
+                            byte bits = (byte)(value & 0x1F);
+                            if ((value & 0x80) != 0)
+                                cia1IcrMask |= bits;
+                            else
+                                cia1IcrMask = (byte)(cia1IcrMask & ~bits);
+                        }
+                        return true;
+                    }
+                case 0xDC04:
+                    {
+                        lock (cia1Lock)
+                        {
+                            cia1TimerALatch = (ushort)((cia1TimerALatch & 0xFF00) | value);
+                            if ((cia1Cra & 0x01) == 0)
+                                cia1TimerACounter = cia1TimerALatch;
+                            cpu.memory.memory[0xDC04] = (byte)(cia1TimerACounter & 0xFF);
+                            cpu.memory.memory[0xDC05] = (byte)(cia1TimerACounter >> 8);
+                        }
+                        return true;
+                    }
+                case 0xDC05:
+                    {
+                        lock (cia1Lock)
+                        {
+                            cia1TimerALatch = (ushort)((cia1TimerALatch & 0x00FF) | (value << 8));
+                            if ((cia1Cra & 0x01) == 0)
+                                cia1TimerACounter = cia1TimerALatch;
+                            cpu.memory.memory[0xDC04] = (byte)(cia1TimerACounter & 0xFF);
+                            cpu.memory.memory[0xDC05] = (byte)(cia1TimerACounter >> 8);
+                        }
                         return true;
                     }
                 case 0xDC0E:
+                    {
+                        lock (cia1Lock)
+                        {
+                            // CRA bit4 forces a load from latch into counter.
+                            if ((value & 0x10) != 0)
+                            {
+                                cia1TimerACounter = cia1TimerALatch;
+                                cpu.memory.memory[0xDC04] = (byte)(cia1TimerACounter & 0xFF);
+                                cpu.memory.memory[0xDC05] = (byte)(cia1TimerACounter >> 8);
+                            }
+
+                            // Preserve control bits; force-load is a write strobe
+                            // and always reads back clear.
+                            cia1Cra = (byte)(value & 0xEF);
+                            cpu.memory.memory[0xDC0E] = cia1Cra;
+                        }
+                        return true;
+                    }
+                case 0xDC06:
+                    {
+                        lock (cia1Lock)
+                        {
+                            cia1TimerBLatch = (ushort)((cia1TimerBLatch & 0xFF00) | value);
+                            if ((cia1Crb & 0x01) == 0)
+                                cia1TimerBCounter = cia1TimerBLatch;
+                            cpu.memory.memory[0xDC06] = (byte)(cia1TimerBCounter & 0xFF);
+                            cpu.memory.memory[0xDC07] = (byte)(cia1TimerBCounter >> 8);
+                        }
+                        return true;
+                    }
+                case 0xDC07:
+                    {
+                        lock (cia1Lock)
+                        {
+                            cia1TimerBLatch = (ushort)((cia1TimerBLatch & 0x00FF) | (value << 8));
+                            if ((cia1Crb & 0x01) == 0)
+                                cia1TimerBCounter = cia1TimerBLatch;
+                            cpu.memory.memory[0xDC06] = (byte)(cia1TimerBCounter & 0xFF);
+                            cpu.memory.memory[0xDC07] = (byte)(cia1TimerBCounter >> 8);
+                        }
+                        return true;
+                    }
                 case 0xDC0F:
                     {
-                        // CIA-1 timer-A / timer-B control. We don't model
-                        // the actual timers, but recording the running
-                        // state stops games that explicitly stop and re-
-                        // start the timer from seeing stale IRQs.
-                        if (addr == 0xDC0E && (value & 0x01) == 0)
-                            ciaTimerAIrqEnabled = false;
-                        cpu.memory.memory[addr] = value;
+                        lock (cia1Lock)
+                        {
+                            // Preserve control bits; force-load is a write strobe
+                            // and always reads back clear.
+                            if ((value & 0x10) != 0)
+                            {
+                                cia1TimerBCounter = cia1TimerBLatch;
+                                cpu.memory.memory[0xDC06] = (byte)(cia1TimerBCounter & 0xFF);
+                                cpu.memory.memory[0xDC07] = (byte)(cia1TimerBCounter >> 8);
+                            }
+
+                            cia1Crb = (byte)(value & 0xEF);
+                            cpu.memory.memory[0xDC0F] = cia1Crb;
+                        }
                         return true;
                     }
                 case 0xDC00:
@@ -385,6 +489,26 @@ namespace C64
                     return cia1Ddra;
                 case 0xDC03:
                     return cia1Ddrb;
+                case 0xDC04:
+                    {
+                        lock (cia1Lock)
+                            return (byte)(cia1TimerACounter & 0xFF);
+                    }
+                case 0xDC05:
+                    {
+                        lock (cia1Lock)
+                            return (byte)(cia1TimerACounter >> 8);
+                    }
+                case 0xDC06:
+                    {
+                        lock (cia1Lock)
+                            return (byte)(cia1TimerBCounter & 0xFF);
+                    }
+                case 0xDC07:
+                    {
+                        lock (cia1Lock)
+                            return (byte)(cia1TimerBCounter >> 8);
+                    }
                 case 0xD01E:
                 case 0xD01F:
                     {
@@ -393,6 +517,15 @@ namespace C64
                         return value;
                     }
                 case 0xDC0D:
+                    {
+                        lock (cia1Lock)
+                        {
+                            byte value = cia1IcrStatus;
+                            cia1IcrStatus = 0x00;
+                            cpu.memory.memory[0xDC0D] = 0x00;
+                            return value;
+                        }
+                    }
                 case 0xDD0D:
                     {
                         byte value = cpu.memory.memory[addr];
@@ -443,6 +576,115 @@ namespace C64
                 columns &= keyboardMatrix[row];
             }
             return columns;
+        }
+
+        private static int CountUnderflows(ref ushort counter, ushort latch, uint ticks, bool oneShot, ref byte control)
+        {
+            if (ticks == 0 || (control & 0x01) == 0)
+                return 0;
+
+            int underflows = 0;
+            uint remaining = ticks;
+            while (remaining > 0 && (control & 0x01) != 0)
+            {
+                uint current = counter;
+                if (current == 0) current = 0x10000u;
+
+                if (remaining < current)
+                {
+                    counter = (ushort)(current - remaining);
+                    break;
+                }
+
+                remaining -= current;
+                underflows++;
+                counter = latch;
+                if (oneShot)
+                    control = (byte)(control & ~0x01);
+            }
+
+            return underflows;
+        }
+
+        private void StepCia1Timers(uint cycles)
+        {
+            if (cycles == 0) return;
+
+            bool raiseIrq = false;
+            lock (cia1Lock)
+            {
+                // CNT pulses available this slice. We model serial-output
+                // generated CNT pulses (CRA bit6) from timer-A underflow.
+                uint cntPulses = 0;
+
+                // Timer A input mode (CRA bit5): 0=PHI2, 1=CNT.
+                uint ticksA = (cia1Cra & 0x20) == 0 ? cycles : cntPulses;
+                int underA = CountUnderflows(
+                    ref cia1TimerACounter,
+                    cia1TimerALatch,
+                    ticksA,
+                    (cia1Cra & 0x08) != 0,
+                    ref cia1Cra);
+                if (underA > 0)
+                {
+                    cia1IcrStatus |= 0x01;
+                    if ((cia1IcrMask & 0x01) != 0)
+                    {
+                        cia1IcrStatus |= 0x80;
+                        raiseIrq = true;
+                    }
+                }
+
+                // Serial output mode drives CNT pulses from timer-A underflow.
+                if ((cia1Cra & 0x40) != 0 && underA > 0)
+                    cntPulses = (uint)underA;
+
+                // Timer B input mode from CRB bits 6..5:
+                // 00 = PHI2
+                // 01 = CNT pulses
+                // 10 = Timer-A underflow
+                // 11 = Timer-A underflow while CNT high
+                int tbMode = (cia1Crb >> 5) & 0x03;
+                uint ticksB = 0;
+                if (tbMode == 0)
+                    ticksB = cycles;
+                else if (tbMode == 1)
+                    ticksB = cntPulses;
+                else if (tbMode == 2)
+                    ticksB = (uint)underA;
+                else
+                    ticksB = cia1CntHigh ? (uint)underA : 0;
+
+                if (ticksB > 0)
+                {
+                    int underB = CountUnderflows(
+                        ref cia1TimerBCounter,
+                        cia1TimerBLatch,
+                        ticksB,
+                        (cia1Crb & 0x08) != 0,
+                        ref cia1Crb);
+                    if (underB > 0)
+                    {
+                        cia1IcrStatus |= 0x02;
+                        if ((cia1IcrMask & 0x02) != 0)
+                        {
+                            cia1IcrStatus |= 0x80;
+                            raiseIrq = true;
+                        }
+                    }
+                }
+
+                cpu.memory.memory[0xDC04] = (byte)(cia1TimerACounter & 0xFF);
+                cpu.memory.memory[0xDC05] = (byte)(cia1TimerACounter >> 8);
+                cpu.memory.memory[0xDC06] = (byte)(cia1TimerBCounter & 0xFF);
+                cpu.memory.memory[0xDC07] = (byte)(cia1TimerBCounter >> 8);
+                cpu.memory.memory[0xDC0D] = cia1IcrStatus;
+                cpu.memory.memory[0xDC0E] = cia1Cra;
+                cpu.memory.memory[0xDC0F] = cia1Crb;
+            }
+
+            if (raiseIrq)
+                cpu.InitiateIRQ(0xFFFE);
         }
 
         private void OnIOPostRead(ulong addr)
@@ -703,11 +945,18 @@ namespace C64
 
         private void IrqLoop(CancellationToken token)
         {
-            long ticksPerTick = Stopwatch.Frequency / IrqHz;
+            long ticksPerTick = Stopwatch.Frequency / CiaTickHz;
             long next = Stopwatch.GetTimestamp() + ticksPerTick;
+            long remCyclesNumerator = 0;
+            long lastStamp = Stopwatch.GetTimestamp();
             while (!token.IsCancellationRequested)
             {
                 DrainKeyboardQueue();
+
+                long now = Stopwatch.GetTimestamp();
+                long elapsedTicks = now - lastStamp;
+                if (elapsedTicks < 0) elapsedTicks = 0;
+                lastStamp = now;
 
                 if (resetInProgress)
                 {
@@ -721,13 +970,16 @@ namespace C64
                     continue;
                 }
 
-                // Only deliver a CIA-1 timer-A IRQ when the game (or
-                // KERNAL) has the mask bit set.
-                if (ciaTimerAIrqEnabled)
+                long numer = elapsedTicks * Clock_PAL + remCyclesNumerator;
+                if (numer >= Stopwatch.Frequency)
                 {
-                    byte[] mem = cpu.memory.memory;
-                    mem[0xDC0D] = (byte)(mem[0xDC0D] | 0x81);
-                    cpu.InitiateIRQ(0xFFFE);
+                    uint cycles = (uint)(numer / Stopwatch.Frequency);
+                    remCyclesNumerator = numer % Stopwatch.Frequency;
+                    StepCia1Timers(cycles);
+                }
+                else
+                {
+                    remCyclesNumerator = numer;
                 }
 
                 long remaining = next - Stopwatch.GetTimestamp();
@@ -1150,7 +1402,6 @@ namespace C64
             resetInProgress = true;
             rasterResyncPending = true;
             rasterCompare = 0;
-            ciaTimerAIrqEnabled = true; // KERNAL re-enables it during IOINIT
 
             // Drop any host-held input state so reset always starts from
             // a clean matrix/joystick condition.
