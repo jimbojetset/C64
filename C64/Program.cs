@@ -183,6 +183,19 @@ namespace C64
         private byte cia1Ddra = 0x00;
         private byte cia1Ddrb = 0x00;
 
+        // CIA-2 minimal state. Port A ($DD00) is used for VIC bank
+        // select (bits 0-1) and IEC serial lines; bits 6/7 are inputs
+        // that idle high on a real C64 when no device pulls them low.
+        private readonly object cia2Lock = new object();
+        private byte cia2PortA = 0x17;
+        private byte cia2Ddra = 0x3F;
+        private ushort cia2TimerALatch = 0xFFFF;
+        private ushort cia2TimerACounter = 0xFFFF;
+        private ushort cia2TimerBLatch = 0xFFFF;
+        private ushort cia2TimerBCounter = 0xFFFF;
+        private byte cia2Cra;
+        private byte cia2Crb;
+
         // SDL handles
         private IntPtr window;
         private IntPtr renderer;
@@ -289,8 +302,25 @@ namespace C64
             // $D018=$14 maps screen RAM at $0400 and char data at $1000.
             // If a game left this pointing elsewhere, reset must restore
             // it or the renderer can show a blank frame.
+            cia2PortA = 0x17;
+            cia2Ddra = 0x3F;
             m[0xDD00] = 0x17;
             m[0xDD02] = 0x3F;
+            lock (cia2Lock)
+            {
+                cia2TimerALatch = 0xFFFF;
+                cia2TimerACounter = 0xFFFF;
+                cia2TimerBLatch = 0xFFFF;
+                cia2TimerBCounter = 0xFFFF;
+                cia2Cra = 0x00;
+                cia2Crb = 0x00;
+            }
+            m[0xDD04] = 0xFF;
+            m[0xDD05] = 0xFF;
+            m[0xDD06] = 0xFF;
+            m[0xDD07] = 0xFF;
+            m[0xDD0E] = 0x00;
+            m[0xDD0F] = 0x00;
 
             // VIC-II defaults that KERNAL sets in IOINIT.
             m[0xD011] = 0x1B; // DEN, RSEL, YSCROLL=3
@@ -488,6 +518,83 @@ namespace C64
                     cia1Ddrb = value;
                     cpu.memory.memory[addr] = value;
                     return true;
+                case 0xDD00:
+                    cia2PortA = value;
+                    cpu.memory.memory[addr] = value;
+                    return true;
+                case 0xDD02:
+                    // On the C64, CIA2 PA6/PA7 are wired to IEC CLK/DATA
+                    // input lines; keep them input-only for compatibility
+                    // with KERNAL serial polling loops.
+                    cia2Ddra = (byte)(value & 0x3F);
+                    cpu.memory.memory[addr] = value;
+                    return true;
+                case 0xDD04:
+                    lock (cia2Lock)
+                    {
+                        cia2TimerALatch = (ushort)((cia2TimerALatch & 0xFF00) | value);
+                        if ((cia2Cra & 0x01) == 0)
+                            cia2TimerACounter = cia2TimerALatch;
+                        cpu.memory.memory[0xDD04] = (byte)(cia2TimerACounter & 0xFF);
+                        cpu.memory.memory[0xDD05] = (byte)(cia2TimerACounter >> 8);
+                    }
+                    return true;
+                case 0xDD05:
+                    lock (cia2Lock)
+                    {
+                        cia2TimerALatch = (ushort)((cia2TimerALatch & 0x00FF) | (value << 8));
+                        if ((cia2Cra & 0x01) == 0)
+                            cia2TimerACounter = cia2TimerALatch;
+                        cpu.memory.memory[0xDD04] = (byte)(cia2TimerACounter & 0xFF);
+                        cpu.memory.memory[0xDD05] = (byte)(cia2TimerACounter >> 8);
+                    }
+                    return true;
+                case 0xDD06:
+                    lock (cia2Lock)
+                    {
+                        cia2TimerBLatch = (ushort)((cia2TimerBLatch & 0xFF00) | value);
+                        if ((cia2Crb & 0x01) == 0)
+                            cia2TimerBCounter = cia2TimerBLatch;
+                        cpu.memory.memory[0xDD06] = (byte)(cia2TimerBCounter & 0xFF);
+                        cpu.memory.memory[0xDD07] = (byte)(cia2TimerBCounter >> 8);
+                    }
+                    return true;
+                case 0xDD07:
+                    lock (cia2Lock)
+                    {
+                        cia2TimerBLatch = (ushort)((cia2TimerBLatch & 0x00FF) | (value << 8));
+                        if ((cia2Crb & 0x01) == 0)
+                            cia2TimerBCounter = cia2TimerBLatch;
+                        cpu.memory.memory[0xDD06] = (byte)(cia2TimerBCounter & 0xFF);
+                        cpu.memory.memory[0xDD07] = (byte)(cia2TimerBCounter >> 8);
+                    }
+                    return true;
+                case 0xDD0E:
+                    lock (cia2Lock)
+                    {
+                        if ((value & 0x10) != 0)
+                        {
+                            cia2TimerACounter = cia2TimerALatch;
+                            cpu.memory.memory[0xDD04] = (byte)(cia2TimerACounter & 0xFF);
+                            cpu.memory.memory[0xDD05] = (byte)(cia2TimerACounter >> 8);
+                        }
+                        cia2Cra = (byte)(value & 0xEF);
+                        cpu.memory.memory[0xDD0E] = cia2Cra;
+                    }
+                    return true;
+                case 0xDD0F:
+                    lock (cia2Lock)
+                    {
+                        if ((value & 0x10) != 0)
+                        {
+                            cia2TimerBCounter = cia2TimerBLatch;
+                            cpu.memory.memory[0xDD06] = (byte)(cia2TimerBCounter & 0xFF);
+                            cpu.memory.memory[0xDD07] = (byte)(cia2TimerBCounter >> 8);
+                        }
+                        cia2Crb = (byte)(value & 0xEF);
+                        cpu.memory.memory[0xDD0F] = cia2Crb;
+                    }
+                    return true;
             }
             return false;
         }
@@ -504,6 +611,32 @@ namespace C64
                     return cia1Ddra;
                 case 0xDC03:
                     return cia1Ddrb;
+                case 0xDD00:
+                    {
+                        // IEC input lines (6/7) are pull-ups by default and
+                        // are not driven by CIA2 output mode on a stock C64.
+                        byte external = 0xFF;
+                        byte v = MergeCiaPortRead(cia2PortA, cia2Ddra, external);
+                        return (byte)(v | 0xC0);
+                    }
+                case 0xDD02:
+                    return cia2Ddra;
+                case 0xDD04:
+                    lock (cia2Lock)
+                        return (byte)(cia2TimerACounter & 0xFF);
+                case 0xDD05:
+                    lock (cia2Lock)
+                        return (byte)(cia2TimerACounter >> 8);
+                case 0xDD06:
+                    lock (cia2Lock)
+                        return (byte)(cia2TimerBCounter & 0xFF);
+                case 0xDD07:
+                    lock (cia2Lock)
+                        return (byte)(cia2TimerBCounter >> 8);
+                case 0xDD0E:
+                    return cia2Cra;
+                case 0xDD0F:
+                    return cia2Crb;
                 case 0xDC04:
                     {
                         lock (cia1Lock)
@@ -710,6 +843,77 @@ namespace C64
 
             if (raiseIrq)
                 cpu.InitiateIRQ(0xFFFE);
+        }
+
+        private void StepCia2Timers(uint cycles)
+        {
+            if (cycles == 0) return;
+
+            lock (cia2Lock)
+            {
+                int underA = CountUnderflows(
+                    ref cia2TimerACounter,
+                    cia2TimerALatch,
+                    cycles,
+                    (cia2Cra & 0x08) != 0,
+                    ref cia2Cra);
+
+                uint ticksB = cycles;
+                int tbMode = (cia2Crb >> 5) & 0x03;
+                if (tbMode == 2)
+                    ticksB = (uint)Math.Max(underA, 0);
+                else if (tbMode != 0)
+                    ticksB = 0;
+
+                if (ticksB > 0)
+                {
+                    CountUnderflows(
+                        ref cia2TimerBCounter,
+                        cia2TimerBLatch,
+                        ticksB,
+                        (cia2Crb & 0x08) != 0,
+                        ref cia2Crb);
+                }
+
+                cpu.memory.memory[0xDD04] = (byte)(cia2TimerACounter & 0xFF);
+                cpu.memory.memory[0xDD05] = (byte)(cia2TimerACounter >> 8);
+                cpu.memory.memory[0xDD06] = (byte)(cia2TimerBCounter & 0xFF);
+                cpu.memory.memory[0xDD07] = (byte)(cia2TimerBCounter >> 8);
+                cpu.memory.memory[0xDD0E] = cia2Cra;
+                cpu.memory.memory[0xDD0F] = cia2Crb;
+            }
+        }
+
+        private string BuildDebugStateLine(string prefix)
+        {
+            ulong pc = cpu.registers.PC;
+            byte[] m = cpu.memory.memory;
+            byte a = cpu.registers.A;
+            byte x = cpu.registers.X;
+            byte y = cpu.registers.Y;
+            byte s = cpu.registers.S;
+            byte p = cpu.registers.P;
+
+            ushort ta;
+            ushort tb;
+            byte cra;
+            byte crb;
+            byte icrMask;
+            byte icrStatus;
+            lock (cia1Lock)
+            {
+                ta = cia1TimerACounter;
+                tb = cia1TimerBCounter;
+                cra = cia1Cra;
+                crb = cia1Crb;
+                icrMask = cia1IcrMask;
+                icrStatus = cia1IcrStatus;
+            }
+
+            return
+                $"{prefix} PC=${pc:X4} A=${a:X2} X=${x:X2} Y=${y:X2} S=${s:X2} P=${p:X2} " +
+                $"RAST={currentRasterLine:D3}/{rasterCompare:D3} DD00=${m[0xDD00]:X2} DD02=${m[0xDD02]:X2} D011=${m[0xD011]:X2} D012=${m[0xD012]:X2} D016=${m[0xD016]:X2} D018=${m[0xD018]:X2} D019=${m[0xD019]:X2} D01A=${m[0xD01A]:X2} " +
+                $"CIA TA=${ta:X4} TB=${tb:X4} CRA=${cra:X2} CRB=${crb:X2} ICRM=${icrMask:X2} ICRS=${icrStatus:X2} DC0D=${m[0xDC0D]:X2}";
         }
 
         private void OnIOPostRead(ulong addr)
@@ -1001,6 +1205,7 @@ namespace C64
                     uint cycles = (uint)(numer / Stopwatch.Frequency);
                     remCyclesNumerator = numer % Stopwatch.Frequency;
                     StepCia1Timers(cycles);
+                    StepCia2Timers(cycles);
                 }
                 else
                 {
@@ -1703,6 +1908,12 @@ namespace C64
             bool alt = (mod & SDL_Keymod.KMOD_ALT) != 0;
 
             // Dedicated hard reset key that doesn't depend on modifiers.
+            if (sym == SDL_Keycode.SDLK_F11)
+            {
+                Console.Error.WriteLine(BuildDebugStateLine("[DUMP]"));
+                return false;
+            }
+
             if (sym == SDL_Keycode.SDLK_F12)
             {
                 HardReset();

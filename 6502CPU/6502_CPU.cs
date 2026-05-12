@@ -188,7 +188,7 @@ namespace _6502CPU
 
         [MethodImpl(MethodImplOptions.AggressiveOptimization)]
         public void Execute(byte opcode)
-        {        
+        {
             switch (opcode)
             {
                 #region Documented Opcodes
@@ -732,104 +732,131 @@ namespace _6502CPU
                 // skip the instruction and the game's logic drifts off.
 
                 // ---- LAX: load A and X from memory together. ----
-                case 0xA3: LAX(X_Indexed_Zero_Page_Indirect());    cyclesThisOperation += 6; break;
-                case 0xA7: LAX(Zero_Page());                        cyclesThisOperation += 3; break;
-                case 0xAF: LAX(Absolute());                         cyclesThisOperation += 4; break;
-                case 0xB3: LAX(Zero_Page_Indirect_Y_Indexed());     cyclesThisOperation += 5; break;
-                case 0xB7: LAX(Y_Indexed_Zero_Page());              cyclesThisOperation += 4; break;
-                case 0xBF: LAX(Y_Indexed_Absolute());               cyclesThisOperation += 4; break;
+                case 0xA3: LAX(X_Indexed_Zero_Page_Indirect()); cyclesThisOperation += 6; break;
+                case 0xA7: LAX(Zero_Page()); cyclesThisOperation += 3; break;
+                case 0xAF: LAX(Absolute()); cyclesThisOperation += 4; break;
+                case 0xB3: LAX(Zero_Page_Indirect_Y_Indexed()); cyclesThisOperation += 5; break;
+                case 0xB7: LAX(Y_Indexed_Zero_Page()); cyclesThisOperation += 4; break;
+                case 0xBF: LAX(Y_Indexed_Absolute()); cyclesThisOperation += 4; break;
 
                 // ---- SAX: store (A AND X) - no flags affected. ----
-                case 0x83: SAX(X_Indexed_Zero_Page_Indirect());     cyclesThisOperation += 6; break;
-                case 0x87: SAX(Zero_Page());                        cyclesThisOperation += 3; break;
-                case 0x8F: SAX(Absolute());                         cyclesThisOperation += 4; break;
-                case 0x97: SAX(Y_Indexed_Zero_Page());              cyclesThisOperation += 4; break;
+                case 0x83: SAX(X_Indexed_Zero_Page_Indirect()); cyclesThisOperation += 6; break;
+                case 0x87: SAX(Zero_Page()); cyclesThisOperation += 3; break;
+                case 0x8F: SAX(Absolute()); cyclesThisOperation += 4; break;
+                case 0x97: SAX(Y_Indexed_Zero_Page()); cyclesThisOperation += 4; break;
 
                 // ---- DCP: DEC memory, CMP result with A. ----
-                case 0xC3: DCP(X_Indexed_Zero_Page_Indirect());     cyclesThisOperation += 8; break;
-                case 0xC7: DCP(Zero_Page());                        cyclesThisOperation += 5; break;
-                case 0xCF: DCP(Absolute());                         cyclesThisOperation += 6; break;
-                case 0xD3: DCP(Zero_Page_Indirect_Y_Indexed(false));cyclesThisOperation += 8; break;
-                case 0xD7: DCP(X_Indexed_Zero_Page());              cyclesThisOperation += 6; break;
-                case 0xDB: DCP(Y_Indexed_Absolute(false));          cyclesThisOperation += 7; break;
-                case 0xDF: DCP(X_Indexed_Absolute(false));          cyclesThisOperation += 7; break;
+                case 0xC3: DCP(X_Indexed_Zero_Page_Indirect()); cyclesThisOperation += 8; break;
+                case 0xC7: DCP(Zero_Page()); cyclesThisOperation += 5; break;
+                case 0xCF: DCP(Absolute()); cyclesThisOperation += 6; break;
+                case 0xD3: DCP(Zero_Page_Indirect_Y_Indexed(false)); cyclesThisOperation += 8; break;
+                case 0xD7: DCP(X_Indexed_Zero_Page()); cyclesThisOperation += 6; break;
+                case 0xDB: DCP(Y_Indexed_Absolute(false)); cyclesThisOperation += 7; break;
+                case 0xDF: DCP(X_Indexed_Absolute(false)); cyclesThisOperation += 7; break;
 
                 // ---- ISC/ISB: INC memory, SBC result from A. ----
-                case 0xE3: ISC(X_Indexed_Zero_Page_Indirect());     cyclesThisOperation += 8; break;
-                case 0xE7: ISC(Zero_Page());                        cyclesThisOperation += 5; break;
-                case 0xEF: ISC(Absolute());                         cyclesThisOperation += 6; break;
-                case 0xF3: ISC(Zero_Page_Indirect_Y_Indexed(false));cyclesThisOperation += 8; break;
-                case 0xF7: ISC(X_Indexed_Zero_Page());              cyclesThisOperation += 6; break;
-                case 0xFB: ISC(Y_Indexed_Absolute(false));          cyclesThisOperation += 7; break;
-                case 0xFF: ISC(X_Indexed_Absolute(false));          cyclesThisOperation += 7; break;
+                case 0xE3: ISC(X_Indexed_Zero_Page_Indirect()); cyclesThisOperation += 8; break;
+                case 0xE7: ISC(Zero_Page()); cyclesThisOperation += 5; break;
+                case 0xEF: ISC(Absolute()); cyclesThisOperation += 6; break;
+                case 0xF3: ISC(Zero_Page_Indirect_Y_Indexed(false)); cyclesThisOperation += 8; break;
+                case 0xF7: ISC(X_Indexed_Zero_Page()); cyclesThisOperation += 6; break;
+                case 0xFB: ISC(Y_Indexed_Absolute(false)); cyclesThisOperation += 7; break;
+                case 0xFF: ISC(X_Indexed_Absolute(false)); cyclesThisOperation += 7; break;
 
                 // ---- SLO: ASL memory, ORA result into A. ----
-                case 0x03: SLO(X_Indexed_Zero_Page_Indirect());     cyclesThisOperation += 8; break;
-                case 0x07: SLO(Zero_Page());                        cyclesThisOperation += 5; break;
-                case 0x0F: SLO(Absolute());                         cyclesThisOperation += 6; break;
-                case 0x13: SLO(Zero_Page_Indirect_Y_Indexed(false));cyclesThisOperation += 8; break;
-                case 0x17: SLO(X_Indexed_Zero_Page());              cyclesThisOperation += 6; break;
-                case 0x1B: SLO(Y_Indexed_Absolute(false));          cyclesThisOperation += 7; break;
-                case 0x1F: SLO(X_Indexed_Absolute(false));          cyclesThisOperation += 7; break;
+                case 0x03: SLO(X_Indexed_Zero_Page_Indirect()); cyclesThisOperation += 8; break;
+                case 0x07: SLO(Zero_Page()); cyclesThisOperation += 5; break;
+                case 0x0F: SLO(Absolute()); cyclesThisOperation += 6; break;
+                case 0x13: SLO(Zero_Page_Indirect_Y_Indexed(false)); cyclesThisOperation += 8; break;
+                case 0x17: SLO(X_Indexed_Zero_Page()); cyclesThisOperation += 6; break;
+                case 0x1B: SLO(Y_Indexed_Absolute(false)); cyclesThisOperation += 7; break;
+                case 0x1F: SLO(X_Indexed_Absolute(false)); cyclesThisOperation += 7; break;
 
                 // ---- SRE: LSR memory, EOR result into A. ----
-                case 0x43: SRE(X_Indexed_Zero_Page_Indirect());     cyclesThisOperation += 8; break;
-                case 0x47: SRE(Zero_Page());                        cyclesThisOperation += 5; break;
-                case 0x4F: SRE(Absolute());                         cyclesThisOperation += 6; break;
-                case 0x53: SRE(Zero_Page_Indirect_Y_Indexed(false));cyclesThisOperation += 8; break;
-                case 0x57: SRE(X_Indexed_Zero_Page());              cyclesThisOperation += 6; break;
-                case 0x5B: SRE(Y_Indexed_Absolute(false));          cyclesThisOperation += 7; break;
-                case 0x5F: SRE(X_Indexed_Absolute(false));          cyclesThisOperation += 7; break;
+                case 0x43: SRE(X_Indexed_Zero_Page_Indirect()); cyclesThisOperation += 8; break;
+                case 0x47: SRE(Zero_Page()); cyclesThisOperation += 5; break;
+                case 0x4F: SRE(Absolute()); cyclesThisOperation += 6; break;
+                case 0x53: SRE(Zero_Page_Indirect_Y_Indexed(false)); cyclesThisOperation += 8; break;
+                case 0x57: SRE(X_Indexed_Zero_Page()); cyclesThisOperation += 6; break;
+                case 0x5B: SRE(Y_Indexed_Absolute(false)); cyclesThisOperation += 7; break;
+                case 0x5F: SRE(X_Indexed_Absolute(false)); cyclesThisOperation += 7; break;
 
                 // ---- RLA: ROL memory, AND result into A. ----
-                case 0x23: RLA(X_Indexed_Zero_Page_Indirect());     cyclesThisOperation += 8; break;
-                case 0x27: RLA(Zero_Page());                        cyclesThisOperation += 5; break;
-                case 0x2F: RLA(Absolute());                         cyclesThisOperation += 6; break;
-                case 0x33: RLA(Zero_Page_Indirect_Y_Indexed(false));cyclesThisOperation += 8; break;
-                case 0x37: RLA(X_Indexed_Zero_Page());              cyclesThisOperation += 6; break;
-                case 0x3B: RLA(Y_Indexed_Absolute(false));          cyclesThisOperation += 7; break;
-                case 0x3F: RLA(X_Indexed_Absolute(false));          cyclesThisOperation += 7; break;
+                case 0x23: RLA(X_Indexed_Zero_Page_Indirect()); cyclesThisOperation += 8; break;
+                case 0x27: RLA(Zero_Page()); cyclesThisOperation += 5; break;
+                case 0x2F: RLA(Absolute()); cyclesThisOperation += 6; break;
+                case 0x33: RLA(Zero_Page_Indirect_Y_Indexed(false)); cyclesThisOperation += 8; break;
+                case 0x37: RLA(X_Indexed_Zero_Page()); cyclesThisOperation += 6; break;
+                case 0x3B: RLA(Y_Indexed_Absolute(false)); cyclesThisOperation += 7; break;
+                case 0x3F: RLA(X_Indexed_Absolute(false)); cyclesThisOperation += 7; break;
 
                 // ---- RRA: ROR memory, ADC result with A. ----
-                case 0x63: RRA(X_Indexed_Zero_Page_Indirect());     cyclesThisOperation += 8; break;
-                case 0x67: RRA(Zero_Page());                        cyclesThisOperation += 5; break;
-                case 0x6F: RRA(Absolute());                         cyclesThisOperation += 6; break;
-                case 0x73: RRA(Zero_Page_Indirect_Y_Indexed(false));cyclesThisOperation += 8; break;
-                case 0x77: RRA(X_Indexed_Zero_Page());              cyclesThisOperation += 6; break;
-                case 0x7B: RRA(Y_Indexed_Absolute(false));          cyclesThisOperation += 7; break;
-                case 0x7F: RRA(X_Indexed_Absolute(false));          cyclesThisOperation += 7; break;
+                case 0x63: RRA(X_Indexed_Zero_Page_Indirect()); cyclesThisOperation += 8; break;
+                case 0x67: RRA(Zero_Page()); cyclesThisOperation += 5; break;
+                case 0x6F: RRA(Absolute()); cyclesThisOperation += 6; break;
+                case 0x73: RRA(Zero_Page_Indirect_Y_Indexed(false)); cyclesThisOperation += 8; break;
+                case 0x77: RRA(X_Indexed_Zero_Page()); cyclesThisOperation += 6; break;
+                case 0x7B: RRA(Y_Indexed_Absolute(false)); cyclesThisOperation += 7; break;
+                case 0x7F: RRA(X_Indexed_Absolute(false)); cyclesThisOperation += 7; break;
 
                 // ---- Multi-byte NOPs. They consume their operand bytes
                 // so PC advances correctly; flags unaffected. ----
-                case 0x1A: case 0x3A: case 0x5A: case 0x7A:
-                case 0xDA: case 0xFA:
+                case 0x1A:
+                case 0x3A:
+                case 0x5A:
+                case 0x7A:
+                case 0xDA:
+                case 0xFA:
                     cyclesThisOperation += 2; break;
-                case 0x80: case 0x82: case 0x89: case 0xC2: case 0xE2:
-                    Immediate();                cyclesThisOperation += 2; break;
-                case 0x04: case 0x44: case 0x64:
-                    Zero_Page();                cyclesThisOperation += 3; break;
-                case 0x14: case 0x34: case 0x54: case 0x74:
-                case 0xD4: case 0xF4:
-                    X_Indexed_Zero_Page();      cyclesThisOperation += 4; break;
+                case 0x80:
+                case 0x82:
+                case 0x89:
+                case 0xC2:
+                case 0xE2:
+                    Immediate(); cyclesThisOperation += 2; break;
+                case 0x04:
+                case 0x44:
+                case 0x64:
+                    Zero_Page(); cyclesThisOperation += 3; break;
+                case 0x14:
+                case 0x34:
+                case 0x54:
+                case 0x74:
+                case 0xD4:
+                case 0xF4:
+                    X_Indexed_Zero_Page(); cyclesThisOperation += 4; break;
                 case 0x0C:
-                    Absolute();                 cyclesThisOperation += 4; break;
-                case 0x1C: case 0x3C: case 0x5C: case 0x7C:
-                case 0xDC: case 0xFC:
-                    X_Indexed_Absolute();       cyclesThisOperation += 4; break;
+                    Absolute(); cyclesThisOperation += 4; break;
+                case 0x1C:
+                case 0x3C:
+                case 0x5C:
+                case 0x7C:
+                case 0xDC:
+                case 0xFC:
+                    X_Indexed_Absolute(); cyclesThisOperation += 4; break;
 
                 // ---- Immediate-only logic ops. ----
                 case 0x0B: case 0x2B: ANC_IM(); cyclesThisOperation += 2; break;
-                case 0x4B:            ALR_IM(); cyclesThisOperation += 2; break;
-                case 0x6B:            ARR_IM(); cyclesThisOperation += 2; break;
-                case 0xCB:            AXS_IM(); cyclesThisOperation += 2; break;
-                case 0xEB:            SBCI();   /* duplicate of $E9 SBC #imm */ break;
+                case 0x4B: ALR_IM(); cyclesThisOperation += 2; break;
+                case 0x6B: ARR_IM(); cyclesThisOperation += 2; break;
+                case 0xCB: AXS_IM(); cyclesThisOperation += 2; break;
+                case 0xEB: SBCI();   /* duplicate of $E9 SBC #imm */ break;
 
                 // ---- JAM / KIL: real CPU halts. We treat as NOP so a
                 // game that mis-branches into one doesn't freeze the
                 // emulator; advances PC by one and burns a couple cycles.
-                case 0x02: case 0x12: case 0x22: case 0x32:
-                case 0x42: case 0x52: case 0x62: case 0x72:
-                case 0x92: case 0xB2: case 0xD2: case 0xF2:
+                case 0x02:
+                case 0x12:
+                case 0x22:
+                case 0x32:
+                case 0x42:
+                case 0x52:
+                case 0x62:
+                case 0x72:
+                case 0x92:
+                case 0xB2:
+                case 0xD2:
+                case 0xF2:
                     cyclesThisOperation += 2; break;
                 #endregion
 
@@ -1717,7 +1744,7 @@ namespace _6502CPU
                 registers.Flags.V = ((registers.A ^ binary) & (~value ^ binary) & 0x80) != 0;
                 registers.A = (byte)((low & 0xF) + (high & 0xF0));
                 Set_FlagsNZ(binary);
-           }
+            }
             else
             {
                 int value2 = 0xFF + registers.A - value + carry;
@@ -2266,11 +2293,13 @@ namespace _6502CPU
         }
         private void Branch(ulong value)
         {
-            cyclesThisOperation += 2;
             // Branch offset is a signed 8-bit value; cast handles both directions.
+            ulong oldPc = registers.PC;
             int offset = (sbyte)(byte)value;
             registers.PC = (ulong)((long)registers.PC + offset) & 0xFFFF;
-            if (CrossBoundary(value, registers.PC))
+            // Taken branch costs +1 cycle, plus +1 on page cross.
+            cyclesThisOperation += 1;
+            if (CrossBoundary(oldPc, registers.PC))
                 cyclesThisOperation += 1;
         }
         #endregion
