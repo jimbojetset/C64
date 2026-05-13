@@ -1,49 +1,25 @@
 ﻿using System.Diagnostics;
-using System.Runtime.InteropServices;
 using _6502CPU;
 using static SDL2.SDL;
 
 namespace C64
 {
-    // Standalone VIC-II + SDL display engine. Owns:
-    //   - the SDL window / renderer / streaming texture
-    //   - the double-buffered framebuffer
-    //   - the per-scanline rendering pipeline
-    //   - the raster thread (ticks $D012, fires raster IRQs, drives the
-    //     scanline renderer, swaps buffers at vsync)
-    //   - reset coordination flags so the CPU thread can pause raster
-    //     activity while it re-initialises hardware
-    //
-    // Consumed by C64Emulator. Only depends on the _6502_CPU it's given
-    // in the constructor - reads memory directly via cpu.memory.memory[]
-    // and raises interrupts via cpu.InitiateIRQ().
     internal sealed class Display : IDisposable
     {
-        // ----------------------------------------------------------------
-        // Geometry / palette / framebuffer
-        // ----------------------------------------------------------------
-
-        // VIC-II visible area is 320 x 200 pixels.
         public const int ScreenW = 320;
         public const int ScreenH = 200;
 
-        // Surround the active 320x200 playfield with a PAL-style border.
         public const int FrameW = 384;
         public const int FrameH = 272;
         private const int FramePlayfieldX = (FrameW - ScreenW) / 2;
         private const int FramePlayfieldY = (FrameH - ScreenH) / 2;
 
-        // PAL VIC-II: 312 raster lines per frame, 50 frames per second.
         private const int PalRasterLines = 312;
         private const int RasterLinesPerSecond = PalRasterLines * 50;
 
-        // PAL playfield: raster lines 51..250 inclusive are the visible
-        // 200-line playfield. Lines outside this range are top/bottom
-        // border; we just skip rendering them.
         private const int VisibleTop = 51;
         private const int VisibleBottom = 250;
 
-        // C64 palette in 0xAARRGGBB (Pepto's calibrated colours).
         private static readonly int[] C64Palette =
         {
             unchecked((int)0xFF000000), //  0 BLACK
@@ -64,38 +40,21 @@ namespace C64
             unchecked((int)0xFF959595), // 15 LIGHT GREY
         };
 
-        // ----------------------------------------------------------------
-        // Fields
-        // ----------------------------------------------------------------
-
         private readonly _6502_CPU cpu;
 
-        // Char ROM bytes - loaded once at Init(). The renderer needs its
-        // own copy because the CPU view of $D000-$DFFF is the I/O area
-        // (VIC / SID / CIA registers) rather than the character set.
         private byte[] charRom = Array.Empty<byte>();
 
-        // renderBuf  - the raster thread writes here, one scanline at a
-        //              time, as that line is reached in the emulated frame.
-        // displayBuf - the UI thread blits from here. Swapped at vsync so
-        //              the user always sees a complete frame, no tearing.
         private byte[] renderBuf = new byte[ScreenW * ScreenH * 4];
         private byte[] displayBuf = new byte[ScreenW * ScreenH * 4];
         private readonly object swapLock = new object();
 
-        // Per-scanline foreground/sprite masks (320 entries each).
         private readonly bool[] fgLine = new bool[ScreenW];
         private readonly byte[] spriteLine = new byte[ScreenW];
 
-        // SDL handles
         private IntPtr window;
         private IntPtr renderer;
         private IntPtr texture;
 
-        // Raster state shared with the host (raster IRQ compare value,
-        // diagnostic line counter, and the reset coordination flags).
-        // Marked volatile because they're read/written from multiple
-        // threads (CPU thread, raster thread, main UI thread).
         private volatile int rasterCompare;
         private volatile int currentRasterLine;
         private volatile bool isResetting;
@@ -104,40 +63,21 @@ namespace C64
         private Thread? rasterThread;
         private CancellationToken cancellationToken;
 
-        // ----------------------------------------------------------------
-        // Construction / lifecycle
-        // ----------------------------------------------------------------
-
         public Display(_6502_CPU cpu)
         {
             this.cpu = cpu;
         }
 
-        // Public accessors for state the host (C64Emulator) needs to
-        // poke or read - $D012/$D011 writes, diagnostic dumps and the
-        // IRQ thread's reset-pause check.
-
-        // Raster compare value (0..311). Game code writes the low byte
-        // through $D012 and the high bit through $D011 bit 7. The host
-        // forwards both writes via this property.
         public int RasterCompare
         {
             get => rasterCompare;
             set => rasterCompare = value;
         }
 
-        // Current emulated raster line (0..311). Read-only from outside.
-        // Used for the F11 debug dump.
         public int CurrentRasterLine => currentRasterLine;
 
-        // True while a hard reset is in progress. The CIA IRQ thread
-        // checks this to avoid stepping timers and delivering interrupts
-        // while the CPU is mid-reset.
         public bool IsResetting => isResetting;
 
-        // Begin a hard reset: pause the raster thread, mark resync, zero
-        // the compare value. The CPU thread then re-runs InitHardware
-        // and finally calls EndReset() to release things.
         public void BeginReset()
         {
             isResetting = true;
@@ -145,8 +85,6 @@ namespace C64
             rasterCompare = 0;
         }
 
-        // Complete a hard reset: clear stale framebuffer pixels, restart
-        // raster timing from line 0, release the IRQ thread.
         public void EndReset()
         {
             currentRasterLine = 0;
@@ -156,9 +94,6 @@ namespace C64
             isResetting = false;
         }
 
-        // Zero both render and display buffers. Called from the CPU
-        // thread during hard-reset hardware init so the first post-reset
-        // frame can't briefly show stale pixels.
         public void ClearFramebuffers()
         {
             lock (swapLock)
@@ -168,9 +103,6 @@ namespace C64
             }
         }
 
-        // Create the SDL window, accelerated renderer and streaming
-        // texture; load the character ROM. Must run on the thread that
-        // will later pump SDL events (macOS requirement).
         public void Init()
         {
             if (SDL_Init(SDL_INIT_VIDEO) != 0)
@@ -205,12 +137,9 @@ namespace C64
             if (texture == IntPtr.Zero)
                 throw new Exception($"SDL_CreateTexture failed: {SDL_GetError()}");
 
-            // The renderer needs its own copy of the char ROM (the CPU
-            // view of $D000-$DFFF is the I/O area instead).
             charRom = File.ReadAllBytes(Path.Combine("ROMS", "characters.901225-01.bin"));
         }
 
-        // Start the raster thread. Must be called after Init().
         public void Start(CancellationToken token)
         {
             cancellationToken = token;
@@ -223,9 +152,6 @@ namespace C64
             rasterThread.Start();
         }
 
-        // Upload the latest fully-rendered frame to the texture and
-        // present it. Called on the main thread - SDL_RenderPresent
-        // must run on the thread that created the window.
         public void RedrawScreen()
         {
             lock (swapLock)
@@ -254,25 +180,14 @@ namespace C64
             SDL_RenderPresent(renderer);
         }
 
-        // Stop the raster thread and destroy SDL resources. Safe to call
-        // multiple times.
         public void Dispose()
         {
-            // The raster thread observes the same CancellationToken the
-            // host passed to Start(). If the host has already cancelled
-            // it, the thread will exit; if not we still want to join,
-            // but the host should cancel before Dispose-ing.
             try { rasterThread?.Join(200); } catch { }
 
             if (texture != IntPtr.Zero) { SDL_DestroyTexture(texture); texture = IntPtr.Zero; }
             if (renderer != IntPtr.Zero) { SDL_DestroyRenderer(renderer); renderer = IntPtr.Zero; }
             if (window != IntPtr.Zero) { SDL_DestroyWindow(window); window = IntPtr.Zero; }
         }
-
-        // ----------------------------------------------------------------
-        // Raster thread: ticks $D012, fires raster IRQs, drives the per-
-        // scanline renderer, and swaps buffers at vsync.
-        // ----------------------------------------------------------------
 
         private void RasterLoop()
         {
@@ -336,11 +251,6 @@ namespace C64
                 next += ticksPerLine;
             }
         }
-
-        // ----------------------------------------------------------------
-        // Per-scanline rendering (preserved verbatim from the previous
-        // partial-class implementation).
-        // ----------------------------------------------------------------
 
         private void RenderScanline(int y)
         {
@@ -628,10 +538,6 @@ namespace C64
                 fgBase += 8;
             }
         }
-
-        // ------------------------------------------------------------
-        //  Sprites
-        // ------------------------------------------------------------
 
         private void RenderSpritesScanline(int y, int screenAddr, int bank)
         {

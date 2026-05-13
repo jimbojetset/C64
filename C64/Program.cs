@@ -10,17 +10,11 @@ namespace C64
     {
         static int Main(string[] args)
         {
-            // Sayers.SDL2.Core P/Invokes the "SDL2" library, which on
-            // macOS isn't on the default dyld search path when installed
-            // via Homebrew. Probe the common locations so users don't
-            // have to set DYLD_LIBRARY_PATH manually.
             NativeLibrary.SetDllImportResolver(typeof(SDL2.SDL).Assembly, ResolveNativeLibrary);
 
             try
             {
                 using var emu = new C64Emulator();
-                // Optional: a file path on the command line is auto-loaded
-                // at startup, equivalent to dragging it onto the window.
                 if (args.Length > 0 && File.Exists(args[0]))
                     emu.QueueLoad(args[0]);
                 emu.Run();
@@ -136,30 +130,16 @@ namespace C64
         private byte cia2Cra;
         private byte cia2Crb;
 
-        // Cross-thread queue of file paths waiting to be loaded. The
-        // actual load runs on the main loop so it serialises with the
-        // CPU thread's view of memory (and so we never block the SDL
-        // event pump inside Console.ReadLine).
         private readonly ConcurrentQueue<string> pendingLoads = new ConcurrentQueue<string>();
 
         public C64Emulator()
         {
             cpu = new _6502_CPU(Clock_PAL);
-            // Use banked-ROM loading so the 6510 processor port at $01
-            // properly controls BASIC / KERNAL / CHARROM / I/O mapping.
-            // ML games routinely bank BASIC or KERNAL out to gain RAM at
-            // $A000+ / $E000+; without this they run for a few cycles
-            // then RTS straight back into the BASIC READY prompt.
             cpu.memory.LoadBankedROM(Path.Combine("ROMS", "basic.901226-01.bin"), Memory.BankSlot.Basic);
             cpu.memory.LoadBankedROM(Path.Combine("ROMS", "kernal.901227-03.bin"), Memory.BankSlot.Kernal);
             cpu.memory.LoadBankedROM(Path.Combine("ROMS", "characters.901225-01.bin"), Memory.BankSlot.Char);
-
-            // SDL display + per-scanline VIC-II renderer. Init() (window
-            // creation) happens later in Run() on the SDL-affine thread.
             display = new Display(cpu);
 
-            // Fast-boot: skip RAMTAS. Patches the KERNAL ROM image once;
-            // survives a soft reset because we never reload the ROM.
             byte[] kernal = cpu.memory.GetBankedROM(Memory.BankSlot.Kernal)!;
             kernal[0xFCF5 - 0xE000] = 0xEA;
             kernal[0xFCF6 - 0xE000] = 0xEA;
@@ -167,8 +147,6 @@ namespace C64
 
             InitHardware();
 
-            // Subsequent (Ctrl+R) resets re-run InitHardware on the CPU
-            // thread so it doesn't race with instruction execution.
             cpu.OnReset = InitHardware;
 
             display.RasterCompare = 0;
@@ -178,22 +156,12 @@ namespace C64
             cpu.memory.OnIOPostRead = OnIOPostRead;
         }
 
-        // Per-reset RAM / VIC / colour-RAM / screen-RAM setup. Replicates
-        // what the KERNAL would leave behind after RAMTAS + IOINIT + CINT.
         private void InitHardware()
         {
             byte[] m = cpu.memory.memory;
 
-            // Zero RAM ($0000-$FFFF). RAM exists underneath every ROM
-            // window on a real C64, so clearing the full address space
-            // is correct; ROM contents live in the banked-ROM buffers.
             Array.Clear(m, 0x0000, m.Length);
 
-            // 6510 processor port: $00 = data direction (default $2F),
-            // $01 = port value (default $37 -> LORAM=HIRAM=CHAREN=1,
-            // i.e. BASIC + KERNAL + I/O all mapped). Must be set before
-            // the first instruction executes or the reset vector fetch
-            // at $FFFC/$FFFD would come from RAM instead of KERNAL ROM.
             m[0x0000] = 0x2F;
             m[0x0001] = 0x37;
 
@@ -226,20 +194,13 @@ namespace C64
             m[0xDC0E] = 0x00;
             m[0xDC0F] = 0x00;
 
-            // RAMTAS leaves behind these workspace pointers; mirror them.
             m[0x0281] = 0x00; m[0x0282] = 0x08; // MEMSTR = $0800
             m[0x0283] = 0x00; m[0x0284] = 0xA0; // MEMSIZ = $A000
             m[0x0288] = 0x04;                   // screen page = $0400
 
-            // CIA-1 keyboard matrix: report "no keys pressed".
             m[0xDC00] = 0xFF;
             m[0xDC01] = 0xFF;
 
-            // CIA-2 controls the VIC bank via $DD00 low 2 bits.
-            // Default C64 setup is bank 0 ($0000-$3FFF), which with
-            // $D018=$14 maps screen RAM at $0400 and char data at $1000.
-            // If a game left this pointing elsewhere, reset must restore
-            // it or the renderer can show a blank frame.
             cia2PortA = 0x17;
             cia2Ddra = 0x3F;
             m[0xDD00] = 0x17;
@@ -260,7 +221,6 @@ namespace C64
             m[0xDD0E] = 0x00;
             m[0xDD0F] = 0x00;
 
-            // VIC-II defaults that KERNAL sets in IOINIT.
             m[0xD011] = 0x1B; // DEN, RSEL, YSCROLL=3
             m[0xD016] = 0xC8; // (top bits), CSEL, XSCROLL=0
             m[0xD018] = 0x14; // screen $0400, char ROM shadow $1000
@@ -269,7 +229,7 @@ namespace C64
             m[0xD022] = 0x01; // bg 1    = white
             m[0xD023] = 0x02; // bg 2    = red
             m[0xD024] = 0x03; // bg 3    = cyan
-            // Sprite control registers: all sprites off, no expansion etc.
+
             m[0xD015] = 0x00;
             m[0xD017] = 0x00;
             m[0xD01B] = 0x00;
@@ -280,20 +240,12 @@ namespace C64
             m[0xD01E] = 0x00;
             m[0xD01F] = 0x00;
 
-            // Colour RAM: light blue (matches default text colour).
             for (int a = 0xD800; a <= 0xDBE7; a++) m[a] = 0x0E;
 
-            // Screen RAM: space (so unwritten cells aren't '@').
             for (int a = 0x0400; a <= 0x07E7; a++) m[a] = 0x20;
 
-            // Drain any queued keystrokes from the previous session.
             while (keyQueue.TryDequeue(out _)) { }
 
-            // Resume the raster/IRQ helper threads only after all reset
-            // state is fully committed, and restart raster timing from
-            // line 0 so the first post-reset frame is coherent. Also
-            // clears the framebuffers so we can't briefly show stale
-            // pixels from before the reset.
             display.EndReset();
         }
 
@@ -321,8 +273,6 @@ namespace C64
                     }
                 case 0xDC0D:
                     {
-                        // CIA ICR mask register write semantics:
-                        // bit7=1 sets mask bits in 0..4, bit7=0 clears them.
                         bool raiseIrq = false;
                         lock (cia1Lock)
                         {
@@ -332,7 +282,6 @@ namespace C64
                             else
                                 cia1IcrMask = (byte)(cia1IcrMask & ~bits);
 
-                            // Bit 7 reflects "an enabled source is pending".
                             if ((cia1IcrStatus & cia1IcrMask & 0x1F) != 0)
                             {
                                 bool wasSet = (cia1IcrStatus & 0x80) != 0;
@@ -376,7 +325,6 @@ namespace C64
                     {
                         lock (cia1Lock)
                         {
-                            // CRA bit4 forces a load from latch into counter.
                             if ((value & 0x10) != 0)
                             {
                                 cia1TimerACounter = cia1TimerALatch;
@@ -384,8 +332,6 @@ namespace C64
                                 cpu.memory.memory[0xDC05] = (byte)(cia1TimerACounter >> 8);
                             }
 
-                            // Preserve control bits; force-load is a write strobe
-                            // and always reads back clear.
                             cia1Cra = (byte)(value & 0xEF);
                             cpu.memory.memory[0xDC0E] = cia1Cra;
                         }
@@ -419,8 +365,6 @@ namespace C64
                     {
                         lock (cia1Lock)
                         {
-                            // Preserve control bits; force-load is a write strobe
-                            // and always reads back clear.
                             if ((value & 0x10) != 0)
                             {
                                 cia1TimerBCounter = cia1TimerBLatch;
@@ -454,9 +398,6 @@ namespace C64
                     cpu.memory.memory[addr] = value;
                     return true;
                 case 0xDD02:
-                    // On the C64, CIA2 PA6/PA7 are wired to IEC CLK/DATA
-                    // input lines; keep them input-only for compatibility
-                    // with KERNAL serial polling loops.
                     cia2Ddra = (byte)(value & 0x3F);
                     cpu.memory.memory[addr] = value;
                     return true;
@@ -544,8 +485,6 @@ namespace C64
                     return cia1Ddrb;
                 case 0xDD00:
                     {
-                        // IEC input lines (6/7) are pull-ups by default and
-                        // are not driven by CIA2 output mode on a stock C64.
                         byte external = 0xFF;
                         byte v = MergeCiaPortRead(cia2PortA, cia2Ddra, external);
                         return (byte)(v | 0xC0);
@@ -630,10 +569,6 @@ namespace C64
             return MergeCiaPortRead(cia1PortB, cia1Ddrb, external);
         }
 
-        // CIA ports behave like a wired matrix on the C64 bus: an output
-        // bit driven high can still be pulled low by external sources.
-        // This allows joystick reads to work even when KERNAL leaves DDRA
-        // bits configured as outputs.
         private static byte MergeCiaPortRead(byte latch, byte ddr, byte external)
         {
             byte outBits = (byte)((latch & external) & ddr);
@@ -666,9 +601,6 @@ namespace C64
             uint remaining = ticks;
             while (remaining > 0 && (control & 0x01) != 0)
             {
-                // 6526 underflow occurs when the down-counter decrements
-                // from 0 to FFFF, so it takes (counter + 1) ticks to hit
-                // an underflow from any current counter value.
                 uint stepsToUnderflow = (uint)counter + 1u;
                 if (remaining < stepsToUnderflow)
                 {
@@ -693,12 +625,8 @@ namespace C64
             bool raiseIrq = false;
             lock (cia1Lock)
             {
-                // CNT pulses available this slice. Without full external
-                // CNT wiring emulation, treat CNT as continuously pulsing
-                // while high so CNT-clock modes don't deadlock software.
                 uint cntPulses = cia1CntHigh ? cycles : 0u;
 
-                // Timer A input mode (CRA bit5): 0=PHI2, 1=CNT.
                 uint ticksA = (cia1Cra & 0x20) == 0 ? cycles : cntPulses;
                 int underA = CountUnderflows(
                     ref cia1TimerACounter,
@@ -716,17 +644,9 @@ namespace C64
                     }
                 }
 
-                // Serial output mode can source CNT from Timer A underflow.
-                // Keep the stronger of the synthetic external pulse train
-                // and the CIA-generated pulses for compatibility.
                 if ((cia1Cra & 0x40) != 0 && underA > 0)
                     cntPulses = Math.Max(cntPulses, (uint)underA);
 
-                // Timer B input mode from CRB bits 6..5:
-                // 00 = PHI2
-                // 01 = CNT pulses
-                // 10 = Timer-A underflow
-                // 11 = Timer-A underflow while CNT high
                 int tbMode = (cia1Crb >> 5) & 0x03;
                 uint ticksB = 0;
                 if (tbMode == 0)
@@ -757,7 +677,6 @@ namespace C64
                     }
                 }
 
-                // Keep ICR bit7 as a derived IRQ-request state.
                 if ((cia1IcrStatus & cia1IcrMask & 0x1F) != 0)
                     cia1IcrStatus |= 0x80;
                 else
@@ -851,18 +770,10 @@ namespace C64
         {
         }
 
-        // ------------------------------------------------------------
-        //  SDL2 entry point / main loop
-        // ------------------------------------------------------------
-
         public void Run()
         {
-            // SDL window / renderer / texture / char-ROM load. Display
-            // owns the SDL handles; we just trigger the init here on the
-            // SDL-affine main thread.
             display.Init();
 
-            // Start emulator threads.
             var token = cts.Token;
 
             cpuThread = new Thread(() =>
@@ -877,7 +788,6 @@ namespace C64
             };
             cpuThread.Start();
 
-            // Display owns the raster thread (and the raster-IRQ logic).
             display.Start(token);
 
             irqThread = new Thread(() => IrqLoop(token))
@@ -887,9 +797,6 @@ namespace C64
             };
             irqThread.Start();
 
-            // Main UI loop on the calling (main) thread. SDL requires
-            // event pumping from the thread that created the window on
-            // macOS, so we keep everything graphics-related here.
             bool quit = false;
             uint nextDraw = SDL_GetTicks();
             const uint drawIntervalMs = 16; // ~60 Hz upper bound; vsync paces actual present
@@ -911,10 +818,6 @@ namespace C64
                             break;
                         case SDL_EventType.SDL_DROPFILE:
                             {
-                                // SDL allocated the string; ideally we'd
-                                // call SDL_free on it, but the binding
-                                // we use doesn't expose it. The leak is
-                                // a handful of bytes per drop - fine.
                                 IntPtr p = ev.drop.file;
                                 string? droppedPath = Marshal.PtrToStringUTF8(p);
                                 if (!string.IsNullOrWhiteSpace(droppedPath))
@@ -924,7 +827,6 @@ namespace C64
                     }
                 }
 
-                // Drain any pending file loads on the main thread.
                 while (pendingLoads.TryDequeue(out string? path))
                     DoLoad(path);
 
