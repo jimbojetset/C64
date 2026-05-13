@@ -52,12 +52,19 @@ namespace C64
         // A modest preamp helps low-sustain game SFX remain audible.
         private const double VoicePreamp = 3.0;
 
+        // D418 volume-DAC approximation for sample-style SFX.
+        // Use a high-passed (delta) path to avoid large DC offsets.
+        private const double VolumeDacStepGain = 0.22;
+        private const double VolumeDacDecay = 0.996;
+
         // ?? State-variable filter (owned by the synthesis thread) ?????????????
         private double _flp, _fbp;          // low-pass / band-pass accumulators
         private double _filterF = 0.1;      // 2�sin(?�fc/fs)
         private double _filterQ = 1.0;      // 1/Q damping coefficient
         private int _lastFcReg = -1;    // cached to detect register changes
         private int _lastResReg = -1;
+        private double _lastVolNorm;
+        private double _volDacLevel;
 
         // ?? SDL audio ?????????????????????????????????????????????????????????
         private uint _dev;               // SDL audio device id (0 = none)
@@ -203,6 +210,8 @@ namespace C64
             _flp = _fbp = 0.0;
             _lastFcReg = -1;
             _lastResReg = -1;
+            _lastVolNorm = 0.0;
+            _volDacLevel = 0.0;
             _v3Wave = 0;
             _v3Env = 0;
             if (_dev != 0)
@@ -309,6 +318,13 @@ namespace C64
                 hpOn = (modeVol & 0x40) != 0;
                 voice3Mute = (modeVol & 0x80) != 0;
 
+                // Approximate D418 sample playback by responding to volume
+                // steps, then decaying the impulse over time (AC-coupled).
+                double volNorm = masterVol / 15.0;
+                double volDelta = volNorm - _lastVolNorm;
+                _lastVolNorm = volNorm;
+                _volDacLevel = (_volDacLevel * VolumeDacDecay) + (volDelta * VolumeDacStepGain);
+
                 resRoute = r[23];
                 filterRoute = (byte)(resRoute & 0x07);
                 resReg = (resRoute >> 4) & 0x0F;
@@ -346,6 +362,7 @@ namespace C64
                 // envelope levels are still audible, then soft clip to keep
                 // peaks bounded without harsh clipping.
                 double mixed = (filtOut + bypass) * (masterVol / 15.0) * VoicePreamp;
+                mixed += _volDacLevel;
                 mixed = Math.Tanh(mixed * 1.6);
 
                 buf[i] = (short)(mixed * 32767.0);
@@ -362,12 +379,53 @@ namespace C64
                 byte previous = regs[d.Reg];
                 regs[d.Reg] = d.Value;
 
+                // Control register gate edges must be handled at write time.
+                // Multiple writes can occur between audio samples; if we only
+                // inspect the final gate state per sample we can miss short
+                // gate pulses and lose ADSR retriggers.
+                HandleGateEdgeOnWrite(d.Reg, previous, d.Value, regs);
+
                 if (TraceEnabled && IsAudibleTraceRegister(d.Reg, previous, d.Value))
                 {
                     Console.Error.WriteLine(
                         $"[SID] t={d.Tick} reg=${d.Reg + 0xD400:X4} {previous:X2}->{d.Value:X2} {DescribeSidState(regs)}");
                 }
             }
+        }
+
+        private void HandleGateEdgeOnWrite(int reg, byte previous, byte value, byte[] regs)
+        {
+            int voiceBase = (reg / 7) * 7;
+            int offset = reg - voiceBase;
+            if (offset != 4)
+                return;
+
+            bool prevGate = (previous & 0x01) != 0;
+            bool gate = (value & 0x01) != 0;
+            if (prevGate == gate)
+                return;
+
+            int voiceIdx = voiceBase / 7;
+            Voice v = _voices[voiceIdx];
+            byte sr = regs[voiceBase + 6];
+            int sustainLvl = ((sr >> 4) & 0x0F) * 17;
+
+            if (gate)
+            {
+                v.EnvPhase = EnvPhase.Attack;
+                v.EnvTimer = 0.0;
+                if (TraceEnvelope)
+                    Console.Error.WriteLine($"[ENV] GATE ON -> Attack (sustain={sustainLvl})");
+            }
+            else
+            {
+                v.EnvPhase = EnvPhase.Release;
+                v.EnvTimer = 0.0;
+                if (TraceEnvelope)
+                    Console.Error.WriteLine($"[ENV] GATE OFF -> Release from level {v.EnvelopeLevel}");
+            }
+
+            v.GatePrev = gate;
         }
 
         private static bool IsAudibleTraceRegister(int reg, byte previous, byte value)
@@ -596,21 +654,8 @@ namespace C64
             int releaseIdx = sr & 0x0F;
             int sustainLvl = ((sr >> 4) & 0x0F) * 17;   // 0..15 → 0..255
 
-            // Gate edge detection
-            if (gate && !v.GatePrev)
-            {
-                v.EnvPhase = EnvPhase.Attack;
-                v.EnvTimer = 0.0;
-                if (TraceEnvelope)
-                    Console.Error.WriteLine($"[ENV] GATE ON → Attack (sustain={sustainLvl})");
-            }
-            else if (!gate && v.GatePrev)
-            {
-                v.EnvPhase = EnvPhase.Release;
-                v.EnvTimer = 0.0;
-                if (TraceEnvelope)
-                    Console.Error.WriteLine($"[ENV] GATE OFF → Release from level {v.EnvelopeLevel}");
-            }
+            // Gate transitions are handled in ApplyWritesUntil so short
+            // pulses between samples are not lost.
             v.GatePrev = gate;
 
             v.EnvTimer += CyclesPerSample;
