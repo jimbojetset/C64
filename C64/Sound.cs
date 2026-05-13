@@ -44,6 +44,9 @@ namespace C64
         // timestamps and applied by the synth thread in time order.
         private readonly byte[] _regs = new byte[29];
         private readonly ConcurrentQueue<SidWrite> _writeQueue = new();
+        private static readonly long TicksPerCpuCycle =
+            Math.Max(1L, (long)Math.Round(Stopwatch.Frequency / CpuFreq));
+        private long _writeTickCursor;
 
         // ?? Per-voice synthesis state (owned by the synthesis thread) ?????????
         private readonly Voice[] _voices = { new(), new(), new() };
@@ -53,9 +56,9 @@ namespace C64
         private const double VoicePreamp = 3.0;
 
         // D418 volume-DAC approximation for sample-style SFX.
-        // Use a high-passed (delta) path to avoid large DC offsets.
-        private const double VolumeDacStepGain = 0.22;
-        private const double VolumeDacDecay = 0.996;
+        // Use sample-and-hold with AC coupling (one-pole high-pass).
+        private const double VolumeDacHpA = 0.9995;
+        private const double VolumeDacOutputGain = 4.0;
 
         // ?? State-variable filter (owned by the synthesis thread) ?????????????
         private double _flp, _fbp;          // low-pass / band-pass accumulators
@@ -63,8 +66,9 @@ namespace C64
         private double _filterQ = 1.0;      // 1/Q damping coefficient
         private int _lastFcReg = -1;    // cached to detect register changes
         private int _lastResReg = -1;
-        private double _lastVolNorm;
-        private double _volDacLevel;
+        private double _volDacRaw;
+        private double _volDacRawPrev;
+        private double _volDacHp;
 
         // ?? SDL audio ?????????????????????????????????????????????????????????
         private uint _dev;               // SDL audio device id (0 = none)
@@ -165,6 +169,8 @@ namespace C64
             if (_dev == 0)
                 throw new Exception($"SDL_OpenAudioDevice failed: {SDL_GetError()}");
 
+            _writeTickCursor = Stopwatch.GetTimestamp();
+
             SDL_PauseAudioDevice(_dev, 0); // 0 = unpause ? start playing
         }
 
@@ -184,7 +190,13 @@ namespace C64
         public void WriteRegister(int reg, byte value)
         {
             if ((uint)reg < 29)
-                _writeQueue.Enqueue(new SidWrite(reg, value, Stopwatch.GetTimestamp()));
+            {
+                long now = Stopwatch.GetTimestamp();
+                long cursor = Interlocked.Read(ref _writeTickCursor);
+                long tick = Math.Max(now, cursor);
+                Interlocked.Exchange(ref _writeTickCursor, tick + TicksPerCpuCycle);
+                _writeQueue.Enqueue(new SidWrite(reg, value, tick));
+            }
         }
 
         /// <summary>
@@ -210,8 +222,10 @@ namespace C64
             _flp = _fbp = 0.0;
             _lastFcReg = -1;
             _lastResReg = -1;
-            _lastVolNorm = 0.0;
-            _volDacLevel = 0.0;
+            _volDacRaw = 0.0;
+            _volDacRawPrev = 0.0;
+            _volDacHp = 0.0;
+            _writeTickCursor = Stopwatch.GetTimestamp();
             _v3Wave = 0;
             _v3Env = 0;
             if (_dev != 0)
@@ -318,12 +332,9 @@ namespace C64
                 hpOn = (modeVol & 0x40) != 0;
                 voice3Mute = (modeVol & 0x80) != 0;
 
-                // Approximate D418 sample playback by responding to volume
-                // steps, then decaying the impulse over time (AC-coupled).
-                double volNorm = masterVol / 15.0;
-                double volDelta = volNorm - _lastVolNorm;
-                _lastVolNorm = volNorm;
-                _volDacLevel = (_volDacLevel * VolumeDacDecay) + (volDelta * VolumeDacStepGain);
+                // AC-coupled D418 sample-and-hold DAC path.
+                _volDacHp = VolumeDacHpA * (_volDacHp + _volDacRaw - _volDacRawPrev);
+                _volDacRawPrev = _volDacRaw;
 
                 resRoute = r[23];
                 filterRoute = (byte)(resRoute & 0x07);
@@ -348,22 +359,22 @@ namespace C64
                 double filtered = 0.0, bypass = 0.0;
                 if ((filterRoute & 0x01) != 0) filtered += v0; else bypass += v0;
                 if ((filterRoute & 0x02) != 0) filtered += v1; else bypass += v1;
-                // $D418 bit 7 (voice3 off) disconnects only the direct output
-                // path of voice 3. If voice 3 is routed through the filter,
-                // it must still be audible.
+                // Compatibility: some games keep $D418 bit7 set while still
+                // expecting short voice-3 SFX to be audible.
                 if ((filterRoute & 0x04) != 0)
                     filtered += v2;
-                else if (!voice3Mute)
+                else
                     bypass += v2;
 
                 double filtOut = StepFilter(filtered, lpOn, bpOn, hpOn);
 
-                // Voice path scales with master volume. Apply a preamp so low
-                // envelope levels are still audible, then soft clip to keep
-                // peaks bounded without harsh clipping.
-                double mixed = (filtOut + bypass) * (masterVol / 15.0) * VoicePreamp;
-                mixed += _volDacLevel;
-                mixed = Math.Tanh(mixed * 1.6);
+                // Voice path scales with master volume and is soft-clipped.
+                // Keep D418 digi on its own lane so it is not masked by
+                // voice compression during busy gameplay scenes.
+                double voiceMixed = Math.Tanh(((filtOut + bypass) * (masterVol / 15.0) * VoicePreamp) * 1.6);
+                double mixed = voiceMixed + (_volDacHp * VolumeDacOutputGain);
+                if (mixed > 1.0) mixed = 1.0;
+                if (mixed < -1.0) mixed = -1.0;
 
                 buf[i] = (short)(mixed * 32767.0);
             }
@@ -384,6 +395,10 @@ namespace C64
                 // inspect the final gate state per sample we can miss short
                 // gate pulses and lose ADSR retriggers.
                 HandleGateEdgeOnWrite(d.Reg, previous, d.Value, regs);
+
+                // D418 sample effects are encoded as rapid volume writes.
+                // Capture each write here so sub-sample transitions are kept.
+                HandleVolumeDacOnWrite(d.Reg, previous, d.Value);
 
                 if (TraceEnabled && IsAudibleTraceRegister(d.Reg, previous, d.Value))
                 {
@@ -414,6 +429,8 @@ namespace C64
             {
                 v.EnvPhase = EnvPhase.Attack;
                 v.EnvTimer = 0.0;
+                if (v.EnvelopeLevel == 0)
+                    v.EnvelopeLevel = 1;
                 if (TraceEnvelope)
                     Console.Error.WriteLine($"[ENV] GATE ON -> Attack (sustain={sustainLvl})");
             }
@@ -426,6 +443,15 @@ namespace C64
             }
 
             v.GatePrev = gate;
+        }
+
+        private void HandleVolumeDacOnWrite(int reg, byte previous, byte value)
+        {
+            if (reg != 24)
+                return;
+
+            int newVol = value & 0x0F;
+            _volDacRaw = (newVol / 15.0) - 0.5;
         }
 
         private static bool IsAudibleTraceRegister(int reg, byte previous, byte value)
@@ -603,13 +629,8 @@ namespace C64
             if (pulse)
             {
                 // SID pulse output is high while phase < pulse width.
-                // Handle extreme widths as silence to avoid DC-like output.
                 uint phase = accum >> 12; // 0..4095
-                bool high;
-                if (pw12 <= 0 || pw12 >= 0x0FFF)
-                    high = false;
-                else
-                    high = test || (phase < (uint)pw12);
+                bool high = test || (phase < (uint)(pw12 & 0x0FFF));
 
                 result += high ? 0x0FFF : 0x0000;
                 active++;
