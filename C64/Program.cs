@@ -496,10 +496,13 @@ namespace C64
                     return true;
             }
 
-            // SID registers $D400-$D41C (writes mirror into memory too).
-            if (addr >= 0xD400 && addr <= 0xD41C)
+            // SID registers are mirrored across $D400-$D7FF in 32-byte blocks.
+            // Accept mirrored writes so routines using alternate SID mirrors
+            // (common in some games/effects code) are not lost.
+            if (addr >= 0xD400 && addr <= 0xD7FF)
             {
-                sound.WriteRegister((int)(addr - 0xD400), value);
+                int sidReg = (int)((addr - 0xD400) & 0x1F);
+                sound.WriteRegister(sidReg, value);
                 cpu.memory.memory[addr] = value;
                 return true;
             }
@@ -586,9 +589,10 @@ namespace C64
                         return value;
                     }
                 default:
-                    // SID readback registers $D419-$D41C (paddles + voice-3 osc/env).
-                    if (addr >= 0xD419 && addr <= 0xD41C)
-                        return sound.ReadRegister((int)(addr - 0xD400));
+                    // SID readback registers are mirrored across $D400-$D7FF.
+                    // We only provide meaningful values for $19-$1C (POT/POT/OSC3/ENV3).
+                    if (addr >= 0xD400 && addr <= 0xD7FF)
+                        return sound.ReadRegister((int)((addr - 0xD400) & 0x1F));
                     return fallback;
             }
         }

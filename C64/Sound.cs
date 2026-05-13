@@ -49,6 +49,7 @@ namespace C64
         private readonly ConcurrentQueue<SidWrite> _writeQueue = new();
         private static readonly long TicksPerCpuCycle =
             Math.Max(1L, (long)Math.Round(Stopwatch.Frequency / CpuFreq));
+        private static readonly double TicksPerSample = Stopwatch.Frequency / (double)SampleRate;
         private long _writeTickCursor;
 
         // ?? Per-voice synthesis state (owned by the synthesis thread) ?????????
@@ -57,12 +58,17 @@ namespace C64
         // Overall gain trim for the synthesized SID voice path.
         // A modest preamp helps low-sustain game SFX remain audible.
         private const double VoicePreamp = 3.0;
+        private const double VoiceLaneGain = 0.20;
+        private const double MasterOutputGain = 2.2;
 
         // D418 volume-DAC approximation for sample-style SFX.
         // Use sample-and-hold with AC coupling (one-pole high-pass).
         private const double VolumeDacHpA = 0.9995;
-        private const double VolumeDacStepResponse = 1.0;
-        private const double VolumeDacOutputGain = 1.2;
+        private const double VolumeDacStepResponse = 0.40;
+        private const double VolumeDacSmoothing = 0.18;
+        private const double VolumeDacQuietLiftPower = 0.62;
+        private const double VolumeDacSaturationDrive = 2.6;
+        private const double VolumeDacOutputGain = 0.70;
 
         // ?? State-variable filter (owned by the synthesis thread) ?????????????
         private double _flp, _fbp;          // low-pass / band-pass accumulators
@@ -72,6 +78,8 @@ namespace C64
         private int _lastResReg = -1;
         private double _volDacRaw;
         private double _volDacHp;
+        private double _volDacShaped;
+        private long _lastDacTick;
         private int _pickupD418Writes;
         private int _pickupGateEdges;
         private double _pickupVoicePeak;
@@ -179,6 +187,7 @@ namespace C64
                 throw new Exception($"SDL_OpenAudioDevice failed: {SDL_GetError()}");
 
             _writeTickCursor = Stopwatch.GetTimestamp();
+            _lastDacTick = _writeTickCursor;
 
             SDL_PauseAudioDevice(_dev, 0); // 0 = unpause ? start playing
         }
@@ -233,6 +242,8 @@ namespace C64
             _lastResReg = -1;
             _volDacRaw = 0.0;
             _volDacHp = 0.0;
+            _volDacShaped = 0.0;
+            _lastDacTick = Stopwatch.GetTimestamp();
             _pickupD418Writes = 0;
             _pickupGateEdges = 0;
             _pickupVoicePeak = 0.0;
@@ -337,6 +348,8 @@ namespace C64
             {
                 long sampleTick = startTick + ((long)(i + 1) * span) / count;
                 ApplyWritesUntil(sampleTick, r);
+                AdvanceDacToTick(sampleTick);
+                _volDacShaped += (_volDacHp - _volDacShaped) * VolumeDacSmoothing;
 
                 // Re-read mode/filter state after any writes applied for this sample.
                 modeVol = r[24];
@@ -345,10 +358,6 @@ namespace C64
                 bpOn = (modeVol & 0x20) != 0;
                 hpOn = (modeVol & 0x40) != 0;
                 voice3Mute = (modeVol & 0x80) != 0;
-
-                // Decay DAC AC-coupled state per sample; write-time register
-                // transitions inject step deltas into _volDacHp.
-                _volDacHp *= VolumeDacHpA;
 
                 resRoute = r[23];
                 filterRoute = (byte)(resRoute & 0x07);
@@ -385,11 +394,14 @@ namespace C64
                 // Voice path scales with master volume and is soft-clipped.
                 // Keep D418 digi on its own lane so it is not masked by
                 // voice compression during busy gameplay scenes.
-                double voiceMixed = Math.Tanh(((filtOut + bypass) * (masterVol / 15.0) * VoicePreamp) * 1.6);
-                double dacMixed = _volDacHp * VolumeDacOutputGain;
-                double mixed = voiceMixed + dacMixed;
-                if (mixed > 1.0) mixed = 1.0;
-                if (mixed < -1.0) mixed = -1.0;
+                double voiceMixed = Math.Tanh(((filtOut + bypass) * (masterVol / 15.0) * VoicePreamp) * 1.6) * VoiceLaneGain;
+                // Soften DAC spikes (walking clicks) so they do not mask
+                // quieter tonal effects (egg/seed pickup chirps).
+                double dacAbs = Math.Abs(_volDacShaped);
+                double dacLift = Math.Sign(_volDacShaped) * Math.Pow(dacAbs, VolumeDacQuietLiftPower);
+                double dacMixed = Math.Tanh(dacLift * VolumeDacSaturationDrive) * VolumeDacOutputGain;
+                double mixed = (voiceMixed + dacMixed) * MasterOutputGain;
+                mixed = Math.Tanh(mixed);
 
                 if (TracePickup)
                 {
@@ -429,6 +441,8 @@ namespace C64
                 byte previous = regs[d.Reg];
                 regs[d.Reg] = d.Value;
 
+                AdvanceDacToTick(d.Tick);
+
                 // Control register gate edges must be handled at write time.
                 // Multiple writes can occur between audio samples; if we only
                 // inspect the final gate state per sample we can miss short
@@ -445,6 +459,24 @@ namespace C64
                         $"[SID] t={d.Tick} reg=${d.Reg + 0xD400:X4} {previous:X2}->{d.Value:X2} {DescribeSidState(regs)}");
                 }
             }
+        }
+
+        private void AdvanceDacToTick(long tick)
+        {
+            if (_lastDacTick == 0)
+            {
+                _lastDacTick = tick;
+                return;
+            }
+
+            if (tick <= _lastDacTick)
+                return;
+
+            double dtSamples = (tick - _lastDacTick) / TicksPerSample;
+            if (dtSamples > 0.0)
+                _volDacHp *= Math.Pow(VolumeDacHpA, dtSamples);
+
+            _lastDacTick = tick;
         }
 
         private void HandleGateEdgeOnWrite(int reg, byte previous, byte value, byte[] regs)
