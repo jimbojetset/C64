@@ -1,0 +1,340 @@
+﻿using System.Collections.Concurrent;
+using static SDL2.SDL;
+
+namespace C64
+{
+    // Keyboard, joystick port 2, PETSCII translation and host -> emulated
+    // C64 keyboard matrix mapping. All members live in the partial
+    // C64Emulator class so they can directly touch CPU memory.
+    internal sealed partial class C64Emulator
+    {
+        private readonly ConcurrentQueue<byte> keyQueue = new ConcurrentQueue<byte>();
+
+        // CIA-1 port A ($DC00) is read by games as joystick port 2.
+        private byte joystick2 = 0xFF;
+
+        // C64 keyboard matrix: each row is an active-low bitmask.
+        private readonly byte[] keyboardMatrix = { 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF };
+
+        private bool caseModeUpper = true;
+
+        private static readonly byte[] CtrlColours =
+        {
+            0x90, 0x05, 0x1C, 0x9F, 0x9C, 0x1E, 0x1F, 0x9E,
+        };
+        private static readonly byte[] CommodoreColours =
+        {
+            0x81, 0x95, 0x96, 0x97, 0x98, 0x99, 0x9A, 0x9B,
+        };
+        private static readonly byte[] FunctionKeys =
+        {
+            0x85, 0x89, 0x86, 0x8A, 0x87, 0x8B, 0x88, 0x8C,
+        };
+
+        private byte ToPetscii(SDL_Keycode sym, SDL_Keymod mod)
+        {
+            bool shift = (mod & SDL_Keymod.KMOD_SHIFT) != 0;
+            bool ctrl = (mod & SDL_Keymod.KMOD_CTRL) != 0;
+            bool cbm = (mod & SDL_Keymod.KMOD_ALT) != 0;
+
+            if (shift && cbm && (sym == SDL_Keycode.SDLK_LSHIFT || sym == SDL_Keycode.SDLK_RSHIFT ||
+                                 sym == SDL_Keycode.SDLK_LALT || sym == SDL_Keycode.SDLK_RALT))
+            {
+                caseModeUpper = !caseModeUpper;
+                return caseModeUpper ? (byte)0x8E : (byte)0x0E;
+            }
+
+            if (sym >= SDL_Keycode.SDLK_F1 && sym <= SDL_Keycode.SDLK_F8)
+                return FunctionKeys[(int)(sym - SDL_Keycode.SDLK_F1)];
+
+            if (sym >= SDL_Keycode.SDLK_a && sym <= SDL_Keycode.SDLK_z)
+                return (byte)(0x41 + (int)(sym - SDL_Keycode.SDLK_a));
+
+            if (sym >= SDL_Keycode.SDLK_1 && sym <= SDL_Keycode.SDLK_8)
+            {
+                int idx = (int)(sym - SDL_Keycode.SDLK_1);
+                if (ctrl) return CtrlColours[idx];
+                if (cbm) return CommodoreColours[idx];
+            }
+
+            if (sym >= SDL_Keycode.SDLK_0 && sym <= SDL_Keycode.SDLK_9)
+            {
+                int d = (int)(sym - SDL_Keycode.SDLK_0);
+                if (!shift) return (byte)(0x30 + d);
+                return d switch
+                {
+                    1 => (byte)'!',
+                    2 => (byte)'"',
+                    3 => (byte)'#',
+                    4 => (byte)'$',
+                    5 => (byte)'%',
+                    6 => (byte)'&',
+                    7 => (byte)'\'',
+                    8 => (byte)'(',
+                    9 => (byte)')',
+                    _ => 0
+                };
+            }
+
+            if (sym >= SDL_Keycode.SDLK_KP_0 && sym <= SDL_Keycode.SDLK_KP_9)
+                return (byte)(0x30 + (int)(sym - SDL_Keycode.SDLK_KP_0));
+
+            return sym switch
+            {
+                SDL_Keycode.SDLK_SPACE => (byte)0x20,
+                SDL_Keycode.SDLK_RETURN => (byte)0x0D,
+                SDL_Keycode.SDLK_KP_ENTER => (byte)0x0D,
+                SDL_Keycode.SDLK_BACKSPACE => (byte)0x14,
+                SDL_Keycode.SDLK_TAB => (byte)0x20,
+                SDL_Keycode.SDLK_ESCAPE => (byte)0x03,
+                SDL_Keycode.SDLK_HOME => (byte)0x13,
+                SDL_Keycode.SDLK_INSERT => (byte)0x94,
+                SDL_Keycode.SDLK_DELETE => (byte)0x14,
+                SDL_Keycode.SDLK_LEFT => (byte)0x9D,
+                SDL_Keycode.SDLK_RIGHT => (byte)0x1D,
+                SDL_Keycode.SDLK_UP => (byte)0x91,
+                SDL_Keycode.SDLK_DOWN => (byte)0x11,
+                SDL_Keycode.SDLK_PERIOD => shift ? (byte)'>' : (byte)'.',
+                SDL_Keycode.SDLK_COMMA => shift ? (byte)'<' : (byte)',',
+                SDL_Keycode.SDLK_SLASH => shift ? (byte)'?' : (byte)'/',
+                SDL_Keycode.SDLK_SEMICOLON => shift ? (byte)':' : (byte)';',
+                SDL_Keycode.SDLK_QUOTE => shift ? (byte)'"' : (byte)'\'',
+                SDL_Keycode.SDLK_MINUS => shift ? (byte)'_' : (byte)'-',
+                SDL_Keycode.SDLK_EQUALS => shift ? (byte)'+' : (byte)'=',
+                SDL_Keycode.SDLK_LEFTBRACKET => shift ? (byte)'{' : (byte)'[',
+                SDL_Keycode.SDLK_RIGHTBRACKET => shift ? (byte)'}' : (byte)']',
+                SDL_Keycode.SDLK_BACKSLASH => shift ? (byte)'|' : (byte)'\\',
+                _ => 0
+            };
+        }
+
+        private bool HandleKeyDown(SDL_KeyboardEvent ke)
+        {
+            if (ke.repeat != 0) return false;
+
+            SDL_Keycode sym = ke.keysym.sym;
+            SDL_Keymod mod = ke.keysym.mod;
+            bool ctrl = (mod & SDL_Keymod.KMOD_CTRL) != 0;
+            bool gui = (mod & SDL_Keymod.KMOD_GUI) != 0; // Cmd on macOS, Win key on Windows
+            bool shift = (mod & SDL_Keymod.KMOD_SHIFT) != 0;
+            bool alt = (mod & SDL_Keymod.KMOD_ALT) != 0;
+
+            if (sym == SDL_Keycode.SDLK_F11)
+            {
+                Console.Error.WriteLine(BuildDebugStateLine("[DUMP]"));
+                return false;
+            }
+
+            if (sym == SDL_Keycode.SDLK_F12)
+            {
+                HardReset();
+                return false;
+            }
+
+            if ((ctrl || gui) && !shift && !alt)
+            {
+                switch (sym)
+                {
+                    case SDL_Keycode.SDLK_o: LoadProgram(); return false;
+                    case SDL_Keycode.SDLK_s: SaveProgram(); return false;
+                    case SDL_Keycode.SDLK_r:
+                    case SDL_Keycode.SDLK_F12:
+                        HardReset();
+                        return false;
+                    case SDL_Keycode.SDLK_q: return true;
+                    case SDL_Keycode.SDLK_w: return true;
+                }
+            }
+
+            byte jmask = JoystickMaskFromKey(sym);
+            if (jmask != 0)
+            {
+                joystick2 = (byte)(joystick2 & ~jmask);
+            }
+
+            UpdateKeyboardState(sym, true);
+            return false;
+        }
+
+        private void HandleKeyUp(SDL_KeyboardEvent ke)
+        {
+            byte jmask = JoystickMaskFromKey(ke.keysym.sym);
+            if (jmask != 0)
+            {
+                joystick2 = (byte)(joystick2 | jmask);
+            }
+
+            UpdateKeyboardState(ke.keysym.sym, false);
+        }
+
+        private void UpdateKeyboardState(SDL_Keycode sym, bool pressed)
+        {
+            switch (sym)
+            {
+                case SDL_Keycode.SDLK_LSHIFT:
+                case SDL_Keycode.SDLK_RSHIFT:
+                    SetMatrixKey(1, 7, pressed);
+                    SetMatrixKey(6, 4, pressed);
+                    return;
+                case SDL_Keycode.SDLK_LCTRL:
+                    SetMatrixKey(7, 2, pressed); // C64 CTRL key
+                    return; // joystick-only to avoid game keyboard side-effects
+                case SDL_Keycode.SDLK_RCTRL:
+                    return; // joystick-only to avoid game keyboard side-effects
+                case SDL_Keycode.SDLK_RALT:
+                    return; // joystick fire only â€” no keyboard matrix entry
+                case SDL_Keycode.SDLK_RETURN:
+                case SDL_Keycode.SDLK_KP_ENTER:
+                    SetMatrixKey(0, 1, pressed);
+                    return;
+                case SDL_Keycode.SDLK_BACKSPACE:
+                case SDL_Keycode.SDLK_DELETE:
+                    SetMatrixKey(0, 0, pressed);
+                    return;
+                case SDL_Keycode.SDLK_SPACE:
+                    SetMatrixKey(7, 4, pressed);
+                    return;
+                case SDL_Keycode.SDLK_F1:
+                    SetMatrixKey(0, 4, pressed);
+                    return;
+                case SDL_Keycode.SDLK_F3:
+                    SetMatrixKey(0, 5, pressed);
+                    return;
+                case SDL_Keycode.SDLK_F5:
+                    SetMatrixKey(0, 6, pressed);
+                    return;
+                case SDL_Keycode.SDLK_F7:
+                    SetMatrixKey(0, 3, pressed);
+                    return;
+                case SDL_Keycode.SDLK_LEFT:
+                    SetMatrixKey(7, 1, pressed);
+                    return;
+                case SDL_Keycode.SDLK_RIGHT:
+                    SetMatrixKey(0, 2, pressed);
+                    return;
+                case SDL_Keycode.SDLK_UP:
+                    return; // joystick-only to avoid keyboard side-effects in games
+                case SDL_Keycode.SDLK_DOWN:
+                    return; // joystick-only to avoid keyboard side-effects in games
+            }
+
+            if (sym >= SDL_Keycode.SDLK_a && sym <= SDL_Keycode.SDLK_z)
+            {
+                switch (sym)
+                {
+                    case SDL_Keycode.SDLK_a: SetMatrixKey(1, 2, pressed); return;
+                    case SDL_Keycode.SDLK_b: SetMatrixKey(3, 4, pressed); return;
+                    case SDL_Keycode.SDLK_c: SetMatrixKey(2, 4, pressed); return;
+                    case SDL_Keycode.SDLK_d: SetMatrixKey(2, 2, pressed); return;
+                    case SDL_Keycode.SDLK_e: SetMatrixKey(1, 6, pressed); return;
+                    case SDL_Keycode.SDLK_f: SetMatrixKey(2, 5, pressed); return;
+                    case SDL_Keycode.SDLK_g: SetMatrixKey(3, 2, pressed); return;
+                    case SDL_Keycode.SDLK_h: SetMatrixKey(3, 5, pressed); return;
+                    case SDL_Keycode.SDLK_i: SetMatrixKey(4, 1, pressed); return;
+                    case SDL_Keycode.SDLK_j: SetMatrixKey(4, 2, pressed); return;
+                    case SDL_Keycode.SDLK_k: SetMatrixKey(4, 5, pressed); return;
+                    case SDL_Keycode.SDLK_l: SetMatrixKey(5, 2, pressed); return;
+                    case SDL_Keycode.SDLK_m: SetMatrixKey(4, 4, pressed); return;
+                    case SDL_Keycode.SDLK_n: SetMatrixKey(4, 7, pressed); return;
+                    case SDL_Keycode.SDLK_o: SetMatrixKey(4, 6, pressed); return;
+                    case SDL_Keycode.SDLK_p: SetMatrixKey(5, 1, pressed); return;
+                    case SDL_Keycode.SDLK_q: SetMatrixKey(7, 6, pressed); return;
+                    case SDL_Keycode.SDLK_r: SetMatrixKey(2, 1, pressed); return;
+                    case SDL_Keycode.SDLK_s: SetMatrixKey(1, 5, pressed); return;
+                    case SDL_Keycode.SDLK_t: SetMatrixKey(2, 6, pressed); return;
+                    case SDL_Keycode.SDLK_u: SetMatrixKey(3, 6, pressed); return;
+                    case SDL_Keycode.SDLK_v: SetMatrixKey(3, 7, pressed); return;
+                    case SDL_Keycode.SDLK_w: SetMatrixKey(1, 1, pressed); return;
+                    case SDL_Keycode.SDLK_x: SetMatrixKey(2, 7, pressed); return;
+                    case SDL_Keycode.SDLK_y: SetMatrixKey(3, 1, pressed); return;
+                    case SDL_Keycode.SDLK_z: SetMatrixKey(1, 4, pressed); return;
+                }
+            }
+
+            if (sym >= SDL_Keycode.SDLK_0 && sym <= SDL_Keycode.SDLK_9)
+            {
+                switch (sym)
+                {
+                    case SDL_Keycode.SDLK_1: SetMatrixKey(7, 0, pressed); return;
+                    case SDL_Keycode.SDLK_2: SetMatrixKey(7, 3, pressed); return;
+                    case SDL_Keycode.SDLK_3: SetMatrixKey(1, 0, pressed); return;
+                    case SDL_Keycode.SDLK_4: SetMatrixKey(1, 3, pressed); return;
+                    case SDL_Keycode.SDLK_5: SetMatrixKey(2, 0, pressed); return;
+                    case SDL_Keycode.SDLK_6: SetMatrixKey(2, 3, pressed); return;
+                    case SDL_Keycode.SDLK_7: SetMatrixKey(3, 0, pressed); return;
+                    case SDL_Keycode.SDLK_8: SetMatrixKey(3, 3, pressed); return;
+                    case SDL_Keycode.SDLK_9: SetMatrixKey(4, 0, pressed); return;
+                    case SDL_Keycode.SDLK_0: SetMatrixKey(4, 3, pressed); return;
+                }
+            }
+
+            switch (sym)
+            {
+                case SDL_Keycode.SDLK_MINUS:
+                    SetMatrixKey(5, 3, pressed);
+                    return;
+                case SDL_Keycode.SDLK_EQUALS:
+                    SetMatrixKey(6, 5, pressed);
+                    return;
+                case SDL_Keycode.SDLK_COMMA:
+                    SetMatrixKey(5, 7, pressed);
+                    return;
+                case SDL_Keycode.SDLK_PERIOD:
+                    SetMatrixKey(5, 4, pressed);
+                    return;
+                case SDL_Keycode.SDLK_SLASH:
+                    SetMatrixKey(6, 7, pressed);
+                    return;
+                case SDL_Keycode.SDLK_SEMICOLON:
+                    SetMatrixKey(6, 2, pressed);
+                    return;
+                case SDL_Keycode.SDLK_QUOTE:
+                    SetMatrixKey(6, 1, pressed);
+                    return;
+                case SDL_Keycode.SDLK_LEFTBRACKET:
+                    SetMatrixKey(6, 0, pressed);
+                    return;
+                case SDL_Keycode.SDLK_RIGHTBRACKET:
+                    SetMatrixKey(6, 3, pressed);
+                    return;
+                case SDL_Keycode.SDLK_BACKSLASH:
+                    SetMatrixKey(5, 6, pressed);
+                    return;
+            }
+        }
+
+        private void SetMatrixKey(int row, int column, bool pressed)
+        {
+            byte mask = (byte)(1 << column);
+            if (pressed)
+                keyboardMatrix[row] = (byte)(keyboardMatrix[row] & ~mask);
+            else
+                keyboardMatrix[row] = (byte)(keyboardMatrix[row] | mask);
+        }
+
+        private static byte JoystickMaskFromKey(SDL_Keycode k) => k switch
+        {
+            SDL_Keycode.SDLK_UP => 0x01,
+            SDL_Keycode.SDLK_DOWN => 0x02,
+            SDL_Keycode.SDLK_LEFT => 0x04,
+            SDL_Keycode.SDLK_RIGHT => 0x08,
+            SDL_Keycode.SDLK_RCTRL => 0x10, // fire
+            SDL_Keycode.SDLK_LCTRL => 0x10, // fire (MacBook-friendly)
+            SDL_Keycode.SDLK_RALT => 0x10,  // fire alternate
+            SDL_Keycode.SDLK_LALT => 0x10,  // fire alternate
+            _ => 0
+        };
+
+        private void DrainKeyboardQueue()
+        {
+            while (!keyQueue.IsEmpty)
+            {
+                byte count = cpu.memory.ReadByte(0x00C6);
+                if (count >= 10) return;
+                if (!keyQueue.TryDequeue(out byte pet)) return;
+                cpu.memory.WriteByte((ulong)(0x0277 + count), pet);
+                cpu.memory.WriteByte(0x00C6, (byte)(count + 1));
+            }
+        }
+    }
+}
