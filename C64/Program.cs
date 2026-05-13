@@ -12,11 +12,42 @@ namespace C64
         {
             NativeLibrary.SetDllImportResolver(typeof(SDL2.SDL).Assembly, ResolveNativeLibrary);
 
+            bool sidTrace = string.Equals(Environment.GetEnvironmentVariable("C64_SID_TRACE"), "1", StringComparison.Ordinal);
+            bool traceEnvelope = string.Equals(Environment.GetEnvironmentVariable("C64_SID_ENV_TRACE"), "1", StringComparison.Ordinal);
+            string? loadPath = null;
+
+            foreach (string arg in args)
+            {
+                if (arg.Equals("--sid-trace", StringComparison.OrdinalIgnoreCase) ||
+                    arg.Equals("C64_SID_TRACE=1", StringComparison.OrdinalIgnoreCase))
+                {
+                    sidTrace = true;
+                    continue;
+                }
+
+                if (arg.Equals("--TraceEnvelope", StringComparison.OrdinalIgnoreCase) ||
+                    arg.Equals("--trace-envelope", StringComparison.OrdinalIgnoreCase) ||
+                    arg.Equals("C64_SID_ENV_TRACE=1", StringComparison.OrdinalIgnoreCase))
+                {
+                    traceEnvelope = true;
+                    sidTrace = true;  // Enable register trace too for context
+                    continue;
+                }
+
+                if (loadPath is null && File.Exists(arg))
+                    loadPath = arg;
+            }
+
+            Sound.TraceEnabled = sidTrace;
+            Sound.TraceEnvelope = traceEnvelope;
+
             try
             {
                 using var emu = new C64Emulator();
-                if (args.Length > 0 && File.Exists(args[0]))
-                    emu.QueueLoad(args[0]);
+                if (loadPath is not null)
+                    emu.QueueLoadAndRun(loadPath);
+                if (sidTrace)
+                    Console.Error.WriteLine("[SID] trace enabled");
                 emu.Run();
                 return 0;
             }
@@ -988,6 +1019,8 @@ namespace C64
 
             return false;
         }
+
+        public void QueueLoadAndRun(string path) => pendingLoads.Enqueue((path, true));
 
         public void QueueLoad(string path) => pendingLoads.Enqueue((path, false));
 

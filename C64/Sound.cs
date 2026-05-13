@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Collections.Concurrent;
 using static SDL2.SDL;
 
 namespace C64
@@ -32,14 +33,24 @@ namespace C64
         // Keep ~40 ms buffered in SDL's queue; stall when above ~80 ms.
         private const int TargetLatencyMs = 40;
         private const int MaxLatencyMs = 80;
+        internal static bool TraceEnabled =
+            string.Equals(Environment.GetEnvironmentVariable("C64_SID_TRACE"), "1", StringComparison.Ordinal);
+
+        internal static bool TraceEnvelope { get; set; } =
+            string.Equals(Environment.GetEnvironmentVariable("C64_SID_ENV_TRACE"), "1", StringComparison.Ordinal);
 
         // ?? SID register file ($D400 = reg 0 � $D41C = reg 28) ????????????????
-        // Written from the CPU thread, read from the synthesis thread.
-        // Single-byte element accesses are atomic in the CLR memory model.
+        // Synth-thread register image. CPU-thread writes are queued with
+        // timestamps and applied by the synth thread in time order.
         private readonly byte[] _regs = new byte[29];
+        private readonly ConcurrentQueue<SidWrite> _writeQueue = new();
 
         // ?? Per-voice synthesis state (owned by the synthesis thread) ?????????
         private readonly Voice[] _voices = { new(), new(), new() };
+
+        // Overall gain trim for the synthesized SID voice path.
+        // A modest preamp helps low-sustain game SFX remain audible.
+        private const double VoicePreamp = 3.0;
 
         // ?? State-variable filter (owned by the synthesis thread) ?????????????
         private double _flp, _fbp;          // low-pass / band-pass accumulators
@@ -47,14 +58,6 @@ namespace C64
         private double _filterQ = 1.0;      // 1/Q damping coefficient
         private int _lastFcReg = -1;    // cached to detect register changes
         private int _lastResReg = -1;
-
-        // SID's volume register also drives a DAC-like offset used by many
-        // games for sampled SFX. Keep a simple AC-coupled model so D418
-        // playback is audible without introducing a large DC bias.
-        private double _hpOut;
-        private double _hpPrevIn;
-        private const double VolumeDacScale = 0.35;
-        private const double HpAlpha = 0.995;
 
         // ?? SDL audio ?????????????????????????????????????????????????????????
         private uint _dev;               // SDL audio device id (0 = none)
@@ -174,7 +177,7 @@ namespace C64
         public void WriteRegister(int reg, byte value)
         {
             if ((uint)reg < 29)
-                _regs[reg] = value;
+                _writeQueue.Enqueue(new SidWrite(reg, value, Stopwatch.GetTimestamp()));
         }
 
         /// <summary>
@@ -195,12 +198,11 @@ namespace C64
         public void Reset()
         {
             Array.Clear(_regs);
+            while (_writeQueue.TryDequeue(out _)) { }
             foreach (var v in _voices) v.Reset();
             _flp = _fbp = 0.0;
             _lastFcReg = -1;
             _lastResReg = -1;
-            _hpOut = 0.0;
-            _hpPrevIn = 0.0;
             _v3Wave = 0;
             _v3Env = 0;
             if (_dev != 0)
@@ -232,7 +234,8 @@ namespace C64
                 // then into a sample count.  The fractional remainder carries
                 // over so we don't drift over time.
                 long now = Stopwatch.GetTimestamp();
-                double elapsed = (now - last) / (double)Stopwatch.Frequency;
+                long batchStart = last;
+                double elapsed = (now - batchStart) / (double)Stopwatch.Frequency;
                 last = now;
 
                 double cyc = elapsed * CpuFreq + fracCyc;
@@ -248,7 +251,7 @@ namespace C64
                     if (_buf.Length < count)
                         _buf = new short[count + 256];
 
-                    Synthesize(_buf, count);
+                    Synthesize(_buf, count, batchStart, now);
 
                     unsafe
                     {
@@ -269,9 +272,11 @@ namespace C64
 
         // ?? Per-sample synthesis ??????????????????????????????????????????????
 
-        private void Synthesize(short[] buf, int count)
+        private void Synthesize(short[] buf, int count, long startTick, long endTick)
         {
             byte[] r = _regs;
+            long span = endTick - startTick;
+            if (span < 0) span = 0;
             byte modeVol = r[24];
             byte masterVol = (byte)(modeVol & 0x0F);
             bool lpOn = (modeVol & 0x10) != 0;
@@ -293,6 +298,28 @@ namespace C64
 
             for (int i = 0; i < count; i++)
             {
+                long sampleTick = startTick + ((long)(i + 1) * span) / count;
+                ApplyWritesUntil(sampleTick, r);
+
+                // Re-read mode/filter state after any writes applied for this sample.
+                modeVol = r[24];
+                masterVol = (byte)(modeVol & 0x0F);
+                lpOn = (modeVol & 0x10) != 0;
+                bpOn = (modeVol & 0x20) != 0;
+                hpOn = (modeVol & 0x40) != 0;
+                voice3Mute = (modeVol & 0x80) != 0;
+
+                resRoute = r[23];
+                filterRoute = (byte)(resRoute & 0x07);
+                resReg = (resRoute >> 4) & 0x0F;
+                fcReg = (r[22] << 3) | (r[21] & 0x07);
+                if (fcReg != _lastFcReg || resReg != _lastResReg)
+                {
+                    _lastFcReg = fcReg;
+                    _lastResReg = resReg;
+                    UpdateFilterCoefficients(fcReg, resReg);
+                }
+
                 double v0 = StepVoice(0, r, mute: false);
                 double v1 = StepVoice(1, r, mute: false);
                 double v2 = StepVoice(2, r, mute: false);
@@ -315,20 +342,76 @@ namespace C64
 
                 double filtOut = StepFilter(filtered, lpOn, bpOn, hpOn);
 
-                // Voice path scales with volume; D418 also contributes a DAC
-                // offset used by "digi" effects. High-pass the final output to
-                // remove static DC while preserving rapid D418 changes.
-                double voiceOut = (filtOut + bypass) * (masterVol / 15.0);
-                double volDac = ((masterVol / 15.0) - 0.5) * VolumeDacScale;
-                double raw = voiceOut + volDac;
-                _hpOut = HpAlpha * (_hpOut + raw - _hpPrevIn);
-                _hpPrevIn = raw;
-                double mixed = _hpOut;
-                if (mixed > 1.0) mixed = 1.0;
-                if (mixed < -1.0) mixed = -1.0;
+                // Voice path scales with master volume. Apply a preamp so low
+                // envelope levels are still audible, then soft clip to keep
+                // peaks bounded without harsh clipping.
+                double mixed = (filtOut + bypass) * (masterVol / 15.0) * VoicePreamp;
+                mixed = Math.Tanh(mixed * 1.6);
 
                 buf[i] = (short)(mixed * 32767.0);
             }
+        }
+
+        private void ApplyWritesUntil(long tick, byte[] regs)
+        {
+            while (_writeQueue.TryPeek(out SidWrite w) && w.Tick <= tick)
+            {
+                if (!_writeQueue.TryDequeue(out SidWrite d))
+                    break;
+
+                byte previous = regs[d.Reg];
+                regs[d.Reg] = d.Value;
+
+                if (TraceEnabled && IsAudibleTraceRegister(d.Reg, previous, d.Value))
+                {
+                    Console.Error.WriteLine(
+                        $"[SID] t={d.Tick} reg=${d.Reg + 0xD400:X4} {previous:X2}->{d.Value:X2} {DescribeSidState(regs)}");
+                }
+            }
+        }
+
+        private static bool IsAudibleTraceRegister(int reg, byte previous, byte value)
+        {
+            if (reg == 0x18 || reg == 0x17)
+                return previous != value;
+
+            int voiceBase = (reg / 7) * 7;
+            int offset = reg - voiceBase;
+            return offset is 0 or 1 or 2 or 3 or 4 or 5 or 6;
+        }
+
+        // Extend trace with per-sample envelope and waveform diagnostics
+        private void TraceEnvelopeState(int voiceIdx, byte[] r)
+        {
+            if (!TraceEnabled) return;
+
+            int vbase = voiceIdx * 7;
+            Voice v = _voices[voiceIdx];
+            byte ctrl = r[vbase + 4];
+            byte ad = r[vbase + 5];
+            byte sr = r[vbase + 6];
+
+            bool gate = (ctrl & 0x01) != 0;
+            int sustainLvl = ((sr >> 4) & 0x0F) * 17;
+
+            Console.Error.WriteLine(
+                $"[ENVELOPE] v{voiceIdx} gate={gate} env={v.EnvelopeLevel}/sustain={sustainLvl} " +
+                $"phase={v.EnvPhase} waveform={v.LastWaveform:X3}");
+        }
+
+        private static string DescribeSidState(byte[] regs)
+        {
+            string VoiceState(int baseReg)
+            {
+                ushort freq = (ushort)(regs[baseReg] | (regs[baseReg + 1] << 8));
+                ushort pw = (ushort)(((regs[baseReg + 3] & 0x0F) << 8) | regs[baseReg + 2]);
+                byte ctrl = regs[baseReg + 4];
+                byte ad = regs[baseReg + 5];
+                byte sr = regs[baseReg + 6];
+                return $"v{baseReg / 7}:F={freq:X4} PW={pw:X3} C={ctrl:X2} AD={ad:X2} SR={sr:X2}";
+            }
+
+            return $"vol={regs[0x18]:X2} filt={regs[0x17]:X2} {VoiceState(0)} {VoiceState(7)} {VoiceState(14)}";
         }
 
         // Synthesize one sample from one voice.  Returns value in [-0.5, 0.5].
@@ -397,8 +480,16 @@ namespace C64
             // ?? Waveform ??
             int waveform = ComputeWaveform(ctrl, v, pw12, ring, syncSrc.PhaseAccum);
             v.LastWaveform = waveform;
-
             if (mute) return 0.0;
+
+            // Log waveform output for voice 0 during sustain at envelope trace level
+            if (TraceEnvelope && vi == 0 && v.EnvPhase == EnvPhase.Sustain && (ctrl & 0x20) != 0)
+            {
+                int sustainLvl = ((sr >> 4) & 0x0F) * 17;
+                double output = ((waveform / 4095.0) - 0.5) * (v.EnvelopeLevel / 255.0);
+                Console.Error.WriteLine(
+                    $"[WAVEFORM] v0: sustain={sustainLvl} env={v.EnvelopeLevel} raw={waveform:X4} output={output:F5}");
+            }
 
             // Re-centre the 12-bit unsigned waveform around 0 (range -0.5..+0.5)
             // and scale by the 8-bit envelope so that envelope=0 produces true
@@ -423,7 +514,8 @@ namespace C64
             if (!tri && !saw && !pulse && !noise) return 0;
 
             uint accum = v.PhaseAccum;
-            int result = 0xFFF; // start all-ones for AND combination
+            int result = 0;
+            int active = 0;
 
             if (tri)
             {
@@ -440,11 +532,15 @@ namespace C64
                         ? 0x0FFF - (upper & 0x0FFF)   // descending half
                         : (upper & 0x0FFF);           // ascending half
                 }
-                result &= triVal;
+                result += triVal;
+                active++;
             }
 
             if (saw)
-                result &= (int)(accum >> 12); // 12-bit sawtooth
+            {
+                result += (int)(accum >> 12); // 12-bit sawtooth
+                active++;
+            }
 
             if (pulse)
             {
@@ -457,11 +553,21 @@ namespace C64
                 else
                     high = test || (phase < (uint)pw12);
 
-                result &= high ? 0x0FFF : 0x0000;
+                result += high ? 0x0FFF : 0x0000;
+                active++;
             }
 
             if (noise)
-                result &= NoiseOutput(v.NoiseShift);
+            {
+                result += NoiseOutput(v.NoiseShift);
+                active++;
+            }
+
+            if (active > 1)
+                result /= active;
+
+            if (result < 0) result = 0;
+            if (result > 0x0FFF) result = 0x0FFF;
 
             return result;
         }
@@ -488,18 +594,22 @@ namespace C64
             int attackIdx = (ad >> 4) & 0x0F;
             int decayIdx = ad & 0x0F;
             int releaseIdx = sr & 0x0F;
-            int sustainLvl = ((sr >> 4) & 0x0F) * 17;   // 0..15 ? 0..255
+            int sustainLvl = ((sr >> 4) & 0x0F) * 17;   // 0..15 → 0..255
 
             // Gate edge detection
             if (gate && !v.GatePrev)
             {
                 v.EnvPhase = EnvPhase.Attack;
                 v.EnvTimer = 0.0;
+                if (TraceEnvelope)
+                    Console.Error.WriteLine($"[ENV] GATE ON → Attack (sustain={sustainLvl})");
             }
             else if (!gate && v.GatePrev)
             {
                 v.EnvPhase = EnvPhase.Release;
                 v.EnvTimer = 0.0;
+                if (TraceEnvelope)
+                    Console.Error.WriteLine($"[ENV] GATE OFF → Release from level {v.EnvelopeLevel}");
             }
             v.GatePrev = gate;
 
@@ -518,6 +628,8 @@ namespace C64
                             {
                                 v.EnvelopeLevel = 255;
                                 v.EnvPhase = EnvPhase.Decay;
+                                if (TraceEnvelope)
+                                    Console.Error.WriteLine($"[ENV] Attack complete → Decay to sustain {sustainLvl}");
                                 break;
                             }
                         }
@@ -535,6 +647,8 @@ namespace C64
                             {
                                 v.EnvelopeLevel = sustainLvl;
                                 v.EnvPhase = EnvPhase.Sustain;
+                                if (TraceEnvelope)
+                                    Console.Error.WriteLine($"[ENV] Decay complete → Sustain at {sustainLvl}");
                                 break;
                             }
                             threshold = DecayCycles[decayIdx] * ExpScale(v.EnvelopeLevel);
@@ -597,6 +711,20 @@ namespace C64
         // ?? Per-voice state ???????????????????????????????????????????????????
 
         private enum EnvPhase { Attack, Decay, Sustain, Release }
+
+        private readonly struct SidWrite
+        {
+            public SidWrite(int reg, byte value, long tick)
+            {
+                Reg = reg;
+                Value = value;
+                Tick = tick;
+            }
+
+            public int Reg { get; }
+            public byte Value { get; }
+            public long Tick { get; }
+        }
 
         private sealed class Voice
         {
