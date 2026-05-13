@@ -1,22 +1,41 @@
-﻿using System.Collections.Concurrent;
+using System.Collections.Concurrent;
+using _6502CPU;
 using static SDL2.SDL;
 
 namespace C64
 {
-    // Keyboard, joystick port 2, PETSCII translation and host -> emulated
-    // C64 keyboard matrix mapping. All members live in the partial
-    // C64Emulator class so they can directly touch CPU memory.
-    internal sealed partial class C64Emulator
+    /// <summary>
+    /// Standalone keyboard and joystick port 2 controller.
+    /// Owns the C64 keyboard matrix, the PETSCII key queue, and the
+    /// joystick port 2 byte.  The SDL main loop hands every key event
+    /// to <see cref="HandleSdlEvent"/> and calls nothing else.
+    /// </summary>
+    internal sealed class Keyboard
     {
+        private readonly _6502_CPU cpu;
+
         private readonly ConcurrentQueue<byte> keyQueue = new ConcurrentQueue<byte>();
 
-        // CIA-1 port A ($DC00) is read by games as joystick port 2.
-        private byte joystick2 = 0xFF;
-
-        // C64 keyboard matrix: each row is an active-low bitmask.
+        // C64 keyboard matrix: 8 rows, each column bit is active-low.
         private readonly byte[] keyboardMatrix = { 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF };
 
+        private volatile byte joystick2 = 0xFF;
+
         private bool caseModeUpper = true;
+
+        // ?? Callbacks wired by C64Emulator after construction ?????????????????
+
+        /// <summary>Invoked when F12 / Ctrl+R is pressed.</summary>
+        public Action? OnHardReset { get; set; }
+
+        /// <summary>Invoked when Ctrl+O is pressed.</summary>
+        public Action? OnLoad { get; set; }
+
+        /// <summary>Invoked when Ctrl+S is pressed.</summary>
+        public Action? OnSave { get; set; }
+
+        /// <summary>Invoked when F11 is pressed (debug dump).</summary>
+        public Action? OnDump { get; set; }
 
         private static readonly byte[] CtrlColours =
         {
@@ -31,14 +50,150 @@ namespace C64
             0x85, 0x89, 0x86, 0x8A, 0x87, 0x8B, 0x88, 0x8C,
         };
 
+        public Keyboard(_6502_CPU cpu)
+        {
+            this.cpu = cpu;
+        }
+
+        // ?? Public API ????????????????????????????????????????????????????????
+
+        /// <summary>CIA-1 port A ($DC00) joystick port 2 byte (active-low).</summary>
+        public byte Joystick2 => joystick2;
+
+        /// <summary>
+        /// Scans the keyboard matrix against the supplied CIA-1 row latch and DDR
+        /// values and returns the resulting active-low column byte, exactly as the
+        /// real CIA-1 does.
+        /// </summary>
+        public byte ScanMatrix(byte rowLatch, byte rowDdr)
+        {
+            byte activeRows = (byte)(~rowLatch & rowDdr);
+            if (activeRows == 0)
+                return 0xFF;
+
+            byte columns = 0xFF;
+            for (int row = 0; row < keyboardMatrix.Length; row++)
+            {
+                if ((activeRows & (1 << row)) == 0)
+                    continue;
+                columns &= keyboardMatrix[row];
+            }
+            return columns;
+        }
+
+        /// <summary>
+        /// Drains the PETSCII key queue into the C64 keyboard buffer ($0277�$0280 / $C6).
+        /// Call once per CIA tick from the IRQ thread.
+        /// </summary>
+        public void DrainQueue()
+        {
+            while (!keyQueue.IsEmpty)
+            {
+                byte count = cpu.memory.ReadByte(0x00C6);
+                if (count >= 10) return;
+                if (!keyQueue.TryDequeue(out byte pet)) return;
+                cpu.memory.WriteByte((ulong)(0x0277 + count), pet);
+                cpu.memory.WriteByte(0x00C6, (byte)(count + 1));
+            }
+        }
+
+        /// <summary>
+        /// Resets the keyboard matrix, joystick port 2, and flushes the key queue.
+        /// Call from <c>C64Emulator.HardReset</c> / <c>InitHardware</c>.
+        /// </summary>
+        public void Reset()
+        {
+            joystick2 = 0xFF;
+            for (int i = 0; i < keyboardMatrix.Length; i++)
+                keyboardMatrix[i] = 0xFF;
+            while (keyQueue.TryDequeue(out _)) { }
+            caseModeUpper = true;
+        }
+
+        /// <summary>Enqueues a raw PETSCII byte for typed-text injection (e.g. from file load).</summary>
+        public void EnqueuePetscii(byte petscii) => keyQueue.Enqueue(petscii);
+
+        /// <summary>
+        /// Handles a single SDL event.
+        /// Returns <c>true</c> if the emulator should quit.
+        /// </summary>
+        public bool HandleSdlEvent(SDL_Event ev)
+        {
+            switch (ev.type)
+            {
+                case SDL_EventType.SDL_KEYDOWN:
+                    return HandleKeyDown(ev.key);
+                case SDL_EventType.SDL_KEYUP:
+                    HandleKeyUp(ev.key);
+                    return false;
+                default:
+                    return false;
+            }
+        }
+
+        // ?? Private implementation ????????????????????????????????????????????
+
+        private bool HandleKeyDown(SDL_KeyboardEvent ke)
+        {
+            if (ke.repeat != 0) return false;
+
+            SDL_Keycode sym = ke.keysym.sym;
+            SDL_Keymod mod = ke.keysym.mod;
+            bool ctrl  = (mod & SDL_Keymod.KMOD_CTRL)  != 0;
+            bool gui   = (mod & SDL_Keymod.KMOD_GUI)   != 0;
+            bool shift = (mod & SDL_Keymod.KMOD_SHIFT) != 0;
+            bool alt   = (mod & SDL_Keymod.KMOD_ALT)   != 0;
+
+            if (sym == SDL_Keycode.SDLK_F11)
+            {
+                OnDump?.Invoke();
+                return false;
+            }
+
+            if (sym == SDL_Keycode.SDLK_F12)
+            {
+                OnHardReset?.Invoke();
+                return false;
+            }
+
+            if ((ctrl || gui) && !shift && !alt)
+            {
+                switch (sym)
+                {
+                    case SDL_Keycode.SDLK_o:   OnLoad?.Invoke();      return false;
+                    case SDL_Keycode.SDLK_s:   OnSave?.Invoke();      return false;
+                    case SDL_Keycode.SDLK_r:
+                    case SDL_Keycode.SDLK_F12: OnHardReset?.Invoke(); return false;
+                    case SDL_Keycode.SDLK_q:   return true;
+                    case SDL_Keycode.SDLK_w:   return true;
+                }
+            }
+
+            byte jmask = JoystickMaskFromKey(sym);
+            if (jmask != 0)
+                joystick2 = (byte)(joystick2 & ~jmask);
+
+            UpdateKeyboardState(sym, true);
+            return false;
+        }
+
+        private void HandleKeyUp(SDL_KeyboardEvent ke)
+        {
+            byte jmask = JoystickMaskFromKey(ke.keysym.sym);
+            if (jmask != 0)
+                joystick2 = (byte)(joystick2 | jmask);
+
+            UpdateKeyboardState(ke.keysym.sym, false);
+        }
+
         private byte ToPetscii(SDL_Keycode sym, SDL_Keymod mod)
         {
             bool shift = (mod & SDL_Keymod.KMOD_SHIFT) != 0;
-            bool ctrl = (mod & SDL_Keymod.KMOD_CTRL) != 0;
-            bool cbm = (mod & SDL_Keymod.KMOD_ALT) != 0;
+            bool ctrl  = (mod & SDL_Keymod.KMOD_CTRL)  != 0;
+            bool cbm   = (mod & SDL_Keymod.KMOD_ALT)   != 0;
 
             if (shift && cbm && (sym == SDL_Keycode.SDLK_LSHIFT || sym == SDL_Keycode.SDLK_RSHIFT ||
-                                 sym == SDL_Keycode.SDLK_LALT || sym == SDL_Keycode.SDLK_RALT))
+                                 sym == SDL_Keycode.SDLK_LALT   || sym == SDL_Keycode.SDLK_RALT))
             {
                 caseModeUpper = !caseModeUpper;
                 return caseModeUpper ? (byte)0x8E : (byte)0x0E;
@@ -54,7 +209,7 @@ namespace C64
             {
                 int idx = (int)(sym - SDL_Keycode.SDLK_1);
                 if (ctrl) return CtrlColours[idx];
-                if (cbm) return CommodoreColours[idx];
+                if (cbm)  return CommodoreColours[idx];
             }
 
             if (sym >= SDL_Keycode.SDLK_0 && sym <= SDL_Keycode.SDLK_9)
@@ -81,90 +236,31 @@ namespace C64
 
             return sym switch
             {
-                SDL_Keycode.SDLK_SPACE => (byte)0x20,
-                SDL_Keycode.SDLK_RETURN => (byte)0x0D,
-                SDL_Keycode.SDLK_KP_ENTER => (byte)0x0D,
-                SDL_Keycode.SDLK_BACKSPACE => (byte)0x14,
-                SDL_Keycode.SDLK_TAB => (byte)0x20,
-                SDL_Keycode.SDLK_ESCAPE => (byte)0x03,
-                SDL_Keycode.SDLK_HOME => (byte)0x13,
-                SDL_Keycode.SDLK_INSERT => (byte)0x94,
-                SDL_Keycode.SDLK_DELETE => (byte)0x14,
-                SDL_Keycode.SDLK_LEFT => (byte)0x9D,
-                SDL_Keycode.SDLK_RIGHT => (byte)0x1D,
-                SDL_Keycode.SDLK_UP => (byte)0x91,
-                SDL_Keycode.SDLK_DOWN => (byte)0x11,
-                SDL_Keycode.SDLK_PERIOD => shift ? (byte)'>' : (byte)'.',
-                SDL_Keycode.SDLK_COMMA => shift ? (byte)'<' : (byte)',',
-                SDL_Keycode.SDLK_SLASH => shift ? (byte)'?' : (byte)'/',
-                SDL_Keycode.SDLK_SEMICOLON => shift ? (byte)':' : (byte)';',
-                SDL_Keycode.SDLK_QUOTE => shift ? (byte)'"' : (byte)'\'',
-                SDL_Keycode.SDLK_MINUS => shift ? (byte)'_' : (byte)'-',
-                SDL_Keycode.SDLK_EQUALS => shift ? (byte)'+' : (byte)'=',
-                SDL_Keycode.SDLK_LEFTBRACKET => shift ? (byte)'{' : (byte)'[',
+                SDL_Keycode.SDLK_SPACE        => (byte)0x20,
+                SDL_Keycode.SDLK_RETURN       => (byte)0x0D,
+                SDL_Keycode.SDLK_KP_ENTER     => (byte)0x0D,
+                SDL_Keycode.SDLK_BACKSPACE    => (byte)0x14,
+                SDL_Keycode.SDLK_TAB          => (byte)0x20,
+                SDL_Keycode.SDLK_ESCAPE       => (byte)0x03,
+                SDL_Keycode.SDLK_HOME         => (byte)0x13,
+                SDL_Keycode.SDLK_INSERT       => (byte)0x94,
+                SDL_Keycode.SDLK_DELETE       => (byte)0x14,
+                SDL_Keycode.SDLK_LEFT         => (byte)0x9D,
+                SDL_Keycode.SDLK_RIGHT        => (byte)0x1D,
+                SDL_Keycode.SDLK_UP           => (byte)0x91,
+                SDL_Keycode.SDLK_DOWN         => (byte)0x11,
+                SDL_Keycode.SDLK_PERIOD       => shift ? (byte)'>' : (byte)'.',
+                SDL_Keycode.SDLK_COMMA        => shift ? (byte)'<' : (byte)',',
+                SDL_Keycode.SDLK_SLASH        => shift ? (byte)'?' : (byte)'/',
+                SDL_Keycode.SDLK_SEMICOLON    => shift ? (byte)':' : (byte)';',
+                SDL_Keycode.SDLK_QUOTE        => shift ? (byte)'"' : (byte)'\'',
+                SDL_Keycode.SDLK_MINUS        => shift ? (byte)'_' : (byte)'-',
+                SDL_Keycode.SDLK_EQUALS       => shift ? (byte)'+' : (byte)'=',
+                SDL_Keycode.SDLK_LEFTBRACKET  => shift ? (byte)'{' : (byte)'[',
                 SDL_Keycode.SDLK_RIGHTBRACKET => shift ? (byte)'}' : (byte)']',
-                SDL_Keycode.SDLK_BACKSLASH => shift ? (byte)'|' : (byte)'\\',
+                SDL_Keycode.SDLK_BACKSLASH    => shift ? (byte)'|' : (byte)'\\',
                 _ => 0
             };
-        }
-
-        private bool HandleKeyDown(SDL_KeyboardEvent ke)
-        {
-            if (ke.repeat != 0) return false;
-
-            SDL_Keycode sym = ke.keysym.sym;
-            SDL_Keymod mod = ke.keysym.mod;
-            bool ctrl = (mod & SDL_Keymod.KMOD_CTRL) != 0;
-            bool gui = (mod & SDL_Keymod.KMOD_GUI) != 0; // Cmd on macOS, Win key on Windows
-            bool shift = (mod & SDL_Keymod.KMOD_SHIFT) != 0;
-            bool alt = (mod & SDL_Keymod.KMOD_ALT) != 0;
-
-            if (sym == SDL_Keycode.SDLK_F11)
-            {
-                Console.Error.WriteLine(BuildDebugStateLine("[DUMP]"));
-                return false;
-            }
-
-            if (sym == SDL_Keycode.SDLK_F12)
-            {
-                HardReset();
-                return false;
-            }
-
-            if ((ctrl || gui) && !shift && !alt)
-            {
-                switch (sym)
-                {
-                    case SDL_Keycode.SDLK_o: LoadProgram(); return false;
-                    case SDL_Keycode.SDLK_s: SaveProgram(); return false;
-                    case SDL_Keycode.SDLK_r:
-                    case SDL_Keycode.SDLK_F12:
-                        HardReset();
-                        return false;
-                    case SDL_Keycode.SDLK_q: return true;
-                    case SDL_Keycode.SDLK_w: return true;
-                }
-            }
-
-            byte jmask = JoystickMaskFromKey(sym);
-            if (jmask != 0)
-            {
-                joystick2 = (byte)(joystick2 & ~jmask);
-            }
-
-            UpdateKeyboardState(sym, true);
-            return false;
-        }
-
-        private void HandleKeyUp(SDL_KeyboardEvent ke)
-        {
-            byte jmask = JoystickMaskFromKey(ke.keysym.sym);
-            if (jmask != 0)
-            {
-                joystick2 = (byte)(joystick2 | jmask);
-            }
-
-            UpdateKeyboardState(ke.keysym.sym, false);
         }
 
         private void UpdateKeyboardState(SDL_Keycode sym, bool pressed)
@@ -182,7 +278,7 @@ namespace C64
                 case SDL_Keycode.SDLK_RCTRL:
                     return; // joystick-only to avoid game keyboard side-effects
                 case SDL_Keycode.SDLK_RALT:
-                    return; // joystick fire only â€” no keyboard matrix entry
+                    return; // joystick fire only � no keyboard matrix entry
                 case SDL_Keycode.SDLK_RETURN:
                 case SDL_Keycode.SDLK_KP_ENTER:
                     SetMatrixKey(0, 1, pressed);
@@ -270,36 +366,16 @@ namespace C64
 
             switch (sym)
             {
-                case SDL_Keycode.SDLK_MINUS:
-                    SetMatrixKey(5, 3, pressed);
-                    return;
-                case SDL_Keycode.SDLK_EQUALS:
-                    SetMatrixKey(6, 5, pressed);
-                    return;
-                case SDL_Keycode.SDLK_COMMA:
-                    SetMatrixKey(5, 7, pressed);
-                    return;
-                case SDL_Keycode.SDLK_PERIOD:
-                    SetMatrixKey(5, 4, pressed);
-                    return;
-                case SDL_Keycode.SDLK_SLASH:
-                    SetMatrixKey(6, 7, pressed);
-                    return;
-                case SDL_Keycode.SDLK_SEMICOLON:
-                    SetMatrixKey(6, 2, pressed);
-                    return;
-                case SDL_Keycode.SDLK_QUOTE:
-                    SetMatrixKey(6, 1, pressed);
-                    return;
-                case SDL_Keycode.SDLK_LEFTBRACKET:
-                    SetMatrixKey(6, 0, pressed);
-                    return;
-                case SDL_Keycode.SDLK_RIGHTBRACKET:
-                    SetMatrixKey(6, 3, pressed);
-                    return;
-                case SDL_Keycode.SDLK_BACKSLASH:
-                    SetMatrixKey(5, 6, pressed);
-                    return;
+                case SDL_Keycode.SDLK_MINUS:        SetMatrixKey(5, 3, pressed); return;
+                case SDL_Keycode.SDLK_EQUALS:       SetMatrixKey(6, 5, pressed); return;
+                case SDL_Keycode.SDLK_COMMA:        SetMatrixKey(5, 7, pressed); return;
+                case SDL_Keycode.SDLK_PERIOD:       SetMatrixKey(5, 4, pressed); return;
+                case SDL_Keycode.SDLK_SLASH:        SetMatrixKey(6, 7, pressed); return;
+                case SDL_Keycode.SDLK_SEMICOLON:    SetMatrixKey(6, 2, pressed); return;
+                case SDL_Keycode.SDLK_QUOTE:        SetMatrixKey(6, 1, pressed); return;
+                case SDL_Keycode.SDLK_LEFTBRACKET:  SetMatrixKey(6, 0, pressed); return;
+                case SDL_Keycode.SDLK_RIGHTBRACKET: SetMatrixKey(6, 3, pressed); return;
+                case SDL_Keycode.SDLK_BACKSLASH:    SetMatrixKey(5, 6, pressed); return;
             }
         }
 
@@ -314,27 +390,15 @@ namespace C64
 
         private static byte JoystickMaskFromKey(SDL_Keycode k) => k switch
         {
-            SDL_Keycode.SDLK_UP => 0x01,
-            SDL_Keycode.SDLK_DOWN => 0x02,
-            SDL_Keycode.SDLK_LEFT => 0x04,
+            SDL_Keycode.SDLK_UP    => 0x01,
+            SDL_Keycode.SDLK_DOWN  => 0x02,
+            SDL_Keycode.SDLK_LEFT  => 0x04,
             SDL_Keycode.SDLK_RIGHT => 0x08,
             SDL_Keycode.SDLK_RCTRL => 0x10, // fire
             SDL_Keycode.SDLK_LCTRL => 0x10, // fire (MacBook-friendly)
-            SDL_Keycode.SDLK_RALT => 0x10,  // fire alternate
-            SDL_Keycode.SDLK_LALT => 0x10,  // fire alternate
+            SDL_Keycode.SDLK_RALT  => 0x10, // fire alternate
+            SDL_Keycode.SDLK_LALT  => 0x10, // fire alternate
             _ => 0
         };
-
-        private void DrainKeyboardQueue()
-        {
-            while (!keyQueue.IsEmpty)
-            {
-                byte count = cpu.memory.ReadByte(0x00C6);
-                if (count >= 10) return;
-                if (!keyQueue.TryDequeue(out byte pet)) return;
-                cpu.memory.WriteByte((ulong)(0x0277 + count), pet);
-                cpu.memory.WriteByte(0x00C6, (byte)(count + 1));
-            }
-        }
     }
 }

@@ -65,34 +65,18 @@ namespace C64
         }
     }
 
-    // Split across multiple files for organisation:
-    //   Program.cs   - emulator core, CPU/CIA wiring, file load/save, main loop
-    //   Keyboard.cs  - PETSCII translation, keyboard matrix, joystick port 2
-    //   Display.cs   - SDL window/renderer/texture and per-scanline VIC-II rendering
-    internal sealed partial class C64Emulator : IDisposable
+    internal sealed class C64Emulator : IDisposable
     {
         private readonly _6502_CPU cpu;
         private const int Clock_PAL = 985_248;   // 6510 @ PAL
         private const int Clock_NTSC = 1_022_727; // 6510 @ NTSC
 
-        // CIA helper thread cadence. Timer A is decremented by computed
-        // elapsed CPU cycles each tick, not by a fixed IRQ cadence.
         private const int CiaTickHz = 1000;
 
-        // The raster thread now drives rendering scanline-by-scanline, so
-        // mid-frame writes from the game's raster IRQ handler (changing
-        // $D018, $D020, $D021, sprite positions, etc.) take effect on the
-        // remaining scanlines - making split-screen tricks and sprite
-        // multiplexers visible. See Display.cs for the framebuffers,
-        // foreground/sprite masks and the per-scanline VIC-II renderer.
-
-        // SDL display + per-scanline VIC-II renderer + raster thread.
-        // Owns the raster compare value, the diagnostic line counter
-        // and the reset coordination flags - we route through these
-        // properties when host code needs to read or update them.
         private readonly Display display;
+        private readonly Keyboard keyboard;
+        private readonly Sound sound;
 
-        // CIA-1 timer A / ICR state.
         private readonly object cia1Lock = new object();
         private ushort cia1TimerALatch = 0xFFFF;
         private ushort cia1TimerACounter = 0xFFFF;
@@ -102,24 +86,18 @@ namespace C64
         private byte cia1Crb;
         private byte cia1IcrMask;
         private byte cia1IcrStatus;
-        // CIA CNT pin model. Without a full IEC/serial implementation we
-        // approximate CNT as high and generate pulses when CIA serial
-        // output mode is active (CRA bit 6), clocked by timer-A underflow.
+
         private bool cia1CntHigh = true;
 
         private readonly CancellationTokenSource cts = new CancellationTokenSource();
         private Thread? cpuThread;
         private Thread? irqThread;
 
-        // CIA-1 port latches / data direction registers.
         private byte cia1PortA = 0xFF;
         private byte cia1PortB = 0xFF;
         private byte cia1Ddra = 0x00;
         private byte cia1Ddrb = 0x00;
 
-        // CIA-2 minimal state. Port A ($DD00) is used for VIC bank
-        // select (bits 0-1) and IEC serial lines; bits 6/7 are inputs
-        // that idle high on a real C64 when no device pulls them low.
         private readonly object cia2Lock = new object();
         private byte cia2PortA = 0x17;
         private byte cia2Ddra = 0x3F;
@@ -130,7 +108,8 @@ namespace C64
         private byte cia2Cra;
         private byte cia2Crb;
 
-        private readonly ConcurrentQueue<string> pendingLoads = new ConcurrentQueue<string>();
+        private readonly ConcurrentQueue<(string Path, bool AutoRun)> pendingLoads
+            = new ConcurrentQueue<(string Path, bool AutoRun)>();
 
         public C64Emulator()
         {
@@ -139,6 +118,12 @@ namespace C64
             cpu.memory.LoadBankedROM(Path.Combine("ROMS", "kernal.901227-03.bin"), Memory.BankSlot.Kernal);
             cpu.memory.LoadBankedROM(Path.Combine("ROMS", "characters.901225-01.bin"), Memory.BankSlot.Char);
             display = new Display(cpu);
+            keyboard = new Keyboard(cpu);
+            sound = new Sound();
+            keyboard.OnHardReset = HardReset;
+            keyboard.OnLoad     = LoadProgram;
+            keyboard.OnSave     = SaveProgram;
+            keyboard.OnDump     = () => Console.Error.WriteLine(BuildDebugStateLine("[DUMP]"));
 
             byte[] kernal = cpu.memory.GetBankedROM(Memory.BankSlot.Kernal)!;
             kernal[0xFCF5 - 0xE000] = 0xEA;
@@ -244,7 +229,8 @@ namespace C64
 
             for (int a = 0x0400; a <= 0x07E7; a++) m[a] = 0x20;
 
-            while (keyQueue.TryDequeue(out _)) { }
+            keyboard.Reset();
+            sound.Reset();
 
             display.EndReset();
         }
@@ -468,6 +454,14 @@ namespace C64
                     }
                     return true;
             }
+
+            // SID registers $D400-$D41C (writes mirror into memory too).
+            if (addr >= 0xD400 && addr <= 0xD41C)
+            {
+                sound.WriteRegister((int)(addr - 0xD400), value);
+                cpu.memory.memory[addr] = value;
+                return true;
+            }
             return false;
         }
 
@@ -551,6 +545,9 @@ namespace C64
                         return value;
                     }
                 default:
+                    // SID readback registers $D419-$D41C (paddles + voice-3 osc/env).
+                    if (addr >= 0xD419 && addr <= 0xD41C)
+                        return sound.ReadRegister((int)(addr - 0xD400));
                     return fallback;
             }
         }
@@ -558,14 +555,14 @@ namespace C64
         private byte ReadCia1PortA()
         {
             byte external = 0xFF;
-            external &= ReadKeyboardColumns(cia1PortB, cia1Ddrb);
-            external &= joystick2;
+            external &= keyboard.ScanMatrix(cia1PortB, cia1Ddrb);
+            external &= keyboard.Joystick2;
             return MergeCiaPortRead(cia1PortA, cia1Ddra, external);
         }
 
         private byte ReadCia1PortB()
         {
-            byte external = ReadKeyboardColumns(cia1PortA, cia1Ddra);
+            byte external = keyboard.ScanMatrix(cia1PortA, cia1Ddra);
             return MergeCiaPortRead(cia1PortB, cia1Ddrb, external);
         }
 
@@ -576,21 +573,6 @@ namespace C64
             return (byte)(outBits | inBits);
         }
 
-        private byte ReadKeyboardColumns(byte rowLatch, byte rowDdr)
-        {
-            byte activeRows = (byte)(~rowLatch & rowDdr);
-            if (activeRows == 0)
-                return 0xFF;
-
-            byte columns = 0xFF;
-            for (int row = 0; row < keyboardMatrix.Length; row++)
-            {
-                if ((activeRows & (1 << row)) == 0)
-                    continue;
-                columns &= keyboardMatrix[row];
-            }
-            return columns;
-        }
 
         private static int CountUnderflows(ref ushort counter, ushort latch, uint ticks, bool oneShot, ref byte control)
         {
@@ -772,7 +754,9 @@ namespace C64
 
         public void Run()
         {
+            string? audioDevice = Sound.PromptForDevice();
             display.Init();
+            sound.Init(audioDevice);
 
             var token = cts.Token;
 
@@ -789,6 +773,7 @@ namespace C64
             cpuThread.Start();
 
             display.Start(token);
+            sound.Start(token);
 
             irqThread = new Thread(() => IrqLoop(token))
             {
@@ -811,24 +796,27 @@ namespace C64
                             quit = true;
                             break;
                         case SDL_EventType.SDL_KEYDOWN:
-                            if (HandleKeyDown(ev.key)) quit = true;
-                            break;
                         case SDL_EventType.SDL_KEYUP:
-                            HandleKeyUp(ev.key);
+                            if (keyboard.HandleSdlEvent(ev)) quit = true;
                             break;
                         case SDL_EventType.SDL_DROPFILE:
                             {
                                 IntPtr p = ev.drop.file;
                                 string? droppedPath = Marshal.PtrToStringUTF8(p);
                                 if (!string.IsNullOrWhiteSpace(droppedPath))
-                                    QueueLoad(droppedPath);
+                                    pendingLoads.Enqueue((droppedPath, true));
                                 break;
                             }
                     }
                 }
 
-                while (pendingLoads.TryDequeue(out string? path))
-                    DoLoad(path);
+                while (pendingLoads.TryDequeue(out var entry))
+                {
+                    if (entry.AutoRun)
+                        _ = Task.Run(() => ResetLoadRun(entry.Path));
+                    else
+                        DoLoad(entry.Path);
+                }
 
                 uint now = SDL_GetTicks();
                 if ((int)(now - nextDraw) >= 0)
@@ -848,6 +836,7 @@ namespace C64
         public void Dispose()
         {
             try { cts.Cancel(); } catch { }
+            sound.Dispose();
             display.Dispose();
             SDL_Quit();
         }
@@ -860,7 +849,7 @@ namespace C64
             long lastStamp = Stopwatch.GetTimestamp();
             while (!token.IsCancellationRequested)
             {
-                DrainKeyboardQueue();
+                keyboard.DrainQueue();
 
                 long now = Stopwatch.GetTimestamp();
                 long elapsedTicks = now - lastStamp;
@@ -911,14 +900,44 @@ namespace C64
         {
             display.BeginReset();
 
-            joystick2 = 0xFF;
-            for (int i = 0; i < keyboardMatrix.Length; i++)
-                keyboardMatrix[i] = 0xFF;
+            keyboard.Reset();
 
             cpu.RequestReset();
         }
 
-        public void QueueLoad(string path) => pendingLoads.Enqueue(path);
+        /// <summary>
+        /// Drag-and-drop flow: reset the emulator (Ctrl+R equivalent), wait
+        /// for the KERNAL to reach the READY prompt, load the file, then
+        /// type RUN + RETURN.  Runs on a background task so we don't block
+        /// the SDL event pump while waiting for the boot sequence.
+        /// </summary>
+        private async Task ResetLoadRun(string path)
+        {
+            HardReset();
+
+            // Wait until the reset has propagated through cpu.OnReset and
+            // InitHardware has cleared the resetting flag.
+            while (display.IsResetting)
+                await Task.Delay(20).ConfigureAwait(false);
+
+            // Let the KERNAL boot sequence reach the READY prompt before we
+            // touch memory or type into the keyboard buffer.  ~1.5 s is
+            // enough on PAL even after a cold reset.
+            await Task.Delay(1500).ConfigureAwait(false);
+
+            DoLoad(path);
+
+            // Small settle so the load has fully landed in memory before
+            // BASIC tokenises RUN.
+            await Task.Delay(50).ConfigureAwait(false);
+
+            keyboard.EnqueuePetscii((byte)'R');
+            keyboard.EnqueuePetscii((byte)'U');
+            keyboard.EnqueuePetscii((byte)'N');
+            keyboard.EnqueuePetscii(0x0D); // RETURN
+        }
+
+        public void QueueLoad(string path) => pendingLoads.Enqueue((path, false));
 
         private void LoadProgram()
         {
@@ -926,11 +945,11 @@ namespace C64
             {
                 try
                 {
-                    Console.Write("Load file (.prg, .bas, .txt) - path: ");
+                    Console.Write("Load file (.prg, .t64, .tap, .bas, .txt) - path: ");
                     string? path = Console.ReadLine();
                     if (string.IsNullOrWhiteSpace(path)) return;
                     path = path.Trim().Trim('"', '\'');
-                    pendingLoads.Enqueue(path);
+                    pendingLoads.Enqueue((path, false));
                 }
                 catch (Exception ex)
                 {
@@ -951,10 +970,29 @@ namespace C64
             try
             {
                 if (ext == ".bas" || ext == ".txt")
+                {
                     LoadText(path);
+                    Console.WriteLine($"Loaded {Path.GetFileName(path)}");
+                }
+                else if (ext == ".t64")
+                {
+                    var entries = TapeLoader.ReadT64(File.ReadAllBytes(path));
+                    LoadTapeEntries(entries, Path.GetFileName(path));
+                }
+                else if (ext == ".tap")
+                {
+                    var entries = TapeLoader.ReadTap(File.ReadAllBytes(path));
+                    LoadTapeEntries(entries, Path.GetFileName(path));
+                }
                 else
+                {
                     LoadPrg(path);
-                Console.WriteLine($"Loaded {Path.GetFileName(path)}");
+                    Console.WriteLine($"Loaded {Path.GetFileName(path)}");
+                }
+            }
+            catch (TurboTapeException ex)
+            {
+                Console.Error.WriteLine($"Tape load failed: {ex.Message}");
             }
             catch (Exception ex)
             {
@@ -989,6 +1027,53 @@ namespace C64
             }
         }
 
+        private void LoadTapeEntries(List<TapeEntry> entries, string archiveName)
+        {
+            // Load all entries in order.  Multi-file games (e.g. loader + main)
+            // store parts as separate directory entries; loading them sequentially
+            // places everything in memory before the first SYS / RUN.
+            int loaded = 0;
+            foreach (TapeEntry entry in entries)
+            {
+                byte[] mem = cpu.memory.memory;
+                int dataLen = entry.Data.Length;
+
+                if (entry.LoadAddress + dataLen > mem.Length)
+                {
+                    Console.Error.WriteLine(
+                        $"  Skipping '{entry.Name}': would load past end of memory.");
+                    continue;
+                }
+
+                Array.Copy(entry.Data, 0, mem, entry.LoadAddress, dataLen);
+
+                if (entry.IsBasic)
+                {
+                    // Update BASIC end-of-program pointers.
+                    int endAddr = entry.LoadAddress + dataLen;
+                    cpu.memory.WriteByte(0x002D, (byte)(endAddr & 0xFF));
+                    cpu.memory.WriteByte(0x002E, (byte)(endAddr >> 8));
+                    cpu.memory.WriteByte(0x002F, (byte)(endAddr & 0xFF));
+                    cpu.memory.WriteByte(0x0030, (byte)(endAddr >> 8));
+                    cpu.memory.WriteByte(0x0031, (byte)(endAddr & 0xFF));
+                    cpu.memory.WriteByte(0x0032, (byte)(endAddr >> 8));
+                }
+
+                Console.WriteLine(
+                    $"  FOUND  {entry.Name,-16}  ${entry.LoadAddress:X4}–" +
+                    $"${entry.LoadAddress + dataLen - 1:X4}  ({dataLen} bytes)");
+                loaded++;
+            }
+
+            if (loaded == 0)
+            {
+                Console.Error.WriteLine($"Tape load failed: no entries could be loaded from {archiveName}.");
+                return;
+            }
+
+            Console.WriteLine($"Loaded {archiveName}  ({loaded} block{(loaded == 1 ? "" : "s")})");
+        }
+
         private void LoadText(string path)
         {
             foreach (var rawLine in File.ReadAllLines(path))
@@ -997,9 +1082,9 @@ namespace C64
                 foreach (char ch in line)
                 {
                     byte pet = AsciiCharToPetscii(ch);
-                    if (pet != 0) keyQueue.Enqueue(pet);
+                    if (pet != 0) keyboard.EnqueuePetscii(pet);
                 }
-                keyQueue.Enqueue(0x0D); // RETURN
+                keyboard.EnqueuePetscii(0x0D); // RETURN
             }
         }
 
