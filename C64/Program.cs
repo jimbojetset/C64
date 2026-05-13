@@ -121,9 +121,9 @@ namespace C64
             keyboard = new Keyboard(cpu);
             sound = new Sound();
             keyboard.OnHardReset = HardReset;
-            keyboard.OnLoad     = LoadProgram;
-            keyboard.OnSave     = SaveProgram;
-            keyboard.OnDump     = () => Console.Error.WriteLine(BuildDebugStateLine("[DUMP]"));
+            keyboard.OnLoad = LoadProgram;
+            keyboard.OnSave = SaveProgram;
+            keyboard.OnDump = () => Console.Error.WriteLine(BuildDebugStateLine("[DUMP]"));
 
             byte[] kernal = cpu.memory.GetBankedROM(Memory.BankSlot.Kernal)!;
             kernal[0xFCF5 - 0xE000] = 0xEA;
@@ -760,10 +760,15 @@ namespace C64
 
             var token = cts.Token;
 
+            // Force a deterministic power-on reset sequence on startup.
+            // This avoids differences between initial run and Ctrl+R reset.
+            display.BeginReset();
+            cpu.RequestReset();
+
             cpuThread = new Thread(() =>
             {
                 try { cpu.Run(); }
-                catch (Exception ex) { Debug.WriteLine($"CPU thread crashed: {ex}"); }
+                catch (Exception ex) { Console.Error.WriteLine($"CPU thread crashed: {ex}"); }
             })
             {
                 IsBackground = true,
@@ -781,6 +786,10 @@ namespace C64
                 Name = "CIA-1 IRQ"
             };
             irqThread.Start();
+
+            var startupWait = Stopwatch.StartNew();
+            while (display.IsResetting && startupWait.ElapsedMilliseconds < 3000)
+                SDL_Delay(1);
 
             bool quit = false;
             uint nextDraw = SDL_GetTicks();
@@ -894,7 +903,7 @@ namespace C64
             }
         }
 
-        
+
 
         private void HardReset()
         {
@@ -915,15 +924,9 @@ namespace C64
         {
             HardReset();
 
-            // Wait until the reset has propagated through cpu.OnReset and
-            // InitHardware has cleared the resetting flag.
-            while (display.IsResetting)
-                await Task.Delay(20).ConfigureAwait(false);
-
-            // Let the KERNAL boot sequence reach the READY prompt before we
-            // touch memory or type into the keyboard buffer.  ~1.5 s is
-            // enough on PAL even after a cold reset.
-            await Task.Delay(1500).ConfigureAwait(false);
+            // Wait until reset is complete and BASIC reaches READY.
+            // Fixed wall-clock delays are brittle across host speeds/builds.
+            await WaitForReadyPromptAsync(timeoutMs: 6000).ConfigureAwait(false);
 
             DoLoad(path);
 
@@ -935,6 +938,55 @@ namespace C64
             keyboard.EnqueuePetscii((byte)'U');
             keyboard.EnqueuePetscii((byte)'N');
             keyboard.EnqueuePetscii(0x0D); // RETURN
+        }
+
+        private async Task WaitForReadyPromptAsync(int timeoutMs)
+        {
+            const int pollMs = 20;
+            int waitedMs = 0;
+
+            while (display.IsResetting && waitedMs < timeoutMs)
+            {
+                await Task.Delay(pollMs).ConfigureAwait(false);
+                waitedMs += pollMs;
+            }
+
+            while (waitedMs < timeoutMs)
+            {
+                if (HasReadyPromptOnScreen())
+                    return;
+
+                await Task.Delay(pollMs).ConfigureAwait(false);
+                waitedMs += pollMs;
+            }
+        }
+
+        private bool HasReadyPromptOnScreen()
+        {
+            // C64 screen RAM stores screen codes, not ASCII.
+            // READY. in upper-case screen code sequence.
+            ReadOnlySpan<byte> ready = stackalloc byte[] { 18, 5, 1, 4, 25, 46 };
+            byte[] mem = cpu.memory.memory;
+            const int start = 0x0400;
+            const int end = 0x07E7;
+
+            for (int i = start; i <= end - ready.Length + 1; i++)
+            {
+                bool match = true;
+                for (int j = 0; j < ready.Length; j++)
+                {
+                    if (mem[i + j] != ready[j])
+                    {
+                        match = false;
+                        break;
+                    }
+                }
+
+                if (match)
+                    return true;
+            }
+
+            return false;
         }
 
         public void QueueLoad(string path) => pendingLoads.Enqueue((path, false));
