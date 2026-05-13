@@ -930,10 +930,14 @@ namespace C64
                 throw new Exception($"SDL_Init failed: {SDL_GetError()}");
 
             const int initialScale = 3;
+            // 25% smaller than the natural 3x integer scale: 384*3 = 1152,
+            // 272*3 = 816, reduced by a quarter -> 864 x 612.
+            int initialW = FrameW * initialScale * 3 / 4;
+            int initialH = FrameH * initialScale * 3 / 4;
             window = SDL_CreateWindow(
                 "C64",
                 SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
-                FrameW * initialScale, FrameH * initialScale,
+                initialW, initialH,
                 SDL_WindowFlags.SDL_WINDOW_SHOWN | SDL_WindowFlags.SDL_WINDOW_RESIZABLE);
             if (window == IntPtr.Zero)
                 throw new Exception($"SDL_CreateWindow failed: {SDL_GetError()}");
