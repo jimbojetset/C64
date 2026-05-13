@@ -14,6 +14,7 @@ namespace C64
 
             bool sidTrace = string.Equals(Environment.GetEnvironmentVariable("C64_SID_TRACE"), "1", StringComparison.Ordinal);
             bool traceEnvelope = string.Equals(Environment.GetEnvironmentVariable("C64_SID_ENV_TRACE"), "1", StringComparison.Ordinal);
+            bool tracePickup = string.Equals(Environment.GetEnvironmentVariable("C64_SID_PICKUP_TRACE"), "1", StringComparison.Ordinal);
             string? loadPath = null;
 
             foreach (string arg in args)
@@ -34,12 +35,21 @@ namespace C64
                     continue;
                 }
 
+                if (arg.Equals("--trace-pickup", StringComparison.OrdinalIgnoreCase) ||
+                    arg.Equals("C64_SID_PICKUP_TRACE=1", StringComparison.OrdinalIgnoreCase))
+                {
+                    tracePickup = true;
+                    sidTrace = true;
+                    continue;
+                }
+
                 if (loadPath is null && File.Exists(arg))
                     loadPath = arg;
             }
 
             Sound.TraceEnabled = sidTrace;
             Sound.TraceEnvelope = traceEnvelope;
+            Sound.TracePickup = tracePickup;
 
             try
             {

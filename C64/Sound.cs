@@ -39,6 +39,9 @@ namespace C64
         internal static bool TraceEnvelope { get; set; } =
             string.Equals(Environment.GetEnvironmentVariable("C64_SID_ENV_TRACE"), "1", StringComparison.Ordinal);
 
+        internal static bool TracePickup { get; set; } =
+            string.Equals(Environment.GetEnvironmentVariable("C64_SID_PICKUP_TRACE"), "1", StringComparison.Ordinal);
+
         // ?? SID register file ($D400 = reg 0 � $D41C = reg 28) ????????????????
         // Synth-thread register image. CPU-thread writes are queued with
         // timestamps and applied by the synth thread in time order.
@@ -58,7 +61,8 @@ namespace C64
         // D418 volume-DAC approximation for sample-style SFX.
         // Use sample-and-hold with AC coupling (one-pole high-pass).
         private const double VolumeDacHpA = 0.9995;
-        private const double VolumeDacOutputGain = 4.0;
+        private const double VolumeDacStepResponse = 1.0;
+        private const double VolumeDacOutputGain = 1.2;
 
         // ?? State-variable filter (owned by the synthesis thread) ?????????????
         private double _flp, _fbp;          // low-pass / band-pass accumulators
@@ -67,8 +71,13 @@ namespace C64
         private int _lastFcReg = -1;    // cached to detect register changes
         private int _lastResReg = -1;
         private double _volDacRaw;
-        private double _volDacRawPrev;
         private double _volDacHp;
+        private int _pickupD418Writes;
+        private int _pickupGateEdges;
+        private double _pickupVoicePeak;
+        private double _pickupDacPeak;
+        private double _pickupMixedPeak;
+        private int _pickupSampleCount;
 
         // ?? SDL audio ?????????????????????????????????????????????????????????
         private uint _dev;               // SDL audio device id (0 = none)
@@ -223,8 +232,13 @@ namespace C64
             _lastFcReg = -1;
             _lastResReg = -1;
             _volDacRaw = 0.0;
-            _volDacRawPrev = 0.0;
             _volDacHp = 0.0;
+            _pickupD418Writes = 0;
+            _pickupGateEdges = 0;
+            _pickupVoicePeak = 0.0;
+            _pickupDacPeak = 0.0;
+            _pickupMixedPeak = 0.0;
+            _pickupSampleCount = 0;
             _writeTickCursor = Stopwatch.GetTimestamp();
             _v3Wave = 0;
             _v3Env = 0;
@@ -332,9 +346,9 @@ namespace C64
                 hpOn = (modeVol & 0x40) != 0;
                 voice3Mute = (modeVol & 0x80) != 0;
 
-                // AC-coupled D418 sample-and-hold DAC path.
-                _volDacHp = VolumeDacHpA * (_volDacHp + _volDacRaw - _volDacRawPrev);
-                _volDacRawPrev = _volDacRaw;
+                // Decay DAC AC-coupled state per sample; write-time register
+                // transitions inject step deltas into _volDacHp.
+                _volDacHp *= VolumeDacHpA;
 
                 resRoute = r[23];
                 filterRoute = (byte)(resRoute & 0x07);
@@ -372,9 +386,34 @@ namespace C64
                 // Keep D418 digi on its own lane so it is not masked by
                 // voice compression during busy gameplay scenes.
                 double voiceMixed = Math.Tanh(((filtOut + bypass) * (masterVol / 15.0) * VoicePreamp) * 1.6);
-                double mixed = voiceMixed + (_volDacHp * VolumeDacOutputGain);
+                double dacMixed = _volDacHp * VolumeDacOutputGain;
+                double mixed = voiceMixed + dacMixed;
                 if (mixed > 1.0) mixed = 1.0;
                 if (mixed < -1.0) mixed = -1.0;
+
+                if (TracePickup)
+                {
+                    _pickupSampleCount++;
+                    double aVoice = Math.Abs(voiceMixed);
+                    double aDac = Math.Abs(dacMixed);
+                    double aMixed = Math.Abs(mixed);
+                    if (aVoice > _pickupVoicePeak) _pickupVoicePeak = aVoice;
+                    if (aDac > _pickupDacPeak) _pickupDacPeak = aDac;
+                    if (aMixed > _pickupMixedPeak) _pickupMixedPeak = aMixed;
+
+                    if (_pickupSampleCount >= 2048)
+                    {
+                        Console.Error.WriteLine(
+                            $"[PICKUP] d418writes={_pickupD418Writes} gateEdges={_pickupGateEdges} " +
+                            $"voicePeak={_pickupVoicePeak:F4} dacPeak={_pickupDacPeak:F4} mixPeak={_pickupMixedPeak:F4}");
+                        _pickupSampleCount = 0;
+                        _pickupD418Writes = 0;
+                        _pickupGateEdges = 0;
+                        _pickupVoicePeak = 0.0;
+                        _pickupDacPeak = 0.0;
+                        _pickupMixedPeak = 0.0;
+                    }
+                }
 
                 buf[i] = (short)(mixed * 32767.0);
             }
@@ -420,6 +459,9 @@ namespace C64
             if (prevGate == gate)
                 return;
 
+            if (TracePickup)
+                _pickupGateEdges++;
+
             int voiceIdx = voiceBase / 7;
             Voice v = _voices[voiceIdx];
             byte sr = regs[voiceBase + 6];
@@ -450,8 +492,14 @@ namespace C64
             if (reg != 24)
                 return;
 
+            if (TracePickup)
+                _pickupD418Writes++;
+
             int newVol = value & 0x0F;
-            _volDacRaw = (newVol / 15.0) - 0.5;
+            double newRaw = (newVol / 15.0) - 0.5;
+            double delta = newRaw - _volDacRaw;
+            _volDacRaw = newRaw;
+            _volDacHp += delta * VolumeDacStepResponse;
         }
 
         private static bool IsAudibleTraceRegister(int reg, byte previous, byte value)
@@ -598,31 +646,34 @@ namespace C64
             if (!tri && !saw && !pulse && !noise) return 0;
 
             uint accum = v.PhaseAccum;
-            int result = 0;
+            int triVal = -1;
+            int sawVal = -1;
+            int pulseVal = -1;
+            int noiseVal = -1;
             int active = 0;
 
             if (tri)
             {
                 int upper = (int)(accum >> 11); // 0..8191
-                int triVal;
+                int triSample;
                 if (ring)
                 {
                     bool inv = (syncSrcAccum & 0x800000u) != 0;
-                    triVal = (upper ^ (inv ? 0x1FFF : 0)) & 0x0FFF;
+                    triSample = (upper ^ (inv ? 0x1FFF : 0)) & 0x0FFF;
                 }
                 else
                 {
-                    triVal = (upper & 0x1000) != 0
+                    triSample = (upper & 0x1000) != 0
                         ? 0x0FFF - (upper & 0x0FFF)   // descending half
                         : (upper & 0x0FFF);           // ascending half
                 }
-                result += triVal;
+                triVal = triSample;
                 active++;
             }
 
             if (saw)
             {
-                result += (int)(accum >> 12); // 12-bit sawtooth
+                sawVal = (int)(accum >> 12); // 12-bit sawtooth
                 active++;
             }
 
@@ -632,18 +683,34 @@ namespace C64
                 uint phase = accum >> 12; // 0..4095
                 bool high = test || (phase < (uint)(pw12 & 0x0FFF));
 
-                result += high ? 0x0FFF : 0x0000;
+                pulseVal = high ? 0x0FFF : 0x0000;
                 active++;
             }
 
             if (noise)
             {
-                result += NoiseOutput(v.NoiseShift);
+                noiseVal = NoiseOutput(v.NoiseShift);
                 active++;
             }
 
-            if (active > 1)
-                result /= active;
+            int result;
+            if (active == 1)
+            {
+                result = triVal >= 0 ? triVal
+                    : sawVal >= 0 ? sawVal
+                    : pulseVal >= 0 ? pulseVal
+                    : noiseVal;
+            }
+            else
+            {
+                // Approximate SID multi-waveform behavior by combining selected
+                // waveform bits instead of averaging amplitudes.
+                result = 0x0FFF;
+                if (triVal >= 0) result &= triVal;
+                if (sawVal >= 0) result &= sawVal;
+                if (pulseVal >= 0) result &= pulseVal;
+                if (noiseVal >= 0) result &= noiseVal;
+            }
 
             if (result < 0) result = 0;
             if (result > 0x0FFF) result = 0x0FFF;
