@@ -295,7 +295,7 @@ namespace C64
             {
                 double v0 = StepVoice(0, r, mute: false);
                 double v1 = StepVoice(1, r, mute: false);
-                double v2 = StepVoice(2, r, mute: voice3Mute);
+                double v2 = StepVoice(2, r, mute: false);
 
                 // Voice-3 readback for $D41B/$D41C
                 _v3Wave = (byte)(_voices[2].LastWaveform >> 4); // 12-bit ? 8-bit
@@ -305,7 +305,13 @@ namespace C64
                 double filtered = 0.0, bypass = 0.0;
                 if ((filterRoute & 0x01) != 0) filtered += v0; else bypass += v0;
                 if ((filterRoute & 0x02) != 0) filtered += v1; else bypass += v1;
-                if ((filterRoute & 0x04) != 0) filtered += v2; else bypass += v2;
+                // $D418 bit 7 (voice3 off) disconnects only the direct output
+                // path of voice 3. If voice 3 is routed through the filter,
+                // it must still be audible.
+                if ((filterRoute & 0x04) != 0)
+                    filtered += v2;
+                else if (!voice3Mute)
+                    bypass += v2;
 
                 double filtOut = StepFilter(filtered, lpOn, bpOn, hpOn);
 
@@ -442,7 +448,15 @@ namespace C64
 
             if (pulse)
             {
-                bool high = test || ((accum >> 12) >= (uint)pw12);
+                // SID pulse output is high while phase < pulse width.
+                // Handle extreme widths as silence to avoid DC-like output.
+                uint phase = accum >> 12; // 0..4095
+                bool high;
+                if (pw12 <= 0 || pw12 >= 0x0FFF)
+                    high = false;
+                else
+                    high = test || (phase < (uint)pw12);
+
                 result &= high ? 0x0FFF : 0x0000;
             }
 
