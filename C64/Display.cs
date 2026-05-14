@@ -53,6 +53,7 @@ namespace C64
 
         private byte[] cachedScreenRow = new byte[40];
         private byte[][] cachedBitmapRows = new byte[8][];
+        private int[] cachedBitmapRowNum = new int[8];  // Track which row number each cache came from
 
         private IntPtr window;
         private IntPtr renderer;
@@ -94,6 +95,9 @@ namespace C64
             rasterCompare = 0;
             resyncPending = true;
             ClearFramebuffers();
+            // Invalidate bitmap row cache on reset
+            for (int i = 0; i < cachedBitmapRowNum.Length; i++)
+                cachedBitmapRowNum[i] = -1;
             isResetting = false;
         }
 
@@ -296,9 +300,7 @@ namespace C64
                         int scrolledY = playY - fineYOffset;
                         int row = scrolledY >> 3;
                         int dy = scrolledY & 0x07;
-                        int wrappedRow = row % 25;
-                        if (wrappedRow < 0)
-                            wrappedRow += 25;
+                        int wrappedRow = ((row % 25) + 25) % 25;
 
                         bool matrixVisible = playY >= 0 && playY < ScreenH;
                         int bank = GetVicBankBase(dd00, dd02);
@@ -316,11 +318,14 @@ namespace C64
                             }
 
                             int bitmapAddr = bank + (((d018 & 0x08) != 0) ? 0x2000 : 0x0000);
-                            if (cachedBitmapRows[dy] == null)
-                                cachedBitmapRows[dy] = new byte[40 * 8];
+                            if (cachedBitmapRows[dy] == null || cachedBitmapRowNum[dy] != wrappedRow)
+                            {
+                                cachedBitmapRows[dy] = new byte[40];  // One byte per column for this dy
+                                cachedBitmapRowNum[dy] = wrappedRow;
+                            }
                             for (int col = 0; col < 40; col++)
                             {
-                                cachedBitmapRows[dy][col * 8] = cpu.memory.ReadVicByte((ulong)(bitmapAddr + (wrappedRow * 40 + col) * 8 + dy));
+                                cachedBitmapRows[dy][col] = cpu.memory.ReadVicByte((ulong)(bitmapAddr + (wrappedRow * 40 + col) * 8 + dy));
                             }
                         }
 
@@ -622,7 +627,7 @@ namespace C64
                 byte clr = cachedScreenRow[col];
                 int fgC = C64Palette[(clr >> 4) & 0x0F];
                 int bgC = C64Palette[clr & 0x0F];
-                byte bits = cachedBitmapRows[dy][col * 8];
+                byte bits = cachedBitmapRows[dy][col];
                 int p = lineStart + col * 32;
 
                 for (int dx = 0; dx < 8; dx++)
@@ -654,7 +659,7 @@ namespace C64
                 int cFg1 = C64Palette[(clr >> 4) & 0x0F];
                 int cFg2 = C64Palette[clr & 0x0F];
                 int cFg3 = C64Palette[colorRow[col] & 0x0F];
-                byte bits = cachedBitmapRows[dy][col * 8];
+                byte bits = cachedBitmapRows[dy][col];
                 int p = lineStart + col * 32;
 
                 for (int pair = 0; pair < 4; pair++)
