@@ -77,9 +77,8 @@ namespace _6502CPU
             addr &= 0xFFFF;
             if (addr >= 0xD800 && addr < 0xDC00)
             {
-                // Color RAM is a dedicated nibble RAM in the I/O window.
-                // Keep a stable backing byte in memory[] for renderer fetches.
-                memory[addr] = value;
+                // Raw RAM write (loader/debug) should target RAM-under-I/O.
+                // Do not mirror into color RAM; that is a separate nibble RAM.
                 ioUnderRam[addr - 0xD000] = value;
                 return;
             }
@@ -159,9 +158,16 @@ namespace _6502CPU
                 int ioIdx = (int)(addr - 0xD000);
                 if (addr >= 0xD800 && addr < 0xDC00)
                 {
-                    // Color RAM should not disappear when CHAREN/LORAM/HIRAM change.
-                    memory[addr] = value;
-                    ioUnderRam[ioIdx] = value;
+                    // $D800-$DBFF is color RAM when I/O is mapped, but must behave
+                    // as normal RAM-under-I/O when I/O is banked out.
+                    if (Is_IO_Mapped())
+                    {
+                        memory[addr] = value;
+                    }
+                    else
+                    {
+                        ioUnderRam[ioIdx] = value;
+                    }
                     return;
                 }
                 if (Is_IO_Mapped())

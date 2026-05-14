@@ -134,7 +134,15 @@ namespace C64
             keyboard.OnHardReset = HardReset;
             keyboard.OnLoad = LoadProgram;
             keyboard.OnSave = SaveProgram;
-            keyboard.OnDump = () => Console.Error.WriteLine(BuildDebugStateLine("[DUMP]"));
+            keyboard.OnDump = () =>
+            {
+                Console.Error.WriteLine(BuildDebugStateLine("[DUMP]"));
+                DumpGraphicsStateToFile();
+            };
+            keyboard.OnScreenshot = () =>
+            {
+                display.TakeScreenshot();
+            };
 
             byte[] kernal = cpu.memory.GetBankedROM(Memory.BankSlot.Kernal)!;
             kernal[0xFCF5 - 0xE000] = 0xEA;
@@ -501,6 +509,7 @@ namespace C64
                 cpu.memory.memory[addr] = value;
                 return true;
             }
+
             return false;
         }
 
@@ -1252,6 +1261,16 @@ namespace C64
                 Console.Error.WriteLine($"\nScreen RAM analysis:");
                 Console.Error.WriteLine($"  First 10 bytes at ${screenAddr:X4}: {string.Join(" ", Enumerable.Range(0, 10).Select(i => mem[screenAddr + i].ToString("X2")))}");
                 Console.Error.WriteLine($"  Color RAM at $D800: {string.Join(" ", Enumerable.Range(0, 10).Select(i => mem[0xD800 + i].ToString("X2")))}");
+
+                // Compare active charset bytes as seen by VIC vs raw CPU memory.
+                // This helps spot RAM-under-I/O mismatches when char base is in $D000-$D7FF.
+                byte firstCode = mem[screenAddr];
+                int glyphAddr = charAddr + firstCode * 8;
+                string vicGlyph = string.Join(" ", Enumerable.Range(0, 8).Select(i => cpu.memory.ReadVicByte((ulong)(glyphAddr + i)).ToString("X2")));
+                string rawGlyph = string.Join(" ", Enumerable.Range(0, 8).Select(i => mem[(glyphAddr + i) & 0xFFFF].ToString("X2")));
+                Console.Error.WriteLine($"  First screen code: ${firstCode:X2} -> glyph @ ${glyphAddr:X4}");
+                Console.Error.WriteLine($"  Glyph bytes (VIC view): {vicGlyph}");
+                Console.Error.WriteLine($"  Glyph bytes (CPU raw): {rawGlyph}");
 
                 Console.Error.WriteLine("======================");
 

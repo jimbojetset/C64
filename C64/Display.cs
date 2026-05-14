@@ -19,8 +19,6 @@ namespace C64
 
         private const int VisibleTop = 51;
         private const int VisibleBottom = 250;
-        private static readonly bool TraceScanRegs =
-            string.Equals(Environment.GetEnvironmentVariable("C64_TRACE_SCANREGS"), "1", StringComparison.Ordinal);
 
         private static readonly int[] C64Palette =
         {
@@ -64,9 +62,6 @@ namespace C64
         private volatile int currentRasterLine;
         private volatile bool isResetting;
         private volatile bool resyncPending;
-        private readonly byte[] probeLastD011 = { 0xFF, 0xFF, 0xFF };
-        private readonly byte[] probeLastD016 = { 0xFF, 0xFF, 0xFF };
-        private readonly byte[] probeLastD018 = { 0xFF, 0xFF, 0xFF };
 
         private Thread? rasterThread;
         private CancellationToken cancellationToken;
@@ -296,38 +291,28 @@ namespace C64
                         }
 
                         int playY = line - VisibleTop;
-
-                        if (TraceScanRegs)
-                        {
-                            int probeIdx = playY switch { 24 => 0, 96 => 1, 168 => 2, _ => -1 };
-                            if (probeIdx >= 0)
-                            {
-                                if (probeLastD011[probeIdx] != d011 || probeLastD016[probeIdx] != d016 || probeLastD018[probeIdx] != d018)
-                                {
-                                    Console.Error.WriteLine($"[SCAN] y={playY:D3} line={line:D3} D011=${d011:X2} D016=${d016:X2} D018=${d018:X2} DD00=${dd00:X2} DD02=${dd02:X2}");
-                                    probeLastD011[probeIdx] = d011;
-                                    probeLastD016[probeIdx] = d016;
-                                    probeLastD018[probeIdx] = d018;
-                                }
-                            }
-                        }
-
                         int fineY = d011 & 0x07;
-                        int scrolledY = playY + fineY;
-                        int row = scrolledY / 8;
+                        int fineYOffset = (fineY + 1) >> 1;
+                        int scrolledY = playY - fineYOffset;
+                        int row = scrolledY >> 3;
                         int dy = scrolledY & 0x07;
-                        bool matrixVisible = row >= 0 && row < 25 && playY < (ScreenH - fineY);
+                        int wrappedRow = row % 25;
+                        if (wrappedRow < 0)
+                            wrappedRow += 25;
+
+                        bool matrixVisible = playY >= 0 && playY < ScreenH;
                         int bank = GetVicBankBase(dd00, dd02);
                         int screenAddr = bank + ((d018 >> 4) & 0x0F) * 0x400;
                         int spritePtrBase = screenAddr + 0x03F8;
                         for (int i = 0; i < 8; i++)
                             spritePtrs[i] = cpu.memory.ReadVicByte((ulong)(spritePtrBase + i));
 
+                        // Snapshot row data every scanline so raster splits never reuse stale data.
                         if (matrixVisible)
                         {
                             for (int col = 0; col < 40; col++)
                             {
-                                cachedScreenRow[col] = cpu.memory.ReadVicByte((ulong)(screenAddr + row * 40 + col));
+                                cachedScreenRow[col] = cpu.memory.ReadVicByte((ulong)(screenAddr + wrappedRow * 40 + col));
                             }
 
                             int bitmapAddr = bank + (((d018 & 0x08) != 0) ? 0x2000 : 0x0000);
@@ -335,7 +320,7 @@ namespace C64
                                 cachedBitmapRows[dy] = new byte[40 * 8];
                             for (int col = 0; col < 40; col++)
                             {
-                                cachedBitmapRows[dy][col * 8] = cpu.memory.ReadVicByte((ulong)(bitmapAddr + (row * 40 + col) * 8 + dy));
+                                cachedBitmapRows[dy][col * 8] = cpu.memory.ReadVicByte((ulong)(bitmapAddr + (wrappedRow * 40 + col) * 8 + dy));
                             }
                         }
 
@@ -344,7 +329,7 @@ namespace C64
                         {
                             for (int col = 0; col < 40; col++)
                             {
-                                colorRow[col] = mem[0xD800 + row * 40 + col];
+                                colorRow[col] = mem[0xD800 + wrappedRow * 40 + col];
                             }
                         }
 
@@ -401,7 +386,9 @@ namespace C64
 
         private static int GetVicBankBase(byte dd00, byte dd02)
         {
-            int sel = dd00 & 0x03;
+            // CIA2 port A controls VIC bank on PA0/PA1. Input bits read high.
+            byte effectivePortA = (byte)((dd00 & dd02) | (~dd02 & 0xFF));
+            int sel = effectivePortA & 0x03;
             return (3 - sel) * 0x4000;
         }
 
@@ -791,6 +778,73 @@ namespace C64
             renderBuf[p + 1] = (byte)(color >> 8);
             renderBuf[p + 2] = (byte)(color >> 16);
             renderBuf[p + 3] = 0xFF;
+        }
+
+        public void TakeScreenshot()
+        {
+            try
+            {
+                lock (swapLock)
+                {
+                    // Capture current display buffer and save as BMP
+                    string timestamp = DateTime.Now.ToString("yyyyMMdd_HHmmss_fff");
+                    string filename = $"c64_screenshot_{timestamp}.bmp";
+                    WriteBmp(filename, displayBuf, ScreenW, ScreenH);
+                    Console.Error.WriteLine($"[SCREENSHOT] Saved to {filename}");
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.Error.WriteLine($"Screenshot failed: {ex.Message}");
+            }
+        }
+
+        private static void WriteBmp(string path, byte[] argbData, int width, int height)
+        {
+            // BMP file format: 14-byte file header + 40-byte info header + pixel data
+            using (var fs = File.Create(path))
+            using (var bw = new System.IO.BinaryWriter(fs))
+            {
+                int pixelDataSize = width * height * 4;
+                int fileSize = 14 + 40 + pixelDataSize;
+
+                // File header (14 bytes)
+                bw.Write((ushort)0x4D42);              // "BM" signature
+                bw.Write(fileSize);                    // File size
+                bw.Write((uint)0);                     // Reserved
+                bw.Write(14 + 40);                     // Offset to pixel data
+
+                // Info header (40 bytes)
+                bw.Write(40);                          // Header size
+                bw.Write(width);                       // Width
+                bw.Write(height);                      // Height (negative = top-down)
+                bw.Write((ushort)1);                   // Planes
+                bw.Write((ushort)32);                  // Bits per pixel
+                bw.Write((uint)0);                     // Compression (none)
+                bw.Write((uint)pixelDataSize);         // Image size
+                bw.Write(2835);                        // X pixels per meter
+                bw.Write(2835);                        // Y pixels per meter
+                bw.Write((uint)0);                     // Colors used
+                bw.Write((uint)0);                     // Important colors
+
+                // Pixel data: convert ARGB to BGRA (BMP uses BGR)
+                // Note: BMP stores bottom-up, but we'll write top-down by reversing rows
+                for (int y = height - 1; y >= 0; y--)
+                {
+                    for (int x = 0; x < width; x++)
+                    {
+                        int idx = (y * width + x) * 4;
+                        byte a = argbData[idx + 3];
+                        byte r = argbData[idx + 2];
+                        byte g = argbData[idx + 1];
+                        byte b = argbData[idx];
+                        bw.Write(b);
+                        bw.Write(g);
+                        bw.Write(r);
+                        bw.Write(a);
+                    }
+                }
+            }
         }
     }
 }

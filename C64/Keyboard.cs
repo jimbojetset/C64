@@ -37,6 +37,9 @@ namespace C64
         /// <summary>Invoked when F11 is pressed (debug dump).</summary>
         public Action? OnDump { get; set; }
 
+        /// <summary>Invoked when Shift+S is pressed (screenshot).</summary>
+        public Action? OnScreenshot { get; set; }
+
         private static readonly byte[] CtrlColours =
         {
             0x90, 0x05, 0x1C, 0x9F, 0x9C, 0x1E, 0x1F, 0x9E,
@@ -82,7 +85,7 @@ namespace C64
         }
 
         /// <summary>
-        /// Drains the PETSCII key queue into the C64 keyboard buffer ($0277–$0280 / $C6).
+        /// Drains the PETSCII key queue into the C64 keyboard buffer ($0277ï¿½$0280 / $C6).
         /// Call once per CIA tick from the IRQ thread.
         /// </summary>
         public void DrainQueue()
@@ -139,10 +142,10 @@ namespace C64
 
             SDL_Keycode sym = ke.keysym.sym;
             SDL_Keymod mod = ke.keysym.mod;
-            bool ctrl  = (mod & SDL_Keymod.KMOD_CTRL)  != 0;
-            bool gui   = (mod & SDL_Keymod.KMOD_GUI)   != 0;
+            bool ctrl = (mod & SDL_Keymod.KMOD_CTRL) != 0;
+            bool gui = (mod & SDL_Keymod.KMOD_GUI) != 0;
             bool shift = (mod & SDL_Keymod.KMOD_SHIFT) != 0;
-            bool alt   = (mod & SDL_Keymod.KMOD_ALT)   != 0;
+            bool alt = (mod & SDL_Keymod.KMOD_ALT) != 0;
 
             if (sym == SDL_Keycode.SDLK_F11)
             {
@@ -156,16 +159,30 @@ namespace C64
                 return false;
             }
 
+            if (sym == SDL_Keycode.SDLK_q && (shift || alt) && !ctrl && !gui)
+            {
+                OnDump?.Invoke();
+                return true;
+            }
+
+            if (sym == SDL_Keycode.SDLK_s && shift && !ctrl && !gui && !alt)
+            {
+                OnScreenshot?.Invoke();
+                return false;
+            }
+
             if ((ctrl || gui) && !shift && !alt)
             {
                 switch (sym)
                 {
-                    case SDL_Keycode.SDLK_o:   OnLoad?.Invoke();      return false;
-                    case SDL_Keycode.SDLK_s:   OnSave?.Invoke();      return false;
+                    case SDL_Keycode.SDLK_o: OnLoad?.Invoke(); return false;
+                    case SDL_Keycode.SDLK_s: OnSave?.Invoke(); return false;
                     case SDL_Keycode.SDLK_r:
                     case SDL_Keycode.SDLK_F12: OnHardReset?.Invoke(); return false;
-                    case SDL_Keycode.SDLK_q:   return true;
-                    case SDL_Keycode.SDLK_w:   return true;
+                    case SDL_Keycode.SDLK_q:
+                        OnDump?.Invoke();
+                        return true;
+                    case SDL_Keycode.SDLK_w: return true;
                 }
             }
 
@@ -189,11 +206,11 @@ namespace C64
         private byte ToPetscii(SDL_Keycode sym, SDL_Keymod mod)
         {
             bool shift = (mod & SDL_Keymod.KMOD_SHIFT) != 0;
-            bool ctrl  = (mod & SDL_Keymod.KMOD_CTRL)  != 0;
-            bool cbm   = (mod & SDL_Keymod.KMOD_ALT)   != 0;
+            bool ctrl = (mod & SDL_Keymod.KMOD_CTRL) != 0;
+            bool cbm = (mod & SDL_Keymod.KMOD_ALT) != 0;
 
             if (shift && cbm && (sym == SDL_Keycode.SDLK_LSHIFT || sym == SDL_Keycode.SDLK_RSHIFT ||
-                                 sym == SDL_Keycode.SDLK_LALT   || sym == SDL_Keycode.SDLK_RALT))
+                                 sym == SDL_Keycode.SDLK_LALT || sym == SDL_Keycode.SDLK_RALT))
             {
                 caseModeUpper = !caseModeUpper;
                 return caseModeUpper ? (byte)0x8E : (byte)0x0E;
@@ -209,7 +226,7 @@ namespace C64
             {
                 int idx = (int)(sym - SDL_Keycode.SDLK_1);
                 if (ctrl) return CtrlColours[idx];
-                if (cbm)  return CommodoreColours[idx];
+                if (cbm) return CommodoreColours[idx];
             }
 
             if (sym >= SDL_Keycode.SDLK_0 && sym <= SDL_Keycode.SDLK_9)
@@ -236,29 +253,29 @@ namespace C64
 
             return sym switch
             {
-                SDL_Keycode.SDLK_SPACE        => (byte)0x20,
-                SDL_Keycode.SDLK_RETURN       => (byte)0x0D,
-                SDL_Keycode.SDLK_KP_ENTER     => (byte)0x0D,
-                SDL_Keycode.SDLK_BACKSPACE    => (byte)0x14,
-                SDL_Keycode.SDLK_TAB          => (byte)0x20,
-                SDL_Keycode.SDLK_ESCAPE       => (byte)0x03,
-                SDL_Keycode.SDLK_HOME         => (byte)0x13,
-                SDL_Keycode.SDLK_INSERT       => (byte)0x94,
-                SDL_Keycode.SDLK_DELETE       => (byte)0x14,
-                SDL_Keycode.SDLK_LEFT         => (byte)0x9D,
-                SDL_Keycode.SDLK_RIGHT        => (byte)0x1D,
-                SDL_Keycode.SDLK_UP           => (byte)0x91,
-                SDL_Keycode.SDLK_DOWN         => (byte)0x11,
-                SDL_Keycode.SDLK_PERIOD       => shift ? (byte)'>' : (byte)'.',
-                SDL_Keycode.SDLK_COMMA        => shift ? (byte)'<' : (byte)',',
-                SDL_Keycode.SDLK_SLASH        => shift ? (byte)'?' : (byte)'/',
-                SDL_Keycode.SDLK_SEMICOLON    => shift ? (byte)':' : (byte)';',
-                SDL_Keycode.SDLK_QUOTE        => shift ? (byte)'"' : (byte)'\'',
-                SDL_Keycode.SDLK_MINUS        => shift ? (byte)'_' : (byte)'-',
-                SDL_Keycode.SDLK_EQUALS       => shift ? (byte)'+' : (byte)'=',
-                SDL_Keycode.SDLK_LEFTBRACKET  => shift ? (byte)'{' : (byte)'[',
+                SDL_Keycode.SDLK_SPACE => (byte)0x20,
+                SDL_Keycode.SDLK_RETURN => (byte)0x0D,
+                SDL_Keycode.SDLK_KP_ENTER => (byte)0x0D,
+                SDL_Keycode.SDLK_BACKSPACE => (byte)0x14,
+                SDL_Keycode.SDLK_TAB => (byte)0x20,
+                SDL_Keycode.SDLK_ESCAPE => (byte)0x03,
+                SDL_Keycode.SDLK_HOME => (byte)0x13,
+                SDL_Keycode.SDLK_INSERT => (byte)0x94,
+                SDL_Keycode.SDLK_DELETE => (byte)0x14,
+                SDL_Keycode.SDLK_LEFT => (byte)0x9D,
+                SDL_Keycode.SDLK_RIGHT => (byte)0x1D,
+                SDL_Keycode.SDLK_UP => (byte)0x91,
+                SDL_Keycode.SDLK_DOWN => (byte)0x11,
+                SDL_Keycode.SDLK_PERIOD => shift ? (byte)'>' : (byte)'.',
+                SDL_Keycode.SDLK_COMMA => shift ? (byte)'<' : (byte)',',
+                SDL_Keycode.SDLK_SLASH => shift ? (byte)'?' : (byte)'/',
+                SDL_Keycode.SDLK_SEMICOLON => shift ? (byte)':' : (byte)';',
+                SDL_Keycode.SDLK_QUOTE => shift ? (byte)'"' : (byte)'\'',
+                SDL_Keycode.SDLK_MINUS => shift ? (byte)'_' : (byte)'-',
+                SDL_Keycode.SDLK_EQUALS => shift ? (byte)'+' : (byte)'=',
+                SDL_Keycode.SDLK_LEFTBRACKET => shift ? (byte)'{' : (byte)'[',
                 SDL_Keycode.SDLK_RIGHTBRACKET => shift ? (byte)'}' : (byte)']',
-                SDL_Keycode.SDLK_BACKSLASH    => shift ? (byte)'|' : (byte)'\\',
+                SDL_Keycode.SDLK_BACKSLASH => shift ? (byte)'|' : (byte)'\\',
                 _ => 0
             };
         }
@@ -278,7 +295,7 @@ namespace C64
                 case SDL_Keycode.SDLK_RCTRL:
                     return; // joystick-only to avoid game keyboard side-effects
                 case SDL_Keycode.SDLK_RALT:
-                    return; // joystick fire only — no keyboard matrix entry
+                    return; // joystick fire only ï¿½ no keyboard matrix entry
                 case SDL_Keycode.SDLK_RETURN:
                 case SDL_Keycode.SDLK_KP_ENTER:
                     SetMatrixKey(0, 1, pressed);
@@ -366,16 +383,16 @@ namespace C64
 
             switch (sym)
             {
-                case SDL_Keycode.SDLK_MINUS:        SetMatrixKey(5, 3, pressed); return;
-                case SDL_Keycode.SDLK_EQUALS:       SetMatrixKey(6, 5, pressed); return;
-                case SDL_Keycode.SDLK_COMMA:        SetMatrixKey(5, 7, pressed); return;
-                case SDL_Keycode.SDLK_PERIOD:       SetMatrixKey(5, 4, pressed); return;
-                case SDL_Keycode.SDLK_SLASH:        SetMatrixKey(6, 7, pressed); return;
-                case SDL_Keycode.SDLK_SEMICOLON:    SetMatrixKey(6, 2, pressed); return;
-                case SDL_Keycode.SDLK_QUOTE:        SetMatrixKey(6, 1, pressed); return;
-                case SDL_Keycode.SDLK_LEFTBRACKET:  SetMatrixKey(6, 0, pressed); return;
+                case SDL_Keycode.SDLK_MINUS: SetMatrixKey(5, 3, pressed); return;
+                case SDL_Keycode.SDLK_EQUALS: SetMatrixKey(6, 5, pressed); return;
+                case SDL_Keycode.SDLK_COMMA: SetMatrixKey(5, 7, pressed); return;
+                case SDL_Keycode.SDLK_PERIOD: SetMatrixKey(5, 4, pressed); return;
+                case SDL_Keycode.SDLK_SLASH: SetMatrixKey(6, 7, pressed); return;
+                case SDL_Keycode.SDLK_SEMICOLON: SetMatrixKey(6, 2, pressed); return;
+                case SDL_Keycode.SDLK_QUOTE: SetMatrixKey(6, 1, pressed); return;
+                case SDL_Keycode.SDLK_LEFTBRACKET: SetMatrixKey(6, 0, pressed); return;
                 case SDL_Keycode.SDLK_RIGHTBRACKET: SetMatrixKey(6, 3, pressed); return;
-                case SDL_Keycode.SDLK_BACKSLASH:    SetMatrixKey(5, 6, pressed); return;
+                case SDL_Keycode.SDLK_BACKSLASH: SetMatrixKey(5, 6, pressed); return;
             }
         }
 
@@ -390,14 +407,14 @@ namespace C64
 
         private static byte JoystickMaskFromKey(SDL_Keycode k) => k switch
         {
-            SDL_Keycode.SDLK_UP    => 0x01,
-            SDL_Keycode.SDLK_DOWN  => 0x02,
-            SDL_Keycode.SDLK_LEFT  => 0x04,
+            SDL_Keycode.SDLK_UP => 0x01,
+            SDL_Keycode.SDLK_DOWN => 0x02,
+            SDL_Keycode.SDLK_LEFT => 0x04,
             SDL_Keycode.SDLK_RIGHT => 0x08,
             SDL_Keycode.SDLK_RCTRL => 0x10, // fire
             SDL_Keycode.SDLK_LCTRL => 0x10, // fire (MacBook-friendly)
-            SDL_Keycode.SDLK_RALT  => 0x10, // fire alternate
-            SDL_Keycode.SDLK_LALT  => 0x10, // fire alternate
+            SDL_Keycode.SDLK_RALT => 0x10, // fire alternate
+            SDL_Keycode.SDLK_LALT => 0x10, // fire alternate
             _ => 0
         };
     }
