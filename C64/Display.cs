@@ -53,9 +53,6 @@ namespace C64
 
         private byte[] cachedScreenRow = new byte[40];
         private byte[][] cachedBitmapRows = new byte[8][];
-        private int lastCachedRow = -1;
-        private int lastCachedBank = -1;
-        private int lastCachedScreenAddr = -1;
 
         private IntPtr window;
         private IntPtr renderer;
@@ -224,7 +221,15 @@ namespace C64
 
                 long nowCpuCycles = cpu.TotalCycles;
                 long deltaCpuCycles = nowCpuCycles - lastCpuCycles;
-                if (deltaCpuCycles <= 0)
+                if (deltaCpuCycles < 0)
+                {
+                    // CPU reset rewinds TotalCycles to 0; resync baseline immediately
+                    // so the raster thread does not stall on a negative delta.
+                    lastCpuCycles = nowCpuCycles;
+                    lineNumerator = 0;
+                    continue;
+                }
+                if (deltaCpuCycles == 0)
                 {
                     Thread.SpinWait(16);
                     continue;
@@ -284,37 +289,26 @@ namespace C64
                     if (line >= VisibleTop && line <= VisibleBottom)
                     {
                         int playY = line - VisibleTop;
-                        int fineY = d011 & 0x07;
-                        int scrolledY = playY + fineY;
-                        int row = scrolledY / 8;
-                        int dy = scrolledY & 0x07;
+                        int row = playY / 8;
+                        int dy = playY & 0x07;
                         bool matrixVisible = row >= 0 && row < 25;
                         int bank = (3 - (dd00 & 0x03)) * 0x4000;
                         int screenAddr = bank + ((d018 >> 4) & 0x0F) * 0x400;
 
-                        // Cache screen row and bitmap data once per character row.
-                        if (matrixVisible && (row != lastCachedRow || bank != lastCachedBank || screenAddr != lastCachedScreenAddr))
+                        // Snapshot row data every scanline so raster splits never reuse stale data.
+                        if (matrixVisible)
                         {
-                            lastCachedRow = row;
-                            lastCachedBank = bank;
-                            lastCachedScreenAddr = screenAddr;
-
-                            // Cache screen memory for this row
                             for (int col = 0; col < 40; col++)
                             {
                                 cachedScreenRow[col] = cpu.memory.ReadVicByte((ulong)(screenAddr + row * 40 + col));
                             }
 
-                            // Cache bitmap data for all 8 scanlines in this character row
                             int bitmapAddr = bank + (((d018 & 0x08) != 0) ? 0x2000 : 0x0000);
-                            for (int lineDy = 0; lineDy < 8; lineDy++)
+                            if (cachedBitmapRows[dy] == null)
+                                cachedBitmapRows[dy] = new byte[40 * 8];
+                            for (int col = 0; col < 40; col++)
                             {
-                                if (cachedBitmapRows[lineDy] == null)
-                                    cachedBitmapRows[lineDy] = new byte[40 * 8];
-                                for (int col = 0; col < 40; col++)
-                                {
-                                    cachedBitmapRows[lineDy][col * 8] = cpu.memory.ReadVicByte((ulong)(bitmapAddr + (row * 40 + col) * 8 + lineDy));
-                                }
+                                cachedBitmapRows[dy][col * 8] = cpu.memory.ReadVicByte((ulong)(bitmapAddr + (row * 40 + col) * 8 + dy));
                             }
                         }
 
@@ -326,6 +320,7 @@ namespace C64
                                 colorRow[col] = mem[0xD800 + row * 40 + col];
                             }
                         }
+
                         RenderScanline(playY, d011, d016, d018, bg0, bg1, bg2, bg3, dd00, spriteEnable, spriteXExpand, spriteYExpand, spriteMulticolor, spritePriority, spriteXHigh, spriteMc1Color, spriteMc2Color, spriteColors, spriteXPos, spriteYPos, colorRow, cachedScreenRow, cachedBitmapRows, dy, matrixVisible);
                     }
 
