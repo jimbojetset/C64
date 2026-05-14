@@ -511,12 +511,15 @@ namespace C64
             if (offset != 4)
                 return;
 
+            int voiceIdx = voiceBase / 7;
+            if ((uint)voiceIdx >= (uint)_voices.Length)
+                return;
+
             bool prevGate = (previous & 0x01) != 0;
             bool gate = (value & 0x01) != 0;
             if (prevGate == gate)
                 return;
 
-            int voiceIdx = voiceBase / 7;
             Voice v = _voices[voiceIdx];
             byte sr = regs[voiceBase + 6];
             int sustainLvl = ((sr >> 4) & 0x0F) * 17;

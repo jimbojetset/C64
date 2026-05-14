@@ -191,9 +191,9 @@ namespace C64
 
         private void RasterLoop()
         {
-            long ticksPerLine = Stopwatch.Frequency / RasterLinesPerSecond;
-            long next = Stopwatch.GetTimestamp() + ticksPerLine;
             int line = 0;
+            long lineNumerator = 0;
+            long lastCpuCycles = cpu.TotalCycles;
             byte[] mem = cpu.memory.memory;
             while (!cancellationToken.IsCancellationRequested)
             {
@@ -201,7 +201,8 @@ namespace C64
                 {
                     line = 0;
                     currentRasterLine = 0;
-                    next = Stopwatch.GetTimestamp() + ticksPerLine;
+                    lineNumerator = 0;
+                    lastCpuCycles = cpu.TotalCycles;
                     Thread.SpinWait(32);
                     continue;
                 }
@@ -211,59 +212,97 @@ namespace C64
                     line = 0;
                     currentRasterLine = 0;
                     resyncPending = false;
-                    next = Stopwatch.GetTimestamp() + ticksPerLine;
+                    lineNumerator = 0;
+                    lastCpuCycles = cpu.TotalCycles;
                 }
 
-                currentRasterLine = line;
-
-                mem[0xD012] = (byte)(line & 0xFF);
-                byte d011 = mem[0xD011];
-                d011 = (byte)((d011 & 0x7F) | (((line >> 8) & 1) << 7));
-                mem[0xD011] = d011;
-
-                if (line == rasterCompare)
+                long nowCpuCycles = cpu.TotalCycles;
+                long deltaCpuCycles = nowCpuCycles - lastCpuCycles;
+                if (deltaCpuCycles <= 0)
                 {
-                    bool rasterIrqEnabled = (mem[0xD01A] & 0x01) != 0;
-                    if (rasterIrqEnabled)
+                    Thread.SpinWait(16);
+                    continue;
+                }
+                lastCpuCycles = nowCpuCycles;
+
+                lineNumerator += deltaCpuCycles * RasterLinesPerSecond;
+                long linesToAdvance = lineNumerator / cpu.ClockFrequency;
+                lineNumerator %= cpu.ClockFrequency;
+
+                if (linesToAdvance <= 0)
+                    continue;
+
+                if (linesToAdvance > PalRasterLines * 4)
+                    linesToAdvance = PalRasterLines * 4;
+
+                while (linesToAdvance-- > 0)
+                {
+                    currentRasterLine = line;
+
+                    byte d011 = mem[0xD011];
+                    byte d016 = mem[0xD016];
+                    byte d018 = mem[0xD018];
+                    byte bg0 = (byte)(mem[0xD021] & 0x0F);
+                    byte bg1 = (byte)(mem[0xD022] & 0x0F);
+                    byte bg2 = (byte)(mem[0xD023] & 0x0F);
+                    byte bg3 = (byte)(mem[0xD024] & 0x0F);
+                    byte dd00 = mem[0xDD00];
+                    byte spriteEnable = mem[0xD015];
+                    byte spriteXExpand = mem[0xD01D];
+                    byte spriteYExpand = mem[0xD017];
+                    byte spriteMulticolor = mem[0xD01C];
+                    byte spritePriority = mem[0xD01B];
+                    byte spriteXHigh = mem[0xD010];
+                    byte spriteMc1Color = mem[0xD025];
+                    byte spriteMc2Color = mem[0xD026];
+                    byte[] spriteColors = new byte[8];
+                    byte[] spriteXPos = new byte[8];
+                    byte[] spriteYPos = new byte[8];
+                    for (int i = 0; i < 8; i++)
                     {
-                        mem[0xD019] = (byte)(mem[0xD019] | 0x81);
-                        cpu.InitiateIRQ(0xFFFE);
+                        spriteColors[i] = mem[0xD027 + i];
+                        spriteXPos[i] = mem[0xD000 + i * 2];
+                        spriteYPos[i] = mem[0xD001 + i * 2];
+                    }
+
+                    if (line == rasterCompare)
+                    {
+                        bool rasterIrqEnabled = (mem[0xD01A] & 0x01) != 0;
+                        if (rasterIrqEnabled)
+                        {
+                            mem[0xD019] = (byte)(mem[0xD019] | 0x81);
+                            cpu.InitiateIRQ(0xFFFE);
+                        }
+                    }
+
+                    if (line >= VisibleTop && line <= VisibleBottom)
+                    {
+                        int playY = line - VisibleTop;
+                        int row = playY / 8;
+                        byte[] colorRow = new byte[40];
+                        for (int col = 0; col < 40; col++)
+                        {
+                            colorRow[col] = mem[0xD800 + row * 40 + col];
+                        }
+                        RenderScanline(playY, d011, d016, d018, bg0, bg1, bg2, bg3, dd00, spriteEnable, spriteXExpand, spriteYExpand, spriteMulticolor, spritePriority, spriteXHigh, spriteMc1Color, spriteMc2Color, spriteColors, spriteXPos, spriteYPos, colorRow);
+                    }
+
+                    line++;
+                    if (line >= PalRasterLines)
+                    {
+                        line = 0;
+                        lock (swapLock)
+                        {
+                            (renderBuf, displayBuf) = (displayBuf, renderBuf);
+                        }
                     }
                 }
-
-                if (line >= VisibleTop && line <= VisibleBottom)
-                {
-                    RenderScanline(line - VisibleTop);
-                }
-
-                line++;
-                if (line >= PalRasterLines)
-                {
-                    line = 0;
-                    lock (swapLock)
-                    {
-                        (renderBuf, displayBuf) = (displayBuf, renderBuf);
-                    }
-                }
-
-                while (Stopwatch.GetTimestamp() < next)
-                    Thread.SpinWait(1);
-                next += ticksPerLine;
             }
         }
 
-        private void RenderScanline(int y)
+        private void RenderScanline(int y, byte d011, byte d016, byte d018, byte bg0, byte bg1, byte bg2, byte bg3, byte dd00, byte spriteEnable, byte spriteXExpand, byte spriteYExpand, byte spriteMulticolor, byte spritePriority, byte spriteXHigh, byte spriteMc1Color, byte spriteMc2Color, byte[] spriteColors, byte[] spriteXPos, byte[] spriteYPos, byte[] colorRow)
         {
-            byte[] mem = cpu.memory.memory;
-            byte d011 = mem[0xD011];
-            byte d016 = mem[0xD016];
-            byte d018 = mem[0xD018];
-            byte bg0 = (byte)(mem[0xD021] & 0x0F);
-            byte bg1 = (byte)(mem[0xD022] & 0x0F);
-            byte bg2 = (byte)(mem[0xD023] & 0x0F);
-            byte bg3 = (byte)(mem[0xD024] & 0x0F);
-
-            int bank = VicBankBase();
+            int bank = (3 - (dd00 & 0x03)) * 0x4000;
             int screenAddr = bank + ((d018 >> 4) & 0x0F) * 0x400;
             int charAddr = bank + ((d018 >> 1) & 0x07) * 0x800;
 
@@ -277,19 +316,21 @@ namespace C64
 
             if (!screenOn)
                 FillLineSolid(y, bg0);
+            if (!screenOn)
+                FillLineSolid(y, bg0);
             else if (bmm && mcm)
                 RenderLineMulticolorBitmap(y, screenAddr, bank, d018, bg0);
             else if (bmm)
                 RenderLineHiresBitmap(y, screenAddr, bank, d018);
             else if (ecm)
-                RenderLineExtendedBgText(y, screenAddr, charAddr, bg0, bg1, bg2, bg3);
+                RenderLineExtendedBgText(y, screenAddr, charAddr, bg0, bg1, bg2, bg3, bank, colorRow);
             else if (mcm)
-                RenderLineMulticolorText(y, screenAddr, charAddr, bg0, bg1, bg2);
+                RenderLineMulticolorText(y, screenAddr, charAddr, bg0, bg1, bg2, bank, colorRow);
             else
-                RenderLineStandardText(y, screenAddr, charAddr, bg0);
+                RenderLineStandardText(y, screenAddr, charAddr, bg0, bank, colorRow);
 
             if (screenOn)
-                RenderSpritesScanline(y, screenAddr, bank);
+                RenderSpritesScanline(y, screenAddr, bank, spriteEnable, spriteXExpand, spriteYExpand, spriteMulticolor, spritePriority, spriteXHigh, spriteMc1Color, spriteMc2Color, spriteColors, spriteXPos, spriteYPos);
         }
 
         private int VicBankBase()
@@ -334,11 +375,12 @@ namespace C64
             }
         }
 
-        private void RenderLineStandardText(int y, int screenAddr, int charAddr, byte bg)
+        private void RenderLineStandardText(int y, int screenAddr, int charAddr, byte bg, int bank, byte[] colorRow)
         {
             byte[] mem = cpu.memory.memory;
-            ResolveCharSource(charAddr, VicBankBase(), out byte[] cs, out int cb);
+            ResolveCharSource(charAddr, bank, out byte[] cs, out int cb);
             int bgC = C64Palette[bg];
+            bool charFromVicRam = ReferenceEquals(cs, cpu.memory.memory) && cb >= 0xD000 && cb < 0xE000;
 
             int row = y / 8;
             int dy = y % 8;
@@ -348,10 +390,14 @@ namespace C64
 
             for (int col = 0; col < 40; col++)
             {
-                byte code = mem[screenAddr + rowBase + col];
-                int fgC = C64Palette[mem[0xD800 + rowBase + col] & 0x0F];
-                byte bits = cs[cb + code * 8 + dy];
+                byte code = cpu.memory.ReadVicByte((ulong)(screenAddr + rowBase + col));
+                int fgC = C64Palette[colorRow[col] & 0x0F];
+                int charByteAddr = cb + code * 8 + dy;
+                byte bits = charFromVicRam
+                    ? cpu.memory.ReadVicByte((ulong)charByteAddr)
+                    : cs[charByteAddr];
                 int p = lineStart + col * 32;
+
                 for (int dx = 0; dx < 8; dx++)
                 {
                     bool on = (bits & (0x80 >> dx)) != 0;
@@ -367,12 +413,13 @@ namespace C64
             }
         }
 
-        private void RenderLineMulticolorText(int y, int screenAddr, int charAddr, byte bg0, byte bg1, byte bg2)
+        private void RenderLineMulticolorText(int y, int screenAddr, int charAddr, byte bg0, byte bg1, byte bg2, int bank, byte[] colorRow)
         {
             byte[] mem = cpu.memory.memory;
-            ResolveCharSource(charAddr, VicBankBase(), out byte[] cs, out int cb);
+            ResolveCharSource(charAddr, bank, out byte[] cs, out int cb);
             int bgC = C64Palette[bg0];
             int[] mcc = { bgC, C64Palette[bg1], C64Palette[bg2], 0 };
+            bool charFromVicRam = ReferenceEquals(cs, cpu.memory.memory) && cb >= 0xD000 && cb < 0xE000;
 
             int row = y / 8;
             int dy = y % 8;
@@ -382,11 +429,14 @@ namespace C64
 
             for (int col = 0; col < 40; col++)
             {
-                byte code = mem[screenAddr + rowBase + col];
-                byte colRam = (byte)(mem[0xD800 + rowBase + col] & 0x0F);
+                byte code = cpu.memory.ReadVicByte((ulong)(screenAddr + rowBase + col));
+                byte colRam = (byte)(colorRow[col] & 0x0F);
                 bool cellMc = (colRam & 0x08) != 0;
                 int fgC = C64Palette[colRam & (cellMc ? 0x07 : 0x0F)];
-                byte bits = cs[cb + code * 8 + dy];
+                int charByteAddr = cb + code * 8 + dy;
+                byte bits = charFromVicRam
+                    ? cpu.memory.ReadVicByte((ulong)charByteAddr)
+                    : cs[charByteAddr];
                 int p = lineStart + col * 32;
 
                 if (cellMc)
@@ -428,11 +478,12 @@ namespace C64
             }
         }
 
-        private void RenderLineExtendedBgText(int y, int screenAddr, int charAddr, byte bg0, byte bg1, byte bg2, byte bg3)
+        private void RenderLineExtendedBgText(int y, int screenAddr, int charAddr, byte bg0, byte bg1, byte bg2, byte bg3, int bank, byte[] colorRow)
         {
             byte[] mem = cpu.memory.memory;
-            ResolveCharSource(charAddr, VicBankBase(), out byte[] cs, out int cb);
+            ResolveCharSource(charAddr, bank, out byte[] cs, out int cb);
             int[] bgC = { C64Palette[bg0], C64Palette[bg1], C64Palette[bg2], C64Palette[bg3] };
+            bool charFromVicRam = ReferenceEquals(cs, cpu.memory.memory) && cb >= 0xD000 && cb < 0xE000;
 
             int row = y / 8;
             int dy = y % 8;
@@ -442,10 +493,13 @@ namespace C64
 
             for (int col = 0; col < 40; col++)
             {
-                byte code = mem[screenAddr + rowBase + col];
-                int fgC = C64Palette[mem[0xD800 + rowBase + col] & 0x0F];
+                byte code = cpu.memory.ReadVicByte((ulong)(screenAddr + rowBase + col));
+                int fgC = C64Palette[colorRow[col] & 0x0F];
                 int b = bgC[(code >> 6) & 0x03];
-                byte bits = cs[cb + (code & 0x3F) * 8 + dy];
+                int charByteAddr = cb + (code & 0x3F) * 8 + dy;
+                byte bits = charFromVicRam
+                    ? cpu.memory.ReadVicByte((ulong)charByteAddr)
+                    : cs[charByteAddr];
                 int p = lineStart + col * 32;
 
                 for (int dx = 0; dx < 8; dx++)
@@ -476,10 +530,10 @@ namespace C64
 
             for (int col = 0; col < 40; col++)
             {
-                byte clr = mem[screenAddr + rowBase + col];
+                byte clr = cpu.memory.ReadVicByte((ulong)(screenAddr + rowBase + col));
                 int fgC = C64Palette[(clr >> 4) & 0x0F];
                 int bgC = C64Palette[clr & 0x0F];
-                byte bits = mem[bitmapAddr + (rowBase * 8) + col * 8 + dy];
+                byte bits = cpu.memory.ReadVicByte((ulong)(bitmapAddr + (rowBase * 8) + col * 8 + dy));
                 int p = lineStart + col * 32;
 
                 for (int dx = 0; dx < 8; dx++)
@@ -511,11 +565,11 @@ namespace C64
 
             for (int col = 0; col < 40; col++)
             {
-                byte clr = mem[screenAddr + rowBase + col];
+                byte clr = cpu.memory.ReadVicByte((ulong)(screenAddr + rowBase + col));
                 int cFg1 = C64Palette[(clr >> 4) & 0x0F];
                 int cFg2 = C64Palette[clr & 0x0F];
                 int cFg3 = C64Palette[mem[0xD800 + rowBase + col] & 0x0F];
-                byte bits = mem[bitmapAddr + (rowBase * 8) + col * 8 + dy];
+                byte bits = cpu.memory.ReadVicByte((ulong)(bitmapAddr + (rowBase * 8) + col * 8 + dy));
                 int p = lineStart + col * 32;
 
                 for (int pair = 0; pair < 4; pair++)
@@ -539,46 +593,43 @@ namespace C64
             }
         }
 
-        private void RenderSpritesScanline(int y, int screenAddr, int bank)
+        private void RenderSpritesScanline(int y, int screenAddr, int bank, byte spriteEnable, byte spriteXExpand, byte spriteYExpand, byte spriteMulticolor, byte spritePriority, byte spriteXHigh, byte spriteMc1Color, byte spriteMc2Color, byte[] spriteColors, byte[] spriteXPos, byte[] spriteYPos)
         {
             byte[] mem = cpu.memory.memory;
-            byte enable = mem[0xD015];
-            if (enable == 0) return;
+            if (spriteEnable == 0) return;
 
-            byte xExpand = mem[0xD01D];
-            byte yExpand = mem[0xD017];
-            byte multicolor = mem[0xD01C];
-            byte priority = mem[0xD01B];
-            byte xHigh = mem[0xD010];
-            int mc1 = C64Palette[mem[0xD025] & 0x0F];
-            int mc2 = C64Palette[mem[0xD026] & 0x0F];
+            int mc1 = C64Palette[spriteMc1Color & 0x0F];
+            int mc2 = C64Palette[spriteMc2Color & 0x0F];
             int pointerBase = screenAddr + 0x03F8;
 
             for (int s = 7; s >= 0; s--)
             {
                 int mask = 1 << s;
-                if ((enable & mask) == 0) continue;
+                if ((spriteEnable & mask) == 0) continue;
 
-                int sx = mem[0xD000 + s * 2] | (((xHigh & mask) != 0) ? 0x100 : 0);
-                int sy = mem[0xD000 + s * 2 + 1];
+                int sx = spriteXPos[s] | (((spriteXHigh & mask) != 0) ? 0x100 : 0);
+                int sy = spriteYPos[s];
                 int fbX = sx - 24;
                 int fbY = sy - 50;
 
-                bool xExp = (xExpand & mask) != 0;
-                bool yExp = (yExpand & mask) != 0;
-                bool mc = (multicolor & mask) != 0;
-                bool behindBg = (priority & mask) != 0;
-                int color = C64Palette[mem[0xD027 + s] & 0x0F];
+                bool xExp = (spriteXExpand & mask) != 0;
+                bool yExp = (spriteYExpand & mask) != 0;
+                bool mc = (spriteMulticolor & mask) != 0;
+                bool behindBg = (spritePriority & mask) != 0;
+                int color = C64Palette[spriteColors[s] & 0x0F];
 
                 int spriteHeight = yExp ? 42 : 21;
                 int spriteRow = y - fbY;
                 if (spriteRow < 0 || spriteRow >= spriteHeight) continue;
 
                 int row = yExp ? (spriteRow >> 1) : spriteRow;
-                int spritePtr = mem[pointerBase + s];
+                int spritePtr = cpu.memory.ReadVicByte((ulong)(pointerBase + s));
                 int dataAddr = bank + spritePtr * 64;
                 int rowAddr = dataAddr + row * 3;
-                int rowBits = (mem[rowAddr] << 16) | (mem[rowAddr + 1] << 8) | mem[rowAddr + 2];
+                int rowBits =
+                    (cpu.memory.ReadVicByte((ulong)rowAddr) << 16) |
+                    (cpu.memory.ReadVicByte((ulong)(rowAddr + 1)) << 8) |
+                    cpu.memory.ReadVicByte((ulong)(rowAddr + 2));
 
                 if (mc)
                 {

@@ -80,6 +80,7 @@ namespace C64
         private const int Clock_NTSC = 1_022_727; // 6510 @ NTSC
 
         private const int CiaTickHz = 1000;
+        private static readonly bool VerboseIoTrace = false;
 
         private readonly Display display;
         private readonly Keyboard keyboard;
@@ -154,6 +155,7 @@ namespace C64
             byte[] m = cpu.memory.memory;
 
             Array.Clear(m, 0x0000, m.Length);
+            cpu.memory.ClearIoUnderRam();
 
             m[0x0000] = 0x2F;
             m[0x0001] = 0x37;
@@ -235,7 +237,7 @@ namespace C64
 
             for (int a = 0xD800; a <= 0xDBE7; a++) m[a] = 0x0E;
 
-            for (int a = 0x0400; a <= 0x07E7; a++) m[a] = 0x20;
+            //for (int a = 0x0400; a <= 0x07E7; a++) m[a] = 0x20;
 
             keyboard.Reset();
             sound.Reset();
@@ -245,6 +247,16 @@ namespace C64
 
         private bool OnIOWrite(ulong addr, byte value)
         {
+            if (VerboseIoTrace)
+            {
+                byte oldVal = cpu.memory.memory[addr];
+                if (oldVal != value && addr >= 0xD000 && addr <= 0xDFFF)
+                {
+                    Console.Error.WriteLine($"[{cpu.registers.PC:X4}] ${addr:X4} write: ${oldVal:X2} -> ${value:X2}");
+                    Console.Error.Flush();
+                }
+            }
+
             switch (addr)
             {
                 case 0xD012:
@@ -252,9 +264,23 @@ namespace C64
                     return true;
                 case 0xD011:
                     {
+                        byte oldD011 = cpu.memory.memory[0xD011];
                         display.RasterCompare = (display.RasterCompare & 0xFF) | ((value & 0x80) << 1);
                         byte oldHigh = (byte)(cpu.memory.memory[0xD011] & 0x80);
+                        byte newVal = (byte)((value & 0x7F) | oldHigh);
                         cpu.memory.memory[0xD011] = (byte)((value & 0x7F) | oldHigh);
+                        if (VerboseIoTrace && oldD011 != newVal)
+                            Console.Error.WriteLine($"[D011 HANDLER] oldVal=${oldD011:X2}, incoming=${value:X2}, computed=${newVal:X2}, stored");
+                        return true;
+                    }
+                case 0xD016:
+                    {
+                        cpu.memory.memory[0xD016] = value;
+                        return true;
+                    }
+                case 0xD018:
+                    {
+                        cpu.memory.memory[0xD018] = value;
                         return true;
                     }
                 case 0xD019:
@@ -480,6 +506,14 @@ namespace C64
         {
             switch (addr)
             {
+                case 0xD011:
+                    {
+                        byte low = (byte)(cpu.memory.memory[0xD011] & 0x7F);
+                        byte hi = (byte)(((display.CurrentRasterLine >> 8) & 0x01) << 7);
+                        return (byte)(low | hi);
+                    }
+                case 0xD012:
+                    return (byte)(display.CurrentRasterLine & 0xFF);
                 case 0xDC00:
                     return ReadCia1PortA();
                 case 0xDC01:
@@ -959,10 +993,30 @@ namespace C64
             // BASIC tokenises RUN.
             await Task.Delay(50).ConfigureAwait(false);
 
-            keyboard.EnqueuePetscii((byte)'R');
-            keyboard.EnqueuePetscii((byte)'U');
-            keyboard.EnqueuePetscii((byte)'N');
-            keyboard.EnqueuePetscii(0x0D); // RETURN
+            await TypePetsciiLikeHumanAsync(
+                new byte[] { (byte)'R', (byte)'U', (byte)'N', 0x0D },
+                minInterKeyMs: 110,
+                maxInterKeyMs: 220,
+                enterExtraMs: 120).ConfigureAwait(false);
+        }
+
+        private async Task TypePetsciiLikeHumanAsync(
+            ReadOnlyMemory<byte> text,
+            int minInterKeyMs,
+            int maxInterKeyMs,
+            int enterExtraMs = 0)
+        {
+            for (int i = 0; i < text.Length; i++)
+            {
+                byte key = text.Span[i];
+                keyboard.EnqueuePetscii(key);
+
+                int delay = Random.Shared.Next(minInterKeyMs, maxInterKeyMs + 1);
+                if (key == 0x0D)
+                    delay += enterExtraMs;
+
+                await Task.Delay(delay).ConfigureAwait(false);
+            }
         }
 
         private async Task WaitForReadyPromptAsync(int timeoutMs)
@@ -1092,7 +1146,8 @@ namespace C64
             if (loadAddr + progLen > mem.Length)
                 throw new InvalidDataException("PRG file would load past end of memory.");
 
-            Array.Copy(data, 2, mem, loadAddr, progLen);
+            for (int i = 0; i < progLen; i++)
+                cpu.memory.WriteRamByte((ulong)(loadAddr + i), data[2 + i]);
 
             if (loadAddr == 0x0801)
             {
@@ -1103,6 +1158,76 @@ namespace C64
                 cpu.memory.WriteByte(0x0030, (byte)(endAddr >> 8));
                 cpu.memory.WriteByte(0x0031, (byte)(endAddr & 0xFF));
                 cpu.memory.WriteByte(0x0032, (byte)(endAddr >> 8));
+            }
+
+        }
+
+        private void DumpGraphicsStateToFile()
+        {
+            try
+            {
+                byte[] mem = cpu.memory.memory;
+                byte d011 = mem[0xD011];
+                byte d016 = mem[0xD016];
+                byte d018 = mem[0xD018];
+                byte d020 = mem[0xD020];
+                byte d021 = mem[0xD021];
+                byte dd00 = mem[0xDD00];
+                byte d015 = mem[0xD015];
+                byte p1 = mem[0x0001];
+
+                bool screenOn = (d011 & 0x10) != 0;
+                bool bmm = (d011 & 0x20) != 0;
+                bool ecm = (d011 & 0x40) != 0;
+                bool mcm = (d016 & 0x10) != 0;
+                int bank = (3 - (dd00 & 0x03)) * 0x4000;
+                int screenAddr = bank + ((d018 >> 4) & 0x0F) * 0x400;
+                int charAddr = bank + ((d018 >> 1) & 0x07) * 0x800;
+
+                Console.Error.WriteLine("=== GRAPHICS STATE ===");
+                Console.Error.WriteLine($"CPU PC: ${cpu.registers.PC:X4}, SP: ${cpu.registers.S:X2}");
+                Console.Error.WriteLine($"Processor Port ($0001): ${p1:X2}");
+                Console.Error.WriteLine($"Screen ON (DEN): {screenOn}");
+                Console.Error.WriteLine($"BMM (Bitmap): {bmm}, ECM (ExtBg): {ecm}, MCM (Multicolor): {mcm}");
+                if (bmm && mcm) Console.Error.WriteLine("  → Multicolor Bitmap Mode");
+                else if (bmm) Console.Error.WriteLine("  → Hires Bitmap Mode");
+                else if (ecm) Console.Error.WriteLine("  → Extended Bg Text Mode");
+                else if (mcm) Console.Error.WriteLine("  → Multicolor Text Mode");
+                else Console.Error.WriteLine("  → Standard Text Mode");
+                Console.Error.WriteLine($"D011: ${d011:X2}, D016: ${d016:X2}, D018: ${d018:X2}");
+                Console.Error.WriteLine($"Screen RAM: ${screenAddr:X4}, Char/Bitmap: ${charAddr:X4}");
+                Console.Error.WriteLine($"VIC Bank (CIA2 $DD00): ${bank:X4}");
+                Console.Error.WriteLine($"Border (D020): ${d020:X2}, BG0 (D021): ${d021:X2}");
+                Console.Error.WriteLine($"Sprites Enabled (D015): ${d015:X2}");
+
+                // Check memory at potential VIC-II addresses
+                Console.Error.WriteLine($"\nVIC-II registers (raw memory):");
+                Console.Error.WriteLine($"  D011 ($D011): ${mem[0xD011]:X2}");
+                Console.Error.WriteLine($"  D016 ($D016): ${mem[0xD016]:X2}");
+                Console.Error.WriteLine($"  D018 ($D018): ${mem[0xD018]:X2}");
+                Console.Error.WriteLine($"  DD00 ($DD00): ${mem[0xDD00]:X2}");
+
+                // Check if there's any data at screen RAM
+                Console.Error.WriteLine($"\nScreen RAM analysis:");
+                Console.Error.WriteLine($"  First 10 bytes at ${screenAddr:X4}: {string.Join(" ", Enumerable.Range(0, 10).Select(i => mem[screenAddr + i].ToString("X2")))}");
+                Console.Error.WriteLine($"  Color RAM at $D800: {string.Join(" ", Enumerable.Range(0, 10).Select(i => mem[0xD800 + i].ToString("X2")))}");
+
+                Console.Error.WriteLine("======================");
+
+                // Also write to file for debugging when console is hidden
+                try
+                {
+                    System.IO.File.WriteAllLines("/tmp/c64_graphics_state.txt", new[] {
+                        $"CPU PC: ${cpu.registers.PC:X4}, SP: ${cpu.registers.S:X2}",
+                        $"Screen ON: {screenOn}, D011: ${d011:X2}, D016: ${d016:X2}, D018: ${d018:X2}",
+                        $"Screen RAM: ${screenAddr:X4}, First 10: {string.Join(" ", Enumerable.Range(0, 10).Select(i => mem[screenAddr + i].ToString("X2")))}"
+                    });
+                }
+                catch { }
+            }
+            catch (Exception ex)
+            {
+                Console.Error.WriteLine($"Error dumping graphics state: {ex}");
             }
         }
 
@@ -1124,7 +1249,8 @@ namespace C64
                     continue;
                 }
 
-                Array.Copy(entry.Data, 0, mem, entry.LoadAddress, dataLen);
+                for (int i = 0; i < dataLen; i++)
+                    cpu.memory.WriteRamByte((ulong)(entry.LoadAddress + i), entry.Data[i]);
 
                 if (entry.IsBasic)
                 {

@@ -27,6 +27,7 @@ namespace _6502CPU
         public bool Running { get { return running; } }
 
         private readonly int clockFreq = 2000000; //1MHz
+        public int ClockFrequency => clockFreq;
 
         private readonly ConcurrentQueue<ulong> IRQ_Buffer = new ConcurrentQueue<ulong>();
         private readonly ConcurrentQueue<ulong> NMI_Buffer = new ConcurrentQueue<ulong>();
@@ -45,6 +46,8 @@ namespace _6502CPU
         }
 
         private int cyclesThisOperation = 0;
+        private long totalCycles;
+        public long TotalCycles => Interlocked.Read(ref totalCycles);
 
         public _6502_CPU(int freq = 1000000)
         {
@@ -91,19 +94,20 @@ namespace _6502CPU
             while (IRQ_Buffer.TryDequeue(out _)) { }
             while (NMI_Buffer.TryDequeue(out _)) { }
             Interlocked.Exchange(ref irqPending, 0);
+            Interlocked.Exchange(ref totalCycles, 0);
         }
 
-        private const int SliceMilliseconds = 16;
+        // Keep CPU pacing in small cycle chunks so raster IRQ-driven effects
+        // are not serviced in large bursts.
+        private const int SliceCycles = 64;
 
         public void Run(ulong startVector = 0xFFFC)
         {
             registers.PC = memory.ReadWord(startVector);
             running = true;
 
-            int sliceCycles = (int)((long)clockFreq * SliceMilliseconds / 1000);
-            if (sliceCycles < 1) sliceCycles = 1;
-
-            long ticksPerSlice = Stopwatch.Frequency * SliceMilliseconds / 1000;
+            int sliceCycles = SliceCycles;
+            long ticksPerSlice = Math.Max(1, Stopwatch.Frequency * SliceCycles / clockFreq);
 
             long nextDeadline = Stopwatch.GetTimestamp() + ticksPerSlice;
 
@@ -138,7 +142,11 @@ namespace _6502CPU
                             else
                                 ProcessIRQ();
                         }
+                        int beforeCycles = cyclesThisOperation;
                         Execute(GetNextByteInstruction());
+                        int deltaCycles = cyclesThisOperation - beforeCycles;
+                        if (deltaCycles > 0)
+                            Interlocked.Add(ref totalCycles, deltaCycles);
                     }
 
                     WaitUntil(nextDeadline);

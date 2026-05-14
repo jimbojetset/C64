@@ -27,6 +27,11 @@ namespace _6502CPU
         private byte[]? kernalRom;  // $E000-$FFFF (8 KiB)
         private byte[]? charRom;    // $D000-$DFFF (4 KiB)
 
+        // RAM that lives underneath the $D000-$DFFF I/O/CHAR window.
+        // Keep it separate from memory[] so writes while I/O is banked out
+        // do not clobber live VIC/CIA/SID register bytes.
+        private readonly byte[] ioUnderRam = new byte[0x1000];
+
         // True once at least one banked ROM has been registered. While
         // false, the legacy ReadByte/WriteByte path is used (memory[]
         // mirrors ROMs, writes to ROM ranges blocked).
@@ -56,6 +61,27 @@ namespace _6502CPU
         public Memory(int size)
         {
             memory = new byte[size];
+        }
+
+        public void ClearIoUnderRam()
+        {
+            Array.Clear(ioUnderRam, 0, ioUnderRam.Length);
+        }
+
+        // Writes directly to underlying RAM regardless of current banking.
+        // Used by loaders so bytes destined for $D000-$DFFF land in RAM
+        // beneath I/O/CHAR mapping, matching C64 load behavior.
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public void WriteRamByte(ulong addr, byte value)
+        {
+            addr &= 0xFFFF;
+            if (addr >= 0xD000 && addr < 0xE000)
+            {
+                ioUnderRam[addr - 0xD000] = value;
+                return;
+            }
+
+            memory[addr] = value;
         }
 
         // Loads a ROM into its own buffer and enables 6510-style banking.
@@ -122,6 +148,7 @@ namespace _6502CPU
             // RAM underneath if ROM/RAM is selected there.
             if (addr >= 0xD000 && addr < 0xE000)
             {
+                int ioIdx = (int)(addr - 0xD000);
                 if (Is_IO_Mapped())
                 {
                     if (OnIOWrite is not null && OnIOWrite(addr, value)) return;
@@ -130,7 +157,7 @@ namespace _6502CPU
                 }
                 // CHAR ROM or RAM selected at $D000-$DFFF: writes go to
                 // RAM underneath (CHAR ROM is read-only on real hardware).
-                memory[addr] = value;
+                ioUnderRam[ioIdx] = value;
                 return;
             }
 
@@ -187,7 +214,7 @@ namespace _6502CPU
                 if (loHi == 0)
                 {
                     // Both LORAM and HIRAM clear: RAM mapped.
-                    return memory[addr];
+                    return ioUnderRam[addr - 0xD000];
                 }
                 if (charen)
                 {
@@ -201,7 +228,7 @@ namespace _6502CPU
                 // bitmaps into RAM).
                 if (charRom is not null)
                     return charRom[addr - 0xD000];
-                return memory[addr];
+                return ioUnderRam[addr - 0xD000];
             }
 
             // $E000-$FFFF: KERNAL ROM if HIRAM set.
@@ -228,6 +255,18 @@ namespace _6502CPU
             // Honour banking on word reads (e.g. IRQ / NMI / RESET vector
             // fetches at $FFFA / $FFFC / $FFFE).
             return (ulong)(ReadByte(addr) | (ReadByte(addr + 1) << 8));
+        }
+
+        // VIC-II memory view: always sees RAM in the selected 16 KiB bank,
+        // except for the character ROM shadow handled in Display.cs.
+        // In particular, $D000-$DFFF must read RAM-under-I/O, not CPU I/O regs.
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public byte ReadVicByte(ulong addr)
+        {
+            addr &= 0xFFFF;
+            if (addr >= 0xD000 && addr < 0xE000)
+                return ioUnderRam[addr - 0xD000];
+            return memory[addr];
         }
 
         public void Load(string filePath, int startAddr, int length, bool readOnly)
