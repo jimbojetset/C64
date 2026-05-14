@@ -33,14 +33,6 @@ namespace C64
         // Keep ~40 ms buffered in SDL's queue; stall when above ~80 ms.
         private const int TargetLatencyMs = 40;
         private const int MaxLatencyMs = 80;
-        internal static bool TraceEnabled =
-            string.Equals(Environment.GetEnvironmentVariable("C64_SID_TRACE"), "1", StringComparison.Ordinal);
-
-        internal static bool TraceEnvelope { get; set; } =
-            string.Equals(Environment.GetEnvironmentVariable("C64_SID_ENV_TRACE"), "1", StringComparison.Ordinal);
-
-        internal static bool TracePickup { get; set; } =
-            string.Equals(Environment.GetEnvironmentVariable("C64_SID_PICKUP_TRACE"), "1", StringComparison.Ordinal);
 
         // ?? SID register file ($D400 = reg 0 � $D41C = reg 28) ????????????????
         // Synth-thread register image. CPU-thread writes are queued with
@@ -57,8 +49,8 @@ namespace C64
 
         // Overall gain trim for the synthesized SID voice path.
         // A modest preamp helps low-sustain game SFX remain audible.
-        private const double VoicePreamp = 3.0;
-        private const double VoiceLaneGain = 0.20;
+        private const double VoicePreamp = 5.0;
+        private const double VoiceLaneGain = 1.0;
         private const double MasterOutputGain = 2.2;
 
         // D418 volume-DAC approximation for sample-style SFX.
@@ -69,6 +61,9 @@ namespace C64
         private const double VolumeDacQuietLiftPower = 0.62;
         private const double VolumeDacSaturationDrive = 2.6;
         private const double VolumeDacOutputGain = 0.70;
+        private const int ResetMuteMs = 40;
+        private const int StartupPrimeMs = 20;
+        private const int ResetFadeInMs = 80;
 
         // ?? State-variable filter (owned by the synthesis thread) ?????????????
         private double _flp, _fbp;          // low-pass / band-pass accumulators
@@ -80,12 +75,9 @@ namespace C64
         private double _volDacHp;
         private double _volDacShaped;
         private long _lastDacTick;
-        private int _pickupD418Writes;
-        private int _pickupGateEdges;
-        private double _pickupVoicePeak;
-        private double _pickupDacPeak;
-        private double _pickupMixedPeak;
-        private int _pickupSampleCount;
+        private int _muteSamplesRemaining;
+        private int _fadeInSamplesRemaining;
+        private int _fadeInSamplesTotal;
 
         // ?? SDL audio ?????????????????????????????????????????????????????????
         private uint _dev;               // SDL audio device id (0 = none)
@@ -98,6 +90,7 @@ namespace C64
         // ?? Synthesis thread ??????????????????????????????????????????????????
         private Thread? _thread;
         private CancellationToken _ct;
+        private readonly object _audioStateLock = new();
 
         // ?? ADSR rate tables (cycles per envelope step, PAL clock) ????????????
         //
@@ -182,19 +175,36 @@ namespace C64
                 // callback left null = SDL queue-audio mode (no callback thread)
             };
 
-            _dev = SDL_OpenAudioDevice(deviceName, 0, ref desired, out _, 0);
+            _dev = SDL_OpenAudioDevice(deviceName is null ? null! : deviceName, 0, ref desired, out _, 0);
             if (_dev == 0)
                 throw new Exception($"SDL_OpenAudioDevice failed: {SDL_GetError()}");
 
             _writeTickCursor = Stopwatch.GetTimestamp();
             _lastDacTick = _writeTickCursor;
-
-            SDL_PauseAudioDevice(_dev, 0); // 0 = unpause ? start playing
+            _muteSamplesRemaining = (SampleRate * ResetMuteMs) / 1000;
         }
 
         public void Start(CancellationToken token)
         {
             _ct = token;
+
+            // Prime the output queue with known silence before unpausing to
+            // avoid startup pops/buzz from backend/device transition.
+            int primeSamples = (SampleRate * StartupPrimeMs) / 1000;
+            if (primeSamples > 0)
+            {
+                if (_buf.Length < primeSamples)
+                    _buf = new short[primeSamples + 256];
+                Array.Clear(_buf, 0, primeSamples);
+                unsafe
+                {
+                    fixed (short* p = _buf)
+                        SDL_QueueAudio(_dev, (IntPtr)p, (uint)(primeSamples * sizeof(short)));
+                }
+            }
+
+            SDL_PauseAudioDevice(_dev, 0); // 0 = unpause ? start playing
+
             _thread = new Thread(SynthesisLoop)
             {
                 IsBackground = true,
@@ -234,27 +244,50 @@ namespace C64
         /// <summary>Reset all SID registers and per-voice state.</summary>
         public void Reset()
         {
-            Array.Clear(_regs);
-            while (_writeQueue.TryDequeue(out _)) { }
-            foreach (var v in _voices) v.Reset();
-            _flp = _fbp = 0.0;
-            _lastFcReg = -1;
-            _lastResReg = -1;
-            _volDacRaw = 0.0;
-            _volDacHp = 0.0;
-            _volDacShaped = 0.0;
-            _lastDacTick = Stopwatch.GetTimestamp();
-            _pickupD418Writes = 0;
-            _pickupGateEdges = 0;
-            _pickupVoicePeak = 0.0;
-            _pickupDacPeak = 0.0;
-            _pickupMixedPeak = 0.0;
-            _pickupSampleCount = 0;
-            _writeTickCursor = Stopwatch.GetTimestamp();
-            _v3Wave = 0;
-            _v3Env = 0;
-            if (_dev != 0)
-                SDL_ClearQueuedAudio(_dev);
+            lock (_audioStateLock)
+            {
+                bool haveDevice = _dev != 0;
+                if (haveDevice)
+                {
+                    SDL_PauseAudioDevice(_dev, 1);
+                    SDL_ClearQueuedAudio(_dev);
+                }
+
+                Array.Clear(_regs);
+                while (_writeQueue.TryDequeue(out _)) { }
+                foreach (var v in _voices) v.Reset();
+                _flp = _fbp = 0.0;
+                _lastFcReg = -1;
+                _lastResReg = -1;
+                _volDacRaw = 0.0;
+                _volDacHp = 0.0;
+                _volDacShaped = 0.0;
+                _lastDacTick = Stopwatch.GetTimestamp();
+                _muteSamplesRemaining = (SampleRate * ResetMuteMs) / 1000;
+                _fadeInSamplesTotal = (SampleRate * ResetFadeInMs) / 1000;
+                _fadeInSamplesRemaining = _fadeInSamplesTotal;
+                _writeTickCursor = Stopwatch.GetTimestamp();
+                _v3Wave = 0;
+                _v3Env = 0;
+
+                if (haveDevice)
+                {
+                    int primeSamples = (SampleRate * StartupPrimeMs) / 1000;
+                    if (primeSamples > 0)
+                    {
+                        if (_buf.Length < primeSamples)
+                            _buf = new short[primeSamples + 256];
+                        Array.Clear(_buf, 0, primeSamples);
+                        unsafe
+                        {
+                            fixed (short* p = _buf)
+                                SDL_QueueAudio(_dev, (IntPtr)p, (uint)(primeSamples * sizeof(short)));
+                        }
+                    }
+
+                    SDL_PauseAudioDevice(_dev, 0);
+                }
+            }
         }
 
         public void Dispose()
@@ -299,12 +332,15 @@ namespace C64
                     if (_buf.Length < count)
                         _buf = new short[count + 256];
 
-                    Synthesize(_buf, count, batchStart, now);
-
-                    unsafe
+                    lock (_audioStateLock)
                     {
-                        fixed (short* p = _buf)
-                            SDL_QueueAudio(_dev, (IntPtr)p, (uint)(count * sizeof(short)));
+                        Synthesize(_buf, count, batchStart, now);
+
+                        unsafe
+                        {
+                            fixed (short* p = _buf)
+                                SDL_QueueAudio(_dev, (IntPtr)p, (uint)(count * sizeof(short)));
+                        }
                     }
                 }
 
@@ -403,31 +439,25 @@ namespace C64
                 double mixed = (voiceMixed + dacMixed) * MasterOutputGain;
                 mixed = Math.Tanh(mixed);
 
-                if (TracePickup)
+                if (_fadeInSamplesRemaining > 0 && _fadeInSamplesTotal > 0)
                 {
-                    _pickupSampleCount++;
-                    double aVoice = Math.Abs(voiceMixed);
-                    double aDac = Math.Abs(dacMixed);
-                    double aMixed = Math.Abs(mixed);
-                    if (aVoice > _pickupVoicePeak) _pickupVoicePeak = aVoice;
-                    if (aDac > _pickupDacPeak) _pickupDacPeak = aDac;
-                    if (aMixed > _pickupMixedPeak) _pickupMixedPeak = aMixed;
-
-                    if (_pickupSampleCount >= 2048)
-                    {
-                        Console.Error.WriteLine(
-                            $"[PICKUP] d418writes={_pickupD418Writes} gateEdges={_pickupGateEdges} " +
-                            $"voicePeak={_pickupVoicePeak:F4} dacPeak={_pickupDacPeak:F4} mixPeak={_pickupMixedPeak:F4}");
-                        _pickupSampleCount = 0;
-                        _pickupD418Writes = 0;
-                        _pickupGateEdges = 0;
-                        _pickupVoicePeak = 0.0;
-                        _pickupDacPeak = 0.0;
-                        _pickupMixedPeak = 0.0;
-                    }
+                    int progressed = _fadeInSamplesTotal - _fadeInSamplesRemaining;
+                    double t = (progressed + 1) / (double)_fadeInSamplesTotal;
+                    double fade = t * t;
+                    mixed *= fade;
                 }
 
-                buf[i] = (short)(mixed * 32767.0);
+                if (_muteSamplesRemaining > 0)
+                {
+                    _muteSamplesRemaining--;
+                    buf[i] = 0;
+                }
+                else
+                {
+                    if (_fadeInSamplesRemaining > 0)
+                        _fadeInSamplesRemaining--;
+                    buf[i] = (short)(mixed * 32767.0);
+                }
             }
         }
 
@@ -453,11 +483,6 @@ namespace C64
                 // Capture each write here so sub-sample transitions are kept.
                 HandleVolumeDacOnWrite(d.Reg, previous, d.Value);
 
-                if (TraceEnabled && IsAudibleTraceRegister(d.Reg, previous, d.Value))
-                {
-                    Console.Error.WriteLine(
-                        $"[SID] t={d.Tick} reg=${d.Reg + 0xD400:X4} {previous:X2}->{d.Value:X2} {DescribeSidState(regs)}");
-                }
             }
         }
 
@@ -491,9 +516,6 @@ namespace C64
             if (prevGate == gate)
                 return;
 
-            if (TracePickup)
-                _pickupGateEdges++;
-
             int voiceIdx = voiceBase / 7;
             Voice v = _voices[voiceIdx];
             byte sr = regs[voiceBase + 6];
@@ -505,15 +527,11 @@ namespace C64
                 v.EnvTimer = 0.0;
                 if (v.EnvelopeLevel == 0)
                     v.EnvelopeLevel = 1;
-                if (TraceEnvelope)
-                    Console.Error.WriteLine($"[ENV] GATE ON -> Attack (sustain={sustainLvl})");
             }
             else
             {
                 v.EnvPhase = EnvPhase.Release;
                 v.EnvTimer = 0.0;
-                if (TraceEnvelope)
-                    Console.Error.WriteLine($"[ENV] GATE OFF -> Release from level {v.EnvelopeLevel}");
             }
 
             v.GatePrev = gate;
@@ -524,58 +542,11 @@ namespace C64
             if (reg != 24)
                 return;
 
-            if (TracePickup)
-                _pickupD418Writes++;
-
             int newVol = value & 0x0F;
             double newRaw = (newVol / 15.0) - 0.5;
             double delta = newRaw - _volDacRaw;
             _volDacRaw = newRaw;
             _volDacHp += delta * VolumeDacStepResponse;
-        }
-
-        private static bool IsAudibleTraceRegister(int reg, byte previous, byte value)
-        {
-            if (reg == 0x18 || reg == 0x17)
-                return previous != value;
-
-            int voiceBase = (reg / 7) * 7;
-            int offset = reg - voiceBase;
-            return offset is 0 or 1 or 2 or 3 or 4 or 5 or 6;
-        }
-
-        // Extend trace with per-sample envelope and waveform diagnostics
-        private void TraceEnvelopeState(int voiceIdx, byte[] r)
-        {
-            if (!TraceEnabled) return;
-
-            int vbase = voiceIdx * 7;
-            Voice v = _voices[voiceIdx];
-            byte ctrl = r[vbase + 4];
-            byte ad = r[vbase + 5];
-            byte sr = r[vbase + 6];
-
-            bool gate = (ctrl & 0x01) != 0;
-            int sustainLvl = ((sr >> 4) & 0x0F) * 17;
-
-            Console.Error.WriteLine(
-                $"[ENVELOPE] v{voiceIdx} gate={gate} env={v.EnvelopeLevel}/sustain={sustainLvl} " +
-                $"phase={v.EnvPhase} waveform={v.LastWaveform:X3}");
-        }
-
-        private static string DescribeSidState(byte[] regs)
-        {
-            string VoiceState(int baseReg)
-            {
-                ushort freq = (ushort)(regs[baseReg] | (regs[baseReg + 1] << 8));
-                ushort pw = (ushort)(((regs[baseReg + 3] & 0x0F) << 8) | regs[baseReg + 2]);
-                byte ctrl = regs[baseReg + 4];
-                byte ad = regs[baseReg + 5];
-                byte sr = regs[baseReg + 6];
-                return $"v{baseReg / 7}:F={freq:X4} PW={pw:X3} C={ctrl:X2} AD={ad:X2} SR={sr:X2}";
-            }
-
-            return $"vol={regs[0x18]:X2} filt={regs[0x17]:X2} {VoiceState(0)} {VoiceState(7)} {VoiceState(14)}";
         }
 
         // Synthesize one sample from one voice.  Returns value in [-0.5, 0.5].
@@ -645,15 +616,6 @@ namespace C64
             int waveform = ComputeWaveform(ctrl, v, pw12, ring, syncSrc.PhaseAccum);
             v.LastWaveform = waveform;
             if (mute) return 0.0;
-
-            // Log waveform output for voice 0 during sustain at envelope trace level
-            if (TraceEnvelope && vi == 0 && v.EnvPhase == EnvPhase.Sustain && (ctrl & 0x20) != 0)
-            {
-                int sustainLvl = ((sr >> 4) & 0x0F) * 17;
-                double output = ((waveform / 4095.0) - 0.5) * (v.EnvelopeLevel / 255.0);
-                Console.Error.WriteLine(
-                    $"[WAVEFORM] v0: sustain={sustainLvl} env={v.EnvelopeLevel} raw={waveform:X4} output={output:F5}");
-            }
 
             // Re-centre the 12-bit unsigned waveform around 0 (range -0.5..+0.5)
             // and scale by the 8-bit envelope so that envelope=0 produces true
@@ -793,8 +755,6 @@ namespace C64
                             {
                                 v.EnvelopeLevel = 255;
                                 v.EnvPhase = EnvPhase.Decay;
-                                if (TraceEnvelope)
-                                    Console.Error.WriteLine($"[ENV] Attack complete → Decay to sustain {sustainLvl}");
                                 break;
                             }
                         }
@@ -812,8 +772,6 @@ namespace C64
                             {
                                 v.EnvelopeLevel = sustainLvl;
                                 v.EnvPhase = EnvPhase.Sustain;
-                                if (TraceEnvelope)
-                                    Console.Error.WriteLine($"[ENV] Decay complete → Sustain at {sustainLvl}");
                                 break;
                             }
                             threshold = DecayCycles[decayIdx] * ExpScale(v.EnvelopeLevel);

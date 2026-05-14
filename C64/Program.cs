@@ -12,52 +12,19 @@ namespace C64
         {
             NativeLibrary.SetDllImportResolver(typeof(SDL2.SDL).Assembly, ResolveNativeLibrary);
 
-            bool sidTrace = string.Equals(Environment.GetEnvironmentVariable("C64_SID_TRACE"), "1", StringComparison.Ordinal);
-            bool traceEnvelope = string.Equals(Environment.GetEnvironmentVariable("C64_SID_ENV_TRACE"), "1", StringComparison.Ordinal);
-            bool tracePickup = string.Equals(Environment.GetEnvironmentVariable("C64_SID_PICKUP_TRACE"), "1", StringComparison.Ordinal);
             string? loadPath = null;
 
             foreach (string arg in args)
             {
-                if (arg.Equals("--sid-trace", StringComparison.OrdinalIgnoreCase) ||
-                    arg.Equals("C64_SID_TRACE=1", StringComparison.OrdinalIgnoreCase))
-                {
-                    sidTrace = true;
-                    continue;
-                }
-
-                if (arg.Equals("--TraceEnvelope", StringComparison.OrdinalIgnoreCase) ||
-                    arg.Equals("--trace-envelope", StringComparison.OrdinalIgnoreCase) ||
-                    arg.Equals("C64_SID_ENV_TRACE=1", StringComparison.OrdinalIgnoreCase))
-                {
-                    traceEnvelope = true;
-                    sidTrace = true;  // Enable register trace too for context
-                    continue;
-                }
-
-                if (arg.Equals("--trace-pickup", StringComparison.OrdinalIgnoreCase) ||
-                    arg.Equals("C64_SID_PICKUP_TRACE=1", StringComparison.OrdinalIgnoreCase))
-                {
-                    tracePickup = true;
-                    sidTrace = true;
-                    continue;
-                }
-
                 if (loadPath is null && File.Exists(arg))
                     loadPath = arg;
             }
-
-            Sound.TraceEnabled = sidTrace;
-            Sound.TraceEnvelope = traceEnvelope;
-            Sound.TracePickup = tracePickup;
 
             try
             {
                 using var emu = new C64Emulator();
                 if (loadPath is not null)
                     emu.QueueLoadAndRun(loadPath);
-                if (sidTrace)
-                    Console.Error.WriteLine("[SID] trace enabled");
                 emu.Run();
                 return 0;
             }
@@ -805,11 +772,6 @@ namespace C64
 
             var token = cts.Token;
 
-            // Force a deterministic power-on reset sequence on startup.
-            // This avoids differences between initial run and Ctrl+R reset.
-            display.BeginReset();
-            cpu.RequestReset();
-
             cpuThread = new Thread(() =>
             {
                 try { cpu.Run(); }
@@ -832,9 +794,27 @@ namespace C64
             };
             irqThread.Start();
 
+            // Run the exact same reset path used by Ctrl+R after all worker
+            // threads are alive. This avoids startup-only races where the
+            // display can remain in reset on first launch.
+            HardReset();
+
             var startupWait = Stopwatch.StartNew();
             while (display.IsResetting && startupWait.ElapsedMilliseconds < 3000)
                 SDL_Delay(1);
+
+            if (display.IsResetting)
+            {
+                Console.Error.WriteLine("[BOOT] initial reset timed out; retrying startup reset");
+                HardReset();
+
+                startupWait.Restart();
+                while (display.IsResetting && startupWait.ElapsedMilliseconds < 3000)
+                    SDL_Delay(1);
+
+                if (display.IsResetting)
+                    Console.Error.WriteLine("[BOOT] startup reset still pending; Ctrl+R will force another reset");
+            }
 
             bool quit = false;
             uint nextDraw = SDL_GetTicks();
