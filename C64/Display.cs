@@ -292,9 +292,20 @@ namespace C64
 
                         int playY = line - VisibleTop;
                         int fineY = d011 & 0x07;
-                        int row = playY / 8;
-                        int dy = playY & 0x07;
-                        bool matrixVisible = row >= 0 && row < 25 && playY < (ScreenH - fineY);
+                        int visRow = playY / 8;
+                        int visDy = playY & 0x07;
+                        int fetchY = playY;
+
+                        // Narrow fix: lower split area expects fine-Y phased fetches.
+                        // Apply only near the bottom to avoid global Y positioning changes.
+                        if (playY >= ScreenH - 24)
+                            fetchY += fineY;
+
+                        int row = fetchY / 8;
+                        int dy = fetchY & 0x07;
+                        bool matrixVisible = visRow >= 0 && visRow < 25;
+                        if (matrixVisible && visRow == 24)
+                            matrixVisible = visDy <= (7 - fineY);
                         int bank = GetVicBankBase(dd00, dd02);
                         int screenAddr = bank + ((d018 >> 4) & 0x0F) * 0x400;
                         int spritePtrBase = screenAddr + 0x03F8;

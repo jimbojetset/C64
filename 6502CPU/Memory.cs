@@ -75,6 +75,13 @@ namespace _6502CPU
         public void WriteRamByte(ulong addr, byte value)
         {
             addr &= 0xFFFF;
+            if (addr >= 0xD800 && addr < 0xDC00)
+            {
+                // Color RAM is a dedicated nibble RAM in the I/O window.
+                // Keep a stable backing byte in memory[] for renderer fetches.
+                memory[addr] = value;
+                return;
+            }
             if (addr >= 0xD000 && addr < 0xE000)
             {
                 ioUnderRam[addr - 0xD000] = value;
@@ -149,6 +156,12 @@ namespace _6502CPU
             if (addr >= 0xD000 && addr < 0xE000)
             {
                 int ioIdx = (int)(addr - 0xD000);
+                if (addr >= 0xD800 && addr < 0xDC00)
+                {
+                    // Color RAM should not disappear when CHAREN/LORAM/HIRAM change.
+                    memory[addr] = value;
+                    return;
+                }
                 if (Is_IO_Mapped())
                 {
                     if (OnIOWrite is not null && OnIOWrite(addr, value)) return;
@@ -208,6 +221,11 @@ namespace _6502CPU
             // $D000-$DFFF: I/O, CHAR ROM, or RAM. See PLA truth table.
             if (addr < 0xE000)
             {
+                if (addr >= 0xD800 && addr < 0xDC00)
+                {
+                    // Color RAM remains CPU-visible independently of CHAREN mapping.
+                    return memory[addr];
+                }
                 byte port = memory[0x0001];
                 int loHi = port & 0x03;            // LORAM | HIRAM
                 bool charen = (port & 0x04) != 0;
@@ -264,6 +282,8 @@ namespace _6502CPU
         public byte ReadVicByte(ulong addr)
         {
             addr &= 0xFFFF;
+            if (addr >= 0xD800 && addr < 0xDC00)
+                return memory[addr];
             if (addr >= 0xD000 && addr < 0xE000)
                 return ioUnderRam[addr - 0xD000];
             return memory[addr];
