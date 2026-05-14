@@ -81,6 +81,8 @@ namespace C64
 
         private const int CiaTickHz = 1000;
         private static readonly bool VerboseIoTrace = false;
+        private static readonly bool TraceVicStates =
+            string.Equals(Environment.GetEnvironmentVariable("C64_TRACE_VIC"), "1", StringComparison.Ordinal);
 
         private readonly Display display;
         private readonly Keyboard keyboard;
@@ -806,6 +808,9 @@ namespace C64
 
             var token = cts.Token;
 
+            if (TraceVicStates)
+                _ = Task.Run(() => TraceVicStatesAsync(token));
+
             cpuThread = new Thread(() =>
             {
                 try { cpu.Run(); }
@@ -1071,6 +1076,42 @@ namespace C64
         public void QueueLoadAndRun(string path) => pendingLoads.Enqueue((path, true));
 
         public void QueueLoad(string path) => pendingLoads.Enqueue((path, false));
+
+        private async Task TraceVicStatesAsync(CancellationToken token)
+        {
+            string? lastState = null;
+
+            while (!token.IsCancellationRequested)
+            {
+                byte[] m = cpu.memory.memory;
+                string mode = ((m[0xD011] & 0x20) != 0, (m[0xD016] & 0x10) != 0, (m[0xD011] & 0x40) != 0) switch
+                {
+                    (true, true, _) => "mc-bitmap",
+                    (true, false, _) => "hires-bitmap",
+                    (false, true, false) => "mc-text",
+                    (false, false, true) => "ecm-text",
+                    _ => "std-text",
+                };
+
+                string state =
+                    $"mode={mode} DD00=${m[0xDD00]:X2} DD02=${m[0xDD02]:X2} D011=${m[0xD011]:X2} D016=${m[0xD016]:X2} D018=${m[0xD018]:X2} RAST={display.CurrentRasterLine:D3}";
+
+                if (!string.Equals(state, lastState, StringComparison.Ordinal))
+                {
+                    Console.Error.WriteLine($"[VIC] {state}");
+                    lastState = state;
+                }
+
+                try
+                {
+                    await Task.Delay(50, token).ConfigureAwait(false);
+                }
+                catch (OperationCanceledException)
+                {
+                    break;
+                }
+            }
+        }
 
         private void LoadProgram()
         {

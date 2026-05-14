@@ -80,6 +80,7 @@ namespace _6502CPU
                 // Color RAM is a dedicated nibble RAM in the I/O window.
                 // Keep a stable backing byte in memory[] for renderer fetches.
                 memory[addr] = value;
+                ioUnderRam[addr - 0xD000] = value;
                 return;
             }
             if (addr >= 0xD000 && addr < 0xE000)
@@ -160,6 +161,7 @@ namespace _6502CPU
                 {
                     // Color RAM should not disappear when CHAREN/LORAM/HIRAM change.
                     memory[addr] = value;
+                    ioUnderRam[ioIdx] = value;
                     return;
                 }
                 if (Is_IO_Mapped())
@@ -282,8 +284,6 @@ namespace _6502CPU
         public byte ReadVicByte(ulong addr)
         {
             addr &= 0xFFFF;
-            if (addr >= 0xD800 && addr < 0xDC00)
-                return memory[addr];
             if (addr >= 0xD000 && addr < 0xE000)
                 return ioUnderRam[addr - 0xD000];
             return memory[addr];

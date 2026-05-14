@@ -19,6 +19,8 @@ namespace C64
 
         private const int VisibleTop = 51;
         private const int VisibleBottom = 250;
+        private static readonly bool TraceScanRegs =
+            string.Equals(Environment.GetEnvironmentVariable("C64_TRACE_SCANREGS"), "1", StringComparison.Ordinal);
 
         private static readonly int[] C64Palette =
         {
@@ -62,6 +64,9 @@ namespace C64
         private volatile int currentRasterLine;
         private volatile bool isResetting;
         private volatile bool resyncPending;
+        private readonly byte[] probeLastD011 = { 0xFF, 0xFF, 0xFF };
+        private readonly byte[] probeLastD016 = { 0xFF, 0xFF, 0xFF };
+        private readonly byte[] probeLastD018 = { 0xFF, 0xFF, 0xFF };
 
         private Thread? rasterThread;
         private CancellationToken cancellationToken;
@@ -291,28 +296,33 @@ namespace C64
                         }
 
                         int playY = line - VisibleTop;
+
+                        if (TraceScanRegs)
+                        {
+                            int probeIdx = playY switch { 24 => 0, 96 => 1, 168 => 2, _ => -1 };
+                            if (probeIdx >= 0)
+                            {
+                                if (probeLastD011[probeIdx] != d011 || probeLastD016[probeIdx] != d016 || probeLastD018[probeIdx] != d018)
+                                {
+                                    Console.Error.WriteLine($"[SCAN] y={playY:D3} line={line:D3} D011=${d011:X2} D016=${d016:X2} D018=${d018:X2} DD00=${dd00:X2} DD02=${dd02:X2}");
+                                    probeLastD011[probeIdx] = d011;
+                                    probeLastD016[probeIdx] = d016;
+                                    probeLastD018[probeIdx] = d018;
+                                }
+                            }
+                        }
+
                         int fineY = d011 & 0x07;
-                        int visRow = playY / 8;
-                        int visDy = playY & 0x07;
-                        int fetchY = playY;
-
-                        // Narrow fix: lower split area expects fine-Y phased fetches.
-                        // Apply only near the bottom to avoid global Y positioning changes.
-                        if (playY >= ScreenH - 24)
-                            fetchY += fineY;
-
-                        int row = fetchY / 8;
-                        int dy = fetchY & 0x07;
-                        bool matrixVisible = visRow >= 0 && visRow < 25;
-                        if (matrixVisible && visRow == 24)
-                            matrixVisible = visDy <= (7 - fineY);
+                        int scrolledY = playY + fineY;
+                        int row = scrolledY / 8;
+                        int dy = scrolledY & 0x07;
+                        bool matrixVisible = row >= 0 && row < 25 && playY < (ScreenH - fineY);
                         int bank = GetVicBankBase(dd00, dd02);
                         int screenAddr = bank + ((d018 >> 4) & 0x0F) * 0x400;
                         int spritePtrBase = screenAddr + 0x03F8;
                         for (int i = 0; i < 8; i++)
                             spritePtrs[i] = cpu.memory.ReadVicByte((ulong)(spritePtrBase + i));
 
-                        // Snapshot row data every scanline so raster splits never reuse stale data.
                         if (matrixVisible)
                         {
                             for (int col = 0; col < 40; col++)
@@ -391,9 +401,7 @@ namespace C64
 
         private static int GetVicBankBase(byte dd00, byte dd02)
         {
-            // CIA2 port A controls VIC bank on PA0/PA1. Input bits read high.
-            byte effectivePortA = (byte)((dd00 & dd02) | (~dd02 & 0xFF));
-            int sel = effectivePortA & 0x03;
+            int sel = dd00 & 0x03;
             return (3 - sel) * 0x4000;
         }
 
