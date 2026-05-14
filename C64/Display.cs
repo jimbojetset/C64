@@ -51,6 +51,12 @@ namespace C64
         private readonly bool[] fgLine = new bool[ScreenW];
         private readonly byte[] spriteLine = new byte[ScreenW];
 
+        private byte[] cachedScreenRow = new byte[40];
+        private byte[][] cachedBitmapRows = new byte[8][];
+        private int lastCachedRow = -1;
+        private int lastCachedBank = -1;
+        private int lastCachedScreenAddr = -1;
+
         private IntPtr window;
         private IntPtr renderer;
         private IntPtr texture;
@@ -278,13 +284,49 @@ namespace C64
                     if (line >= VisibleTop && line <= VisibleBottom)
                     {
                         int playY = line - VisibleTop;
-                        int row = playY / 8;
-                        byte[] colorRow = new byte[40];
-                        for (int col = 0; col < 40; col++)
+                        int fineY = d011 & 0x07;
+                        int scrolledY = playY + fineY;
+                        int row = scrolledY / 8;
+                        int dy = scrolledY & 0x07;
+                        bool matrixVisible = row >= 0 && row < 25;
+                        int bank = (3 - (dd00 & 0x03)) * 0x4000;
+                        int screenAddr = bank + ((d018 >> 4) & 0x0F) * 0x400;
+
+                        // Cache screen row and bitmap data once per character row.
+                        if (matrixVisible && (row != lastCachedRow || bank != lastCachedBank || screenAddr != lastCachedScreenAddr))
                         {
-                            colorRow[col] = mem[0xD800 + row * 40 + col];
+                            lastCachedRow = row;
+                            lastCachedBank = bank;
+                            lastCachedScreenAddr = screenAddr;
+
+                            // Cache screen memory for this row
+                            for (int col = 0; col < 40; col++)
+                            {
+                                cachedScreenRow[col] = cpu.memory.ReadVicByte((ulong)(screenAddr + row * 40 + col));
+                            }
+
+                            // Cache bitmap data for all 8 scanlines in this character row
+                            int bitmapAddr = bank + (((d018 & 0x08) != 0) ? 0x2000 : 0x0000);
+                            for (int lineDy = 0; lineDy < 8; lineDy++)
+                            {
+                                if (cachedBitmapRows[lineDy] == null)
+                                    cachedBitmapRows[lineDy] = new byte[40 * 8];
+                                for (int col = 0; col < 40; col++)
+                                {
+                                    cachedBitmapRows[lineDy][col * 8] = cpu.memory.ReadVicByte((ulong)(bitmapAddr + (row * 40 + col) * 8 + lineDy));
+                                }
+                            }
                         }
-                        RenderScanline(playY, d011, d016, d018, bg0, bg1, bg2, bg3, dd00, spriteEnable, spriteXExpand, spriteYExpand, spriteMulticolor, spritePriority, spriteXHigh, spriteMc1Color, spriteMc2Color, spriteColors, spriteXPos, spriteYPos, colorRow);
+
+                        byte[] colorRow = new byte[40];
+                        if (matrixVisible)
+                        {
+                            for (int col = 0; col < 40; col++)
+                            {
+                                colorRow[col] = mem[0xD800 + row * 40 + col];
+                            }
+                        }
+                        RenderScanline(playY, d011, d016, d018, bg0, bg1, bg2, bg3, dd00, spriteEnable, spriteXExpand, spriteYExpand, spriteMulticolor, spritePriority, spriteXHigh, spriteMc1Color, spriteMc2Color, spriteColors, spriteXPos, spriteYPos, colorRow, cachedScreenRow, cachedBitmapRows, dy, matrixVisible);
                     }
 
                     line++;
@@ -300,7 +342,7 @@ namespace C64
             }
         }
 
-        private void RenderScanline(int y, byte d011, byte d016, byte d018, byte bg0, byte bg1, byte bg2, byte bg3, byte dd00, byte spriteEnable, byte spriteXExpand, byte spriteYExpand, byte spriteMulticolor, byte spritePriority, byte spriteXHigh, byte spriteMc1Color, byte spriteMc2Color, byte[] spriteColors, byte[] spriteXPos, byte[] spriteYPos, byte[] colorRow)
+        private void RenderScanline(int y, byte d011, byte d016, byte d018, byte bg0, byte bg1, byte bg2, byte bg3, byte dd00, byte spriteEnable, byte spriteXExpand, byte spriteYExpand, byte spriteMulticolor, byte spritePriority, byte spriteXHigh, byte spriteMc1Color, byte spriteMc2Color, byte[] spriteColors, byte[] spriteXPos, byte[] spriteYPos, byte[] colorRow, byte[] cachedScreenRow, byte[][] cachedBitmapRows, int dy, bool matrixVisible)
         {
             int bank = (3 - (dd00 & 0x03)) * 0x4000;
             int screenAddr = bank + ((d018 >> 4) & 0x0F) * 0x400;
@@ -314,23 +356,25 @@ namespace C64
             Array.Clear(fgLine, 0, fgLine.Length);
             Array.Clear(spriteLine, 0, spriteLine.Length);
 
-            if (!screenOn)
-                FillLineSolid(y, bg0);
-            if (!screenOn)
-                FillLineSolid(y, bg0);
+            if (!screenOn || !matrixVisible)
+            {
+                FillLineSolid(y, (byte)(cpu.memory.memory[0xD020] & 0x0F));
+            }
             else if (bmm && mcm)
-                RenderLineMulticolorBitmap(y, screenAddr, bank, d018, bg0);
+                RenderLineMulticolorBitmap(y, bg0, colorRow, cachedScreenRow, cachedBitmapRows, dy);
             else if (bmm)
-                RenderLineHiresBitmap(y, screenAddr, bank, d018);
+                RenderLineHiresBitmap(y, colorRow, cachedScreenRow, cachedBitmapRows, dy);
             else if (ecm)
-                RenderLineExtendedBgText(y, screenAddr, charAddr, bg0, bg1, bg2, bg3, bank, colorRow);
+                RenderLineExtendedBgText(y, charAddr, bg0, bg1, bg2, bg3, bank, colorRow, cachedScreenRow, dy);
             else if (mcm)
-                RenderLineMulticolorText(y, screenAddr, charAddr, bg0, bg1, bg2, bank, colorRow);
+                RenderLineMulticolorText(y, charAddr, bg0, bg1, bg2, bank, colorRow, cachedScreenRow, dy);
             else
-                RenderLineStandardText(y, screenAddr, charAddr, bg0, bank, colorRow);
+                RenderLineStandardText(y, charAddr, bg0, bank, colorRow, cachedScreenRow, dy);
 
             if (screenOn)
                 RenderSpritesScanline(y, screenAddr, bank, spriteEnable, spriteXExpand, spriteYExpand, spriteMulticolor, spritePriority, spriteXHigh, spriteMc1Color, spriteMc2Color, spriteColors, spriteXPos, spriteYPos);
+
+            ApplyInnerBorders(y, d011, d016);
         }
 
         private int VicBankBase()
@@ -375,22 +419,62 @@ namespace C64
             }
         }
 
-        private void RenderLineStandardText(int y, int screenAddr, int charAddr, byte bg, int bank, byte[] colorRow)
+        private void FillLineRange(int y, int xStart, int xEnd, int argb)
+        {
+            if (xStart < 0) xStart = 0;
+            if (xEnd >= ScreenW) xEnd = ScreenW - 1;
+            if (xStart > xEnd) return;
+
+            int p = (y * ScreenW + xStart) * 4;
+            int count = xEnd - xStart + 1;
+            for (int i = 0; i < count; i++)
+            {
+                renderBuf[p] = (byte)argb;
+                renderBuf[p + 1] = (byte)(argb >> 8);
+                renderBuf[p + 2] = (byte)(argb >> 16);
+                renderBuf[p + 3] = 0xFF;
+                p += 4;
+            }
+        }
+
+        private void ApplyInnerBorders(int y, byte d011, byte d016)
+        {
+            byte borderIdx = (byte)(cpu.memory.memory[0xD020] & 0x0F);
+            int borderArgb = C64Palette[borderIdx];
+
+            // RSEL=0 selects 24-row display: 4px inner border at top and bottom.
+            bool row25 = (d011 & 0x08) != 0;
+            int firstVisibleY = row25 ? 0 : 4;
+            int lastVisibleYExclusive = row25 ? ScreenH : (ScreenH - 4);
+
+            if (y < firstVisibleY || y >= lastVisibleYExclusive)
+            {
+                FillLineSolid(y, borderIdx);
+                return;
+            }
+
+            // CSEL=0 selects 38-column display: 7px inner border on each side.
+            bool col40 = (d016 & 0x08) != 0;
+            if (!col40)
+            {
+                FillLineRange(y, 0, 6, borderArgb);
+                FillLineRange(y, ScreenW - 7, ScreenW - 1, borderArgb);
+            }
+        }
+
+        private void RenderLineStandardText(int y, int charAddr, byte bg, int bank, byte[] colorRow, byte[] cachedScreenRow, int dy)
         {
             byte[] mem = cpu.memory.memory;
             ResolveCharSource(charAddr, bank, out byte[] cs, out int cb);
             int bgC = C64Palette[bg];
             bool charFromVicRam = ReferenceEquals(cs, cpu.memory.memory) && cb >= 0xD000 && cb < 0xE000;
 
-            int row = y / 8;
-            int dy = y % 8;
-            int rowBase = row * 40;
             int lineStart = y * ScreenW * 4;
             int fgBase = 0;
 
             for (int col = 0; col < 40; col++)
             {
-                byte code = cpu.memory.ReadVicByte((ulong)(screenAddr + rowBase + col));
+                byte code = cachedScreenRow[col];
                 int fgC = C64Palette[colorRow[col] & 0x0F];
                 int charByteAddr = cb + code * 8 + dy;
                 byte bits = charFromVicRam
@@ -413,7 +497,7 @@ namespace C64
             }
         }
 
-        private void RenderLineMulticolorText(int y, int screenAddr, int charAddr, byte bg0, byte bg1, byte bg2, int bank, byte[] colorRow)
+        private void RenderLineMulticolorText(int y, int charAddr, byte bg0, byte bg1, byte bg2, int bank, byte[] colorRow, byte[] cachedScreenRow, int dy)
         {
             byte[] mem = cpu.memory.memory;
             ResolveCharSource(charAddr, bank, out byte[] cs, out int cb);
@@ -421,15 +505,12 @@ namespace C64
             int[] mcc = { bgC, C64Palette[bg1], C64Palette[bg2], 0 };
             bool charFromVicRam = ReferenceEquals(cs, cpu.memory.memory) && cb >= 0xD000 && cb < 0xE000;
 
-            int row = y / 8;
-            int dy = y % 8;
-            int rowBase = row * 40;
             int lineStart = y * ScreenW * 4;
             int fgBase = 0;
 
             for (int col = 0; col < 40; col++)
             {
-                byte code = cpu.memory.ReadVicByte((ulong)(screenAddr + rowBase + col));
+                byte code = cachedScreenRow[col];
                 byte colRam = (byte)(colorRow[col] & 0x0F);
                 bool cellMc = (colRam & 0x08) != 0;
                 int fgC = C64Palette[colRam & (cellMc ? 0x07 : 0x0F)];
@@ -478,22 +559,19 @@ namespace C64
             }
         }
 
-        private void RenderLineExtendedBgText(int y, int screenAddr, int charAddr, byte bg0, byte bg1, byte bg2, byte bg3, int bank, byte[] colorRow)
+        private void RenderLineExtendedBgText(int y, int charAddr, byte bg0, byte bg1, byte bg2, byte bg3, int bank, byte[] colorRow, byte[] cachedScreenRow, int dy)
         {
             byte[] mem = cpu.memory.memory;
             ResolveCharSource(charAddr, bank, out byte[] cs, out int cb);
             int[] bgC = { C64Palette[bg0], C64Palette[bg1], C64Palette[bg2], C64Palette[bg3] };
             bool charFromVicRam = ReferenceEquals(cs, cpu.memory.memory) && cb >= 0xD000 && cb < 0xE000;
 
-            int row = y / 8;
-            int dy = y % 8;
-            int rowBase = row * 40;
             int lineStart = y * ScreenW * 4;
             int fgBase = 0;
 
             for (int col = 0; col < 40; col++)
             {
-                byte code = cpu.memory.ReadVicByte((ulong)(screenAddr + rowBase + col));
+                byte code = cachedScreenRow[col];
                 int fgC = C64Palette[colorRow[col] & 0x0F];
                 int b = bgC[(code >> 6) & 0x03];
                 int charByteAddr = cb + (code & 0x3F) * 8 + dy;
@@ -517,23 +595,19 @@ namespace C64
             }
         }
 
-        private void RenderLineHiresBitmap(int y, int screenAddr, int bank, byte d018)
+        private void RenderLineHiresBitmap(int y, byte[] colorRow, byte[] cachedScreenRow, byte[][] cachedBitmapRows, int dy)
         {
             byte[] mem = cpu.memory.memory;
-            int bitmapAddr = bank + (((d018 & 0x08) != 0) ? 0x2000 : 0x0000);
 
-            int row = y / 8;
-            int dy = y % 8;
-            int rowBase = row * 40;
             int lineStart = y * ScreenW * 4;
             int fgBase = 0;
 
             for (int col = 0; col < 40; col++)
             {
-                byte clr = cpu.memory.ReadVicByte((ulong)(screenAddr + rowBase + col));
+                byte clr = cachedScreenRow[col];
                 int fgC = C64Palette[(clr >> 4) & 0x0F];
                 int bgC = C64Palette[clr & 0x0F];
-                byte bits = cpu.memory.ReadVicByte((ulong)(bitmapAddr + (rowBase * 8) + col * 8 + dy));
+                byte bits = cachedBitmapRows[dy][col * 8];
                 int p = lineStart + col * 32;
 
                 for (int dx = 0; dx < 8; dx++)
@@ -551,25 +625,21 @@ namespace C64
             }
         }
 
-        private void RenderLineMulticolorBitmap(int y, int screenAddr, int bank, byte d018, byte bg0)
+        private void RenderLineMulticolorBitmap(int y, byte bg0, byte[] colorRow, byte[] cachedScreenRow, byte[][] cachedBitmapRows, int dy)
         {
             byte[] mem = cpu.memory.memory;
-            int bitmapAddr = bank + (((d018 & 0x08) != 0) ? 0x2000 : 0x0000);
             int bgC = C64Palette[bg0];
 
-            int row = y / 8;
-            int dy = y % 8;
-            int rowBase = row * 40;
             int lineStart = y * ScreenW * 4;
             int fgBase = 0;
 
             for (int col = 0; col < 40; col++)
             {
-                byte clr = cpu.memory.ReadVicByte((ulong)(screenAddr + rowBase + col));
+                byte clr = cachedScreenRow[col];
                 int cFg1 = C64Palette[(clr >> 4) & 0x0F];
                 int cFg2 = C64Palette[clr & 0x0F];
-                int cFg3 = C64Palette[mem[0xD800 + rowBase + col] & 0x0F];
-                byte bits = cpu.memory.ReadVicByte((ulong)(bitmapAddr + (rowBase * 8) + col * 8 + dy));
+                int cFg3 = C64Palette[colorRow[col] & 0x0F];
+                byte bits = cachedBitmapRows[dy][col * 8];
                 int p = lineStart + col * 32;
 
                 for (int pair = 0; pair < 4; pair++)
