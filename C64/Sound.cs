@@ -418,12 +418,17 @@ namespace C64
                 double filtered = 0.0, bypass = 0.0;
                 if ((filterRoute & 0x01) != 0) filtered += v0; else bypass += v0;
                 if ((filterRoute & 0x02) != 0) filtered += v1; else bypass += v1;
-                // Compatibility: some games keep $D418 bit7 set while still
-                // expecting short voice-3 SFX to be audible.
+                // Real SID MODE/VOL bit 7 (voice 3 off) only disconnects
+                // voice 3 from the direct output path. If voice 3 is routed
+                // into the filter, it remains audible through filter output.
                 if ((filterRoute & 0x04) != 0)
+                {
                     filtered += v2;
-                else
+                }
+                else if (!voice3Mute)
+                {
                     bypass += v2;
+                }
 
                 double filtOut = StepFilter(filtered, lpOn, bpOn, hpOn);
 

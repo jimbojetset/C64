@@ -195,6 +195,7 @@ namespace C64
             keyboard.OnHardReset = HardReset;
             keyboard.OnLoad = LoadProgram;
             keyboard.OnSave = SaveProgram;
+            keyboard.OnRestoreNmi = TriggerRestoreNmi;
             keyboard.OnDump = () =>
             {
                 Console.Error.WriteLine(BuildDebugStateLine("[DUMP]"));
@@ -1819,6 +1820,11 @@ namespace C64
             keyboard.Reset();
 
             cpu.RequestReset();
+        }
+
+        private void TriggerRestoreNmi()
+        {
+            cpu.InitiateNMI(0xFFFA);
         }
 
         /// <summary>

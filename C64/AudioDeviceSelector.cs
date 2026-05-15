@@ -18,6 +18,8 @@ namespace C64
         private bool _completed;
         private string? _selectedDeviceName;
 
+        private int _currentIndex = 0;  // Default to index 0
+
         public AudioDeviceSelector(List<string> devices)
         {
             _devices = devices;
@@ -63,7 +65,8 @@ namespace C64
                 for (int i = 0; i < _devices.Count; i++)
                 {
                     string label = $"[{i}] {_devices[i]}";
-                    if (ImGui.Selectable(label))
+                    bool isSelected = (i == _currentIndex);
+                    if (ImGui.Selectable(label, isSelected))
                     {
                         Select(i);
                         ImGui.CloseCurrentPopup();
@@ -84,7 +87,18 @@ namespace C64
                         break;
                     }
                 }
+                // Up/Down arrow keys to navigate selection
+                if (ImGui.IsKeyPressed(ImGuiKey.UpArrow, false) && _currentIndex > 0)
+                    _currentIndex--;
+                if (ImGui.IsKeyPressed(ImGuiKey.DownArrow, false) && _currentIndex < _devices.Count - 1)
+                    _currentIndex++;
 
+                // Enter to confirm the current selection
+                if (ImGui.IsKeyPressed(ImGuiKey.Enter, false))
+                {
+                    Select(_currentIndex);
+                    ImGui.CloseCurrentPopup();
+                }
                 ImGui.EndPopup();
             }
         }

@@ -331,7 +331,9 @@ namespace C64
 
             int playY = line - VisibleTop;
             int fineY = d011 & 0x07;
-            int fineYOffset = (fineY + 1) >> 1;
+            // VisibleTop is calibrated around the normal C64 text baseline (yscroll=3).
+            // Apply only the delta from that baseline so we don't wrap/crop the 25x8 matrix.
+            int fineYOffset = fineY - 3;
             int scrolledY = playY - fineYOffset;
             int row = scrolledY >> 3;
             int dy = scrolledY & 0x07;
@@ -806,10 +808,10 @@ namespace C64
             {
                 lock (swapLock)
                 {
-                    // Capture current display buffer and save as BMP
+                    // Capture current display buffer and save as PNG
                     string timestamp = DateTime.Now.ToString("yyyyMMdd_HHmmss_fff");
-                    string filename = $"c64_screenshot_{timestamp}.bmp";
-                    WriteBmp(filename, displayBuf, ScreenW, ScreenH);
+                    string filename = $"c64_screenshot_{timestamp}.png";
+                    WritePng(filename, displayBuf, ScreenW, ScreenH);
                     Console.Error.WriteLine($"[SCREENSHOT] Saved to {filename}");
                 }
             }
@@ -819,52 +821,113 @@ namespace C64
             }
         }
 
-        private static void WriteBmp(string path, byte[] argbData, int width, int height)
+        private static void WritePng(string path, byte[] argbData, int width, int height)
         {
-            // BMP file format: 14-byte file header + 40-byte info header + pixel data
             using (var fs = File.Create(path))
-            using (var bw = new System.IO.BinaryWriter(fs))
             {
-                int pixelDataSize = width * height * 4;
-                int fileSize = 14 + 40 + pixelDataSize;
+                // PNG signature
+                fs.Write(new byte[] { 137, 80, 78, 71, 13, 10, 26, 10 });
 
-                // File header (14 bytes)
-                bw.Write((ushort)0x4D42);              // "BM" signature
-                bw.Write(fileSize);                    // File size
-                bw.Write((uint)0);                     // Reserved
-                bw.Write(14 + 40);                     // Offset to pixel data
+                // IHDR
+                byte[] ihdr = new byte[13];
+                WriteUInt32BigEndian(ihdr, 0, (uint)width);
+                WriteUInt32BigEndian(ihdr, 4, (uint)height);
+                ihdr[8] = 8;  // Bit depth
+                ihdr[9] = 6;  // Color type RGBA
+                ihdr[10] = 0; // Compression method
+                ihdr[11] = 0; // Filter method
+                ihdr[12] = 0; // Interlace method
+                WritePngChunk(fs, "IHDR", ihdr);
 
-                // Info header (40 bytes)
-                bw.Write(40);                          // Header size
-                bw.Write(width);                       // Width
-                bw.Write(height);                      // Height (negative = top-down)
-                bw.Write((ushort)1);                   // Planes
-                bw.Write((ushort)32);                  // Bits per pixel
-                bw.Write((uint)0);                     // Compression (none)
-                bw.Write((uint)pixelDataSize);         // Image size
-                bw.Write(2835);                        // X pixels per meter
-                bw.Write(2835);                        // Y pixels per meter
-                bw.Write((uint)0);                     // Colors used
-                bw.Write((uint)0);                     // Important colors
-
-                // Pixel data: convert ARGB to BGRA (BMP uses BGR)
-                // Note: BMP stores bottom-up, but we'll write top-down by reversing rows
-                for (int y = height - 1; y >= 0; y--)
+                // Prepare raw scanlines: one filter byte (0) + RGBA pixels per row.
+                int stride = width * 4;
+                byte[] raw = new byte[height * (stride + 1)];
+                int dst = 0;
+                for (int y = 0; y < height; y++)
                 {
+                    raw[dst++] = 0; // Filter: None
                     for (int x = 0; x < width; x++)
                     {
                         int idx = (y * width + x) * 4;
-                        byte a = argbData[idx + 3];
-                        byte r = argbData[idx + 2];
-                        byte g = argbData[idx + 1];
-                        byte b = argbData[idx];
-                        bw.Write(b);
-                        bw.Write(g);
-                        bw.Write(r);
-                        bw.Write(a);
+                        // Internal buffer is BGRA; PNG needs RGBA.
+                        raw[dst++] = argbData[idx + 2];
+                        raw[dst++] = argbData[idx + 1];
+                        raw[dst++] = argbData[idx];
+                        raw[dst++] = argbData[idx + 3];
                     }
                 }
+
+                byte[] compressed;
+                using (var compressedMs = new MemoryStream())
+                {
+                    using (var zlib = new System.IO.Compression.ZLibStream(compressedMs, System.IO.Compression.CompressionLevel.SmallestSize, leaveOpen: true))
+                    {
+                        zlib.Write(raw, 0, raw.Length);
+                    }
+
+                    compressed = compressedMs.ToArray();
+                }
+
+                WritePngChunk(fs, "IDAT", compressed);
+                WritePngChunk(fs, "IEND", Array.Empty<byte>());
             }
+        }
+
+        private static void WritePngChunk(Stream output, string type, byte[] data)
+        {
+            byte[] typeBytes = System.Text.Encoding.ASCII.GetBytes(type);
+            if (typeBytes.Length != 4)
+                throw new ArgumentException("PNG chunk type must be 4 bytes.", nameof(type));
+
+            WriteUInt32BigEndian(output, (uint)data.Length);
+            output.Write(typeBytes, 0, typeBytes.Length);
+            output.Write(data, 0, data.Length);
+
+            uint crc = Crc32(typeBytes, data);
+            WriteUInt32BigEndian(output, crc);
+        }
+
+        private static void WriteUInt32BigEndian(byte[] buffer, int offset, uint value)
+        {
+            buffer[offset] = (byte)(value >> 24);
+            buffer[offset + 1] = (byte)(value >> 16);
+            buffer[offset + 2] = (byte)(value >> 8);
+            buffer[offset + 3] = (byte)value;
+        }
+
+        private static void WriteUInt32BigEndian(Stream output, uint value)
+        {
+            output.WriteByte((byte)(value >> 24));
+            output.WriteByte((byte)(value >> 16));
+            output.WriteByte((byte)(value >> 8));
+            output.WriteByte((byte)value);
+        }
+
+        private static uint Crc32(byte[] typeBytes, byte[] data)
+        {
+            uint crc = 0xFFFFFFFF;
+
+            for (int i = 0; i < typeBytes.Length; i++)
+                crc = Crc32Update(crc, typeBytes[i]);
+
+            for (int i = 0; i < data.Length; i++)
+                crc = Crc32Update(crc, data[i]);
+
+            return ~crc;
+        }
+
+        private static uint Crc32Update(uint crc, byte value)
+        {
+            crc ^= value;
+            for (int i = 0; i < 8; i++)
+            {
+                bool lsbSet = (crc & 1) != 0;
+                crc >>= 1;
+                if (lsbSet)
+                    crc ^= 0xEDB88320;
+            }
+
+            return crc;
         }
     }
 }

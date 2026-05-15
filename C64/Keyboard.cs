@@ -22,6 +22,7 @@ namespace C64
         private volatile byte joystick2 = 0xFF;
 
         private bool caseModeUpper = true;
+        private bool shiftLockActive;
 
         // ?? Callbacks wired by C64Emulator after construction ?????????????????
 
@@ -33,6 +34,9 @@ namespace C64
 
         /// <summary>Invoked when Ctrl+S is pressed.</summary>
         public Action? OnSave { get; set; }
+
+        /// <summary>Invoked when RESTORE key equivalent is pressed.</summary>
+        public Action? OnRestoreNmi { get; set; }
 
         /// <summary>Invoked when F11 is pressed (debug dump).</summary>
         public Action? OnDump { get; set; }
@@ -111,6 +115,7 @@ namespace C64
                 keyboardMatrix[i] = 0xFF;
             while (keyQueue.TryDequeue(out _)) { }
             caseModeUpper = true;
+            shiftLockActive = false;
         }
 
         /// <summary>Enqueues a raw PETSCII byte for typed-text injection (e.g. from file load).</summary>
@@ -156,6 +161,21 @@ namespace C64
             if (sym == SDL_Keycode.SDLK_F12)
             {
                 OnHardReset?.Invoke();
+                return false;
+            }
+
+            // C64 SHIFT LOCK on a modern keyboard.
+            if (sym == SDL_Keycode.SDLK_CAPSLOCK)
+            {
+                shiftLockActive = !shiftLockActive;
+                SetMatrixKey(1, 7, shiftLockActive);
+                SetMatrixKey(6, 4, shiftLockActive);
+                return false;
+            }
+
+            if (sym == SDL_Keycode.SDLK_PAGEUP || sym == SDL_Keycode.SDLK_PAUSE)
+            {
+                OnRestoreNmi?.Invoke();
                 return false;
             }
 
@@ -207,7 +227,7 @@ namespace C64
         {
             bool shift = (mod & SDL_Keymod.KMOD_SHIFT) != 0;
             bool ctrl = (mod & SDL_Keymod.KMOD_CTRL) != 0;
-            bool cbm = (mod & SDL_Keymod.KMOD_ALT) != 0;
+            bool cbm = (mod & SDL_Keymod.KMOD_RALT) != 0;
 
             if (shift && cbm && (sym == SDL_Keycode.SDLK_LSHIFT || sym == SDL_Keycode.SDLK_RSHIFT ||
                                  sym == SDL_Keycode.SDLK_LALT || sym == SDL_Keycode.SDLK_RALT))
@@ -295,14 +315,24 @@ namespace C64
                 case SDL_Keycode.SDLK_RCTRL:
                     return; // joystick-only to avoid game keyboard side-effects
                 case SDL_Keycode.SDLK_RALT:
-                    return; // joystick fire only � no keyboard matrix entry
+                    SetMatrixKey(7, 5, pressed); // COMMODORE (C=)
+                    return;
                 case SDL_Keycode.SDLK_RETURN:
                 case SDL_Keycode.SDLK_KP_ENTER:
                     SetMatrixKey(0, 1, pressed);
                     return;
+                case SDL_Keycode.SDLK_ESCAPE:
+                    SetMatrixKey(7, 7, pressed); // RUN/STOP
+                    return;
                 case SDL_Keycode.SDLK_BACKSPACE:
                 case SDL_Keycode.SDLK_DELETE:
                     SetMatrixKey(0, 0, pressed);
+                    return;
+                case SDL_Keycode.SDLK_INSERT:
+                    SetMatrixKey(0, 0, pressed); // INST/DEL shares key
+                    return;
+                case SDL_Keycode.SDLK_HOME:
+                    SetMatrixKey(6, 6, pressed); // CLR/HOME
                     return;
                 case SDL_Keycode.SDLK_SPACE:
                     SetMatrixKey(7, 4, pressed);
@@ -413,7 +443,6 @@ namespace C64
             SDL_Keycode.SDLK_RIGHT => 0x08,
             SDL_Keycode.SDLK_RCTRL => 0x10, // fire
             SDL_Keycode.SDLK_LCTRL => 0x10, // fire (MacBook-friendly)
-            SDL_Keycode.SDLK_RALT => 0x10, // fire alternate
             SDL_Keycode.SDLK_LALT => 0x10, // fire alternate
             _ => 0
         };

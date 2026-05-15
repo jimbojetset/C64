@@ -32,11 +32,8 @@ namespace _6502CPU
         private readonly ConcurrentQueue<ulong> IRQ_Buffer = new ConcurrentQueue<ulong>();
         private readonly ConcurrentQueue<ulong> NMI_Buffer = new ConcurrentQueue<ulong>();
 
-        private int irqPending;
-
         public void InitiateIRQ(ulong value)
         {
-            if (Interlocked.CompareExchange(ref irqPending, 1, 0) != 0) return;
             IRQ_Buffer.Enqueue(value);
         }
 
@@ -101,7 +98,6 @@ namespace _6502CPU
 
             while (IRQ_Buffer.TryDequeue(out _)) { }
             while (NMI_Buffer.TryDequeue(out _)) { }
-            Interlocked.Exchange(ref irqPending, 0);
             Interlocked.Exchange(ref totalCycles, 0);
         }
 
@@ -152,7 +148,6 @@ namespace _6502CPU
                         }
                         while (!registers.Flags.I && IRQ_Buffer.TryDequeue(out ulong irqValue))
                         {
-                            Interlocked.Exchange(ref irqPending, 0);
                             if (irqValue != 0xFFFE)
                                 ProcessIRQ(irqValue);
                             else
