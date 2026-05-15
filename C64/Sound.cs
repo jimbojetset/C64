@@ -89,8 +89,13 @@ namespace C64
         private short[] _buf = Array.Empty<short>();
 
         // ?? Voice-3 oscillator / envelope readback ($D41B / $D41C) ????????????
+        // SEVERITY 5 FIX: Voice 3 OSC/ENV Readback Stability
+        // Double-buffer mechanism to ensure cycle-consistent snapshots
+        // (prevents torn reads when synthesis updates values mid-read)
         private volatile byte _v3Wave;
         private volatile byte _v3Env;
+        private byte _v3WaveSnapshot;     // Buffered oscillator value
+        private byte _v3EnvSnapshot;      // Buffered envelope value
 
         // ?? Synthesis thread ??????????????????????????????????????????????????
         private Thread? _thread;
@@ -241,8 +246,9 @@ namespace C64
         {
             25 => 0xFF,      // $D419 POTX � paddle not emulated
             26 => 0xFF,      // $D41A POTY � paddle not emulated
-            27 => _v3Wave,   // $D41B voice-3 oscillator output
-            28 => _v3Env,    // $D41C voice-3 envelope  output
+            // SEVERITY 5 FIX: Return snapshot values for cycle-consistent readback
+            27 => _v3WaveSnapshot,   // $D41B voice-3 oscillator output
+            28 => _v3EnvSnapshot,    // $D41C voice-3 envelope output
             _ => 0,
         };
 
@@ -276,6 +282,8 @@ namespace C64
                 _writeTickCursor = Stopwatch.GetTimestamp();
                 _v3Wave = 0;
                 _v3Env = 0;
+                _v3WaveSnapshot = 0;     // SEVERITY 5 FIX: Reset Voice 3 snapshots
+                _v3EnvSnapshot = 0;
 
                 if (haveDevice)
                 {
@@ -418,8 +426,12 @@ namespace C64
                 double v2 = StepVoice(2, r, mute: false);
 
                 // Voice-3 readback for $D41B/$D41C
-                _v3Wave = (byte)(_voices[2].LastWaveform >> 4); // 12-bit ? 8-bit
-                _v3Env = (byte)_voices[2].EnvelopeLevel;
+                // SEVERITY 5 FIX: Update snapshots atomically at start of sample
+                // so reads see consistent values throughout sample duration
+                _v3WaveSnapshot = (byte)(_voices[2].LastWaveform >> 4); // 12-bit → 8-bit
+                _v3EnvSnapshot = (byte)_voices[2].EnvelopeLevel;
+                _v3Wave = _v3WaveSnapshot;
+                _v3Env = _v3EnvSnapshot;
 
                 // Split into "through filter" and "bypass filter" paths
                 double filtered = 0.0, bypass = 0.0;

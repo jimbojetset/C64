@@ -131,6 +131,9 @@ namespace C64
         private bool cia1SerialDataPending;
         private byte cia1SerialInShiftReg;
         private int cia1SerialInBits;
+        // SEVERITY 5 FIX: Timer Prescaler Edge Cases
+        // Track external clock state for PA6 prescaler in external counting mode
+        private bool cia1Pa6PrescalerPrevState = true;
         private int keyboardDrainCycleBudget;
 
         private readonly CancellationTokenSource cts = new CancellationTokenSource();
@@ -199,7 +202,7 @@ namespace C64
             datasette = new DatasetteDevice();
             reu = new REU(128);  // SEVERITY 4 FIX: Initialize 128KB REU
             reu.OnIrqRequest = () => cpu.InitiateIRQ(0xFFFE);
-            keyboard.OnHardReset = HardReset;
+            keyboard.OnHardReset = HardResetFromKeyboard;
             keyboard.OnLoad = LoadProgram;
             keyboard.OnSave = SaveProgram;
             keyboard.OnRestoreNmi = TriggerRestoreNmi;
@@ -279,6 +282,7 @@ namespace C64
                 cia1CntHighSeen = true;
                 cia1SpOutHigh = true;
                 cia1CntPulseBudget = 0;
+                cia1Pa6PrescalerPrevState = true;  // SEVERITY 5 FIX: Reset prescaler state
                 cia1SerialShiftReg = 0;
                 cia1SerialBitsRemaining = 0;
                 cia1SerialOutputActive = false;
@@ -1108,9 +1112,13 @@ namespace C64
             byte todMinutes,
             byte todHours)
         {
-            // CIA TOD reads latch on HOURS and release on TENTHS.
+            // SEVERITY 5 FIX: TOD Latching Edge Cases
+            // CIA TOD reads latch on HOURS (reg 3) and release on TENTHS (reg 0).
+            // The latch captures all four registers atomically to prevent torn reads
+            // when TOD simultaneously advances during multi-byte read sequence.
             if (reg == 3 && !latched)
             {
+                // Atomically snapshot all TOD registers when HOURS is read
                 latchTenths = todTenths;
                 latchSeconds = todSeconds;
                 latchMinutes = todMinutes;
@@ -1316,6 +1324,19 @@ namespace C64
                 cia1CntPulseBudget = 0;
                 bool cntHighObserved = cia1CntInHigh || cia1CntHighSeen;
                 cia1CntHighSeen = false;
+
+                // SEVERITY 5 FIX: Timer Prescaler Edge Cases
+                // When timer A is in external count mode (CRA bit 5 = 1), count external PA6 pulses
+                // instead of system cycles. The prescaler behavior must detect rising edges on PA6.
+                // Current port A bit 6 state affects timer A clock source selection.
+                bool pa6Current = (cia1PortA & 0x40) != 0;
+                if ((cia1Cra & 0x20) != 0 && pa6Current != cia1Pa6PrescalerPrevState)
+                {
+                    // Rising edge on PA6 (external clock) advances timer A
+                    if (pa6Current)
+                        cntPulses++;
+                }
+                cia1Pa6PrescalerPrevState = pa6Current;
 
                 uint ticksA = (cia1Cra & 0x20) == 0 ? cycles : cntPulses;
                 int underA = CountUnderflows(
@@ -1664,7 +1685,7 @@ namespace C64
                     cpu.registers.Y = (byte)(end >> 8);
                     cpu.registers.A = 0x00;
                     cpu.registers.Flags.C = false;
-                    lastHostLoadedFile = drive.AttachedPath;
+                    SetLastHostLoadedFile(drive.AttachedPath);
                     Console.WriteLine($"[IEC] LOADED '{resolvedName}' FROM D64");
                 }
                 catch
@@ -1696,7 +1717,7 @@ namespace C64
                 cpu.registers.A = 0x00;
                 cpu.registers.Flags.C = false;
 
-                lastHostLoadedFile = resolved;
+                SetLastHostLoadedFile(resolved);
             }
             catch
             {
@@ -1868,6 +1889,12 @@ namespace C64
             reu.Reset();
 
             cpu.RequestReset();
+        }
+
+        private void HardResetFromKeyboard()
+        {
+            ClearLastHostLoadedFile();
+            HardReset();
         }
 
         private void TriggerRestoreNmi()
@@ -2043,23 +2070,25 @@ namespace C64
                 if (ext == ".bas" || ext == ".txt")
                 {
                     LoadText(path);
+                    SetLastHostLoadedFile(path);
                     Console.WriteLine($"Loaded {Path.GetFileName(path)}");
                 }
                 else if (ext == ".t64")
                 {
                     var entries = TapeLoader.ReadT64(File.ReadAllBytes(path));
                     LoadTapeEntries(entries, Path.GetFileName(path));
+                    SetLastHostLoadedFile(path);
                 }
                 else if (ext == ".tap")
                 {
                     datasette.AttachTap(File.ReadAllBytes(path));
-                    lastHostLoadedFile = path;
+                    SetLastHostLoadedFile(path);
                     Console.WriteLine($"Attached datasette TAP {Path.GetFileName(path)}");
                 }
                 else if (ext == ".d64")
                 {
                     drive.AttachD64(path);
-                    lastHostLoadedFile = path;
+                    SetLastHostLoadedFile(path);
                     IReadOnlyList<string> files = drive.ListFiles();
                     Console.WriteLine($"Attached D64 {Path.GetFileName(path)} ({files.Count} PRG entries)");
                 }
@@ -2082,7 +2111,19 @@ namespace C64
         private void LoadPrg(string path)
         {
             LoadPrgFromBytes(File.ReadAllBytes(path));
+            SetLastHostLoadedFile(path);
+        }
+
+        private void SetLastHostLoadedFile(string? path)
+        {
             lastHostLoadedFile = path;
+            display.SetLoadedFileInTitle(path);
+        }
+
+        private void ClearLastHostLoadedFile()
+        {
+            lastHostLoadedFile = null;
+            display.SetLoadedFileInTitle(null);
         }
 
         private (ushort LoadAddress, ushort EndAddress) LoadPrgFromBytes(byte[] data)

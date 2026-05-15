@@ -59,6 +59,9 @@ namespace C64
         private IntPtr window;
         private IntPtr renderer;
         private IntPtr texture;
+        private const string BaseWindowTitle = "C64 Emulator";
+        private string? loadedFileDisplayName;
+        private bool windowTitleDirty;
 
         private volatile int rasterCompare;
         private volatile int currentRasterLine;
@@ -121,7 +124,7 @@ namespace C64
             int initialW = FrameW * initialScale * 3 / 4;
             int initialH = FrameH * initialScale * 3 / 4;
             window = SDL_CreateWindow(
-                "C64 Emulator",
+                BaseWindowTitle,
                 SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
                 initialW, initialH,
                 SDL_WindowFlags.SDL_WINDOW_SHOWN | SDL_WindowFlags.SDL_WINDOW_RESIZABLE);
@@ -147,12 +150,38 @@ namespace C64
                 throw new Exception($"SDL_CreateTexture failed: {SDL_GetError()}");
 
             charRom = File.ReadAllBytes(Path.Combine("ROMS", "characters.901225-01.bin"));
+            windowTitleDirty = true;
+            ApplyPendingWindowTitle();
         }
 
         public void Start(CancellationToken token) { }
 
+        public void SetLoadedFileInTitle(string? filePath)
+        {
+            string? next = string.IsNullOrWhiteSpace(filePath) ? null : Path.GetFileName(filePath);
+            if (string.Equals(loadedFileDisplayName, next, StringComparison.Ordinal))
+                return;
+
+            loadedFileDisplayName = next;
+            windowTitleDirty = true;
+        }
+
+        private void ApplyPendingWindowTitle()
+        {
+            if (!windowTitleDirty || window == IntPtr.Zero)
+                return;
+
+            string title = string.IsNullOrWhiteSpace(loadedFileDisplayName)
+                ? BaseWindowTitle
+                : BaseWindowTitle + " - " + loadedFileDisplayName;
+            SDL_SetWindowTitle(window, title);
+            windowTitleDirty = false;
+        }
+
         public void RedrawScreen()
         {
+            ApplyPendingWindowTitle();
+
             lock (swapLock)
             {
                 unsafe

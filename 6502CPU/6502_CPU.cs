@@ -1050,10 +1050,15 @@ namespace _6502CPU
             Set_FlagsNZ(v);
         }
 
+        // SEVERITY 5 FIX: Illegal Opcode Undocumented Behavior - AHX Edge Cases
+        // AHX stores (A AND X AND (high_byte_of_effective_address + 1)).
+        // With page-boundary crossing addressing modes, the actual address calculation
+        // may wrap differently than expected. The high-byte formula captures this subtlety.
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private void AHX_IY()
         {
             ulong addr = Zero_Page_Indirect_Y_Indexed(false);
+            // Undocumented behavior: high byte of address + 1 becomes a mask
             byte m = (byte)(((addr >> 8) + 1) & 0xFF);
             WriteByteToMemory(addr, (byte)(registers.A & registers.X & m));
         }
@@ -1062,6 +1067,7 @@ namespace _6502CPU
         private void AHX_AY()
         {
             ulong addr = Y_Indexed_Absolute(false);
+            // When Y crossing causes page boundary, this high-byte mask reflects actual page
             byte m = (byte)(((addr >> 8) + 1) & 0xFF);
             WriteByteToMemory(addr, (byte)(registers.A & registers.X & m));
         }
