@@ -5,6 +5,8 @@ namespace C64
     internal sealed class IecBus
     {
         private readonly VirtualDrive1541 drive;
+        private static readonly bool LowLevelEnabled =
+            string.Equals(Environment.GetEnvironmentVariable("C64_IEC_LOWLEVEL"), "1", StringComparison.Ordinal);
 
         // Open-collector line model; true = released/high, false = driven low.
         private bool hostDataRelease = true;
@@ -21,6 +23,15 @@ namespace C64
         private Queue<byte> talkQueue = new Queue<byte>();
 
         private string? pendingFilename;
+        private bool hostLooseProgramPresent;
+
+        private bool prevHostClockRelease = true;
+        private bool prevHostAtnRelease = true;
+        private int lowLevelDataHoldTicks;
+        private int lowLevelClockHoldTicks;
+        private int lowLevelBytePhase;  // 0=handshake, 1-8=bit0-7, cycles for next byte
+        private byte lowLevelCurrentByte;
+        private int lowLevelResponderFrames;  // Diagnostic counter
 
         public IecBus(VirtualDrive1541 drive)
         {
@@ -37,6 +48,19 @@ namespace C64
             hostDataRelease = !outData || (dd00 & 0x20) != 0;
             hostClockRelease = !outClock || (dd00 & 0x10) != 0;
             hostAtnRelease = !outAtn || (dd00 & 0x08) != 0;
+
+            if (LowLevelEnabled)
+                StepLowLevelResponder();
+        }
+
+        public void SetHostLooseProgramPresent(bool present)
+        {
+            hostLooseProgramPresent = present;
+        }
+
+        public int GetLowLevelResponderFrames()
+        {
+            return lowLevelResponderFrames;
         }
 
         public byte BuildExternalCia2PortA(byte baseExternal)
@@ -49,16 +73,14 @@ namespace C64
             ext = dataHigh ? (byte)(ext | 0x20) : (byte)(ext & ~0x20);
             ext = clockHigh ? (byte)(ext | 0x10) : (byte)(ext & ~0x10);
             ext = atnHigh ? (byte)(ext | 0x08) : (byte)(ext & ~0x08);
-            return ext;
-        }
 
-        public void Listen(byte dev)
-        {
-            currentListener = dev;
-            currentTalker = null;
-            commandBytes.Clear();
-            devDataRelease = true;
-            devClockRelease = true;
+            // Diagnostic: log when device is actively pulling DATA low
+            if (!devDataRelease && Environment.GetEnvironmentVariable("C64_TRACE_LOWLEVEL_DETAIL") == "1")
+            {
+                System.Console.Error.WriteLine($"[LOW-DETAIL] DATA pulled: devDataRelease={devDataRelease}, hostDataRelease={hostDataRelease}, lowLevelDataHoldTicks={lowLevelDataHoldTicks}");
+            }
+
+            return ext;
         }
 
         public void Talk(byte dev)
@@ -151,6 +173,105 @@ namespace C64
                     sb.Append((char)b);
             }
             return sb.ToString().Trim().Trim('"', '\'');
+        }
+
+        private void StepLowLevelResponder()
+        {
+            lowLevelResponderFrames++;  // Count calls to verify responder is active
+            if (currentListener == 8 || currentTalker == 8)
+            {
+                prevHostClockRelease = hostClockRelease;
+                prevHostAtnRelease = hostAtnRelease;
+                return;
+            }
+
+            bool drivePresent = drive.HasMedia || hostLooseProgramPresent;
+            if (!drivePresent)
+            {
+                devDataRelease = true;
+                devClockRelease = true;
+                prevHostClockRelease = hostClockRelease;
+                prevHostAtnRelease = hostAtnRelease;
+                lowLevelDataHoldTicks = 0;
+                lowLevelClockHoldTicks = 0;
+                lowLevelBytePhase = 0;
+                return;
+            }
+
+            bool atnFalling = prevHostAtnRelease && !hostAtnRelease;
+            bool clockRising = !prevHostClockRelease && hostClockRelease;
+
+            // Device presence pulse on ATN assert.
+            if (atnFalling)
+            {
+                lowLevelClockHoldTicks = Math.Max(lowLevelClockHoldTicks, 10);
+                lowLevelBytePhase = 0;
+                lowLevelCurrentByte = 0xA5;  // Dummy byte for byte-phase testing
+            }
+
+            // While ATN is asserted, we're in presence/handshake or byte-phase
+            if (!hostAtnRelease)
+            {
+                // Device keeps DATA pulled low continuously (ready signal while ATN held)
+                lowLevelDataHoldTicks = 10;
+                if (Environment.GetEnvironmentVariable("C64_TRACE_LOWLEVEL_DETAIL") == "1")
+                {
+                    System.Console.Error.WriteLine($"[LOW-DETAIL] Tick {lowLevelResponderFrames}: ATN held, set lowLevelDataHoldTicks=10");
+                }
+
+                // Activate byte-phase immediately on ATN assert
+                if (lowLevelBytePhase == 0)
+                    lowLevelBytePhase = 1;
+
+                // Byte-phase: respond to CLOCK strobes with data bits (ATN still held low)
+                if (lowLevelBytePhase >= 1 && clockRising)
+                {
+                    int bitIndex = (lowLevelBytePhase - 1) % 8;
+                    bool bitValue = ((lowLevelCurrentByte >> bitIndex) & 1) != 0;
+
+                    // Pull DATA low if bit is 0, release if bit is 1
+                    if (!bitValue)
+                        lowLevelDataHoldTicks = Math.Max(lowLevelDataHoldTicks, 5);
+
+                    lowLevelBytePhase++;
+
+                    // After 8 bits, reset for next byte (or signal completion)
+                    if ((lowLevelBytePhase - 1) % 8 == 7)
+                        lowLevelBytePhase = 1;  // Ready for next byte
+                }
+            }
+            else
+            {
+                // ATN released: reset to handshake mode
+                lowLevelBytePhase = 0;
+            }
+
+            if (lowLevelDataHoldTicks > 0)
+            {
+                devDataRelease = false;
+                lowLevelDataHoldTicks--;
+                if (Environment.GetEnvironmentVariable("C64_TRACE_LOWLEVEL_DETAIL") == "1")
+                {
+                    System.Console.Error.WriteLine($"[LOW-DETAIL] Tick {lowLevelResponderFrames}: devDataRelease=false, ticks={lowLevelDataHoldTicks}");
+                }
+            }
+            else
+            {
+                devDataRelease = true;
+            }
+
+            if (lowLevelClockHoldTicks > 0)
+            {
+                devClockRelease = false;
+                lowLevelClockHoldTicks--;
+            }
+            else
+            {
+                devClockRelease = true;
+            }
+
+            prevHostClockRelease = hostClockRelease;
+            prevHostAtnRelease = hostAtnRelease;
         }
     }
 }

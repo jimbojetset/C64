@@ -75,27 +75,37 @@ namespace C64
 
     internal sealed class C64Emulator : IDisposable
     {
+        // --- Constants ---
+        private const int Clock_PAL = 985248;
+        private const int KeyboardDrainPeriodCycles = 5000;
+
+        // --- Non-trace fields restored ---
+        private bool lastDatasetteReadHigh;
+        private readonly System.Threading.CancellationTokenSource cts;
         private readonly _6502_CPU cpu;
-        private const int Clock_PAL = 985_248;   // 6510 @ PAL
-        private const int Clock_NTSC = 1_022_727; // 6510 @ NTSC
-
-        private const int KeyboardDrainPeriodCycles = Clock_PAL / 1000;
-        private static readonly bool VerboseIoTrace = false;
-        private static readonly bool TraceVicStates =
-            string.Equals(Environment.GetEnvironmentVariable("C64_TRACE_VIC"), "1", StringComparison.Ordinal);
-        private static readonly bool TraceTimerBClock =
-            string.Equals(Environment.GetEnvironmentVariable("C64_TRACE_TIMERB"), "1", StringComparison.Ordinal);
-
         private readonly Display display;
         private readonly Keyboard keyboard;
         private readonly Sound sound;
         private readonly VirtualDrive1541 drive;
         private readonly IecBus iecBus;
         private readonly DatasetteDevice datasette;
-        private readonly REU reu;  // SEVERITY 4 FIX: RAM Expansion Unit
-        private bool lastDatasetteReadHigh = true;
-
+        private readonly REU reu;
         private readonly object cia1Lock = new object();
+        private readonly object cia2Lock = new object();
+        private readonly ConcurrentQueue<(string Path, bool AutoRun)> pendingLoads = new();
+        private string? lastHostLoadedFile;
+        private readonly ushort[] recentPcHistory = new ushort[64];
+        private int recentPcWriteIndex;
+        private int recentPcCount;
+        private int kernalLoadTrapCount;
+        private int kernalIecTrapCount;
+        private byte lastFastloadDd00Read = 0xFF;
+        private int fastloadDd00ActivityCount;
+        private bool fastloadNoDriveWarningEmitted;
+        private byte cia1PortA = 0xFF;
+        private byte cia1PortB = 0xFF;
+        private byte cia1Ddra = 0x00;
+        private byte cia1Ddrb = 0x00;
         private ushort cia1TimerALatch = 0xFFFF;
         private ushort cia1TimerACounter = 0xFFFF;
         private ushort cia1TimerBLatch = 0xFFFF;
@@ -131,20 +141,8 @@ namespace C64
         private bool cia1SerialDataPending;
         private byte cia1SerialInShiftReg;
         private int cia1SerialInBits;
-        // SEVERITY 5 FIX: Timer Prescaler Edge Cases
-        // Track external clock state for PA6 prescaler in external counting mode
         private bool cia1Pa6PrescalerPrevState = true;
         private int keyboardDrainCycleBudget;
-
-        private readonly CancellationTokenSource cts = new CancellationTokenSource();
-        private Thread? cpuThread;
-
-        private byte cia1PortA = 0xFF;
-        private byte cia1PortB = 0xFF;
-        private byte cia1Ddra = 0x00;
-        private byte cia1Ddrb = 0x00;
-
-        private readonly object cia2Lock = new object();
         private byte cia2PortA = 0x17;
         private byte cia2Ddra = 0x3F;
         private ushort cia2TimerALatch = 0xFFFF;
@@ -183,12 +181,10 @@ namespace C64
         private byte cia2SerialInShiftReg;
         private int cia2SerialInBits;
 
-        private readonly ConcurrentQueue<(string Path, bool AutoRun)> pendingLoads
-            = new ConcurrentQueue<(string Path, bool AutoRun)>();
-        private string? lastHostLoadedFile;
 
         public C64Emulator()
         {
+            cts = new System.Threading.CancellationTokenSource();
             cpu = new _6502_CPU(Clock_PAL);
             cpu.OnCyclesExecuted = OnCpuCyclesExecuted;
             cpu.memory.LoadBankedROM(Path.Combine("ROMS", "basic.901226-01.bin"), Memory.BankSlot.Basic);
@@ -208,7 +204,6 @@ namespace C64
             keyboard.OnRestoreNmi = TriggerRestoreNmi;
             keyboard.OnDump = () =>
             {
-                Console.Error.WriteLine(BuildDebugStateLine("[DUMP]"));
                 DumpGraphicsStateToFile();
             };
             keyboard.OnScreenshot = () =>
@@ -399,15 +394,7 @@ namespace C64
 
         private bool OnIOWrite(ulong addr, byte value)
         {
-            if (VerboseIoTrace)
-            {
-                byte oldVal = cpu.memory.memory[addr];
-                if (oldVal != value && addr >= 0xD000 && addr <= 0xDFFF)
-                {
-                    Console.Error.WriteLine($"[{cpu.registers.PC:X4}] ${addr:X4} write: ${oldVal:X2} -> ${value:X2}");
-                    Console.Error.Flush();
-                }
-            }
+            // ...existing code...
 
             switch (addr)
             {
@@ -421,8 +408,7 @@ namespace C64
                         byte oldHigh = (byte)(cpu.memory.memory[0xD011] & 0x80);
                         byte newVal = (byte)((value & 0x7F) | oldHigh);
                         cpu.memory.memory[0xD011] = (byte)((value & 0x7F) | oldHigh);
-                        if (VerboseIoTrace && oldD011 != newVal)
-                            Console.Error.WriteLine($"[D011 HANDLER] oldVal=${oldD011:X2}, incoming=${value:X2}, computed=${newVal:X2}, stored");
+                        // ...existing code...
                         return true;
                     }
                 case 0xD016:
@@ -595,6 +581,8 @@ namespace C64
                     cia2PortA = value;
                     cpu.memory.memory[addr] = value;
                     iecBus.UpdateHostCia2PortA(cia2PortA, cia2Ddra);
+                    fastloadDd00ActivityCount++;
+                    MaybeWarnFastloaderWithoutDrive();
                     return true;
                 case 0xDD02:
                     cia2Ddra = (byte)(value & 0x3F);
@@ -770,7 +758,14 @@ namespace C64
                     {
                         byte external = iecBus.BuildExternalCia2PortA(0xFF);
                         byte v = MergeCiaPortRead(cia2PortA, cia2Ddra, external);
-                        return (byte)(v | 0xC0);
+                        byte result = (byte)(v | 0xC0);
+                        fastloadDd00ActivityCount++;
+                        MaybeWarnFastloaderWithoutDrive();
+                        if (result != lastFastloadDd00Read)
+                        {
+                            lastFastloadDd00Read = result;
+                        }
+                        return result;
                     }
                 case 0xDD02:
                     return cia2Ddra;
@@ -1378,11 +1373,6 @@ namespace C64
                     {
                         cia1IcrStatus |= 0x02;
 
-                        if (TraceTimerBClock && tbMode >= 2)
-                        {
-                            Console.Error.WriteLine(
-                                $"[CIA1-TB] mode={tbMode} underA={underA} underB={underB} cntHighSeen={cntHighObserved} CRA=${cia1Cra:X2} CRB=${cia1Crb:X2} TB=${cia1TimerBCounter:X4}");
-                        }
                     }
                 }
 
@@ -1457,11 +1447,6 @@ namespace C64
                     {
                         cia2IcrStatus |= 0x02;
 
-                        if (TraceTimerBClock && tbMode >= 2)
-                        {
-                            Console.Error.WriteLine(
-                                $"[CIA2-TB] mode={tbMode} underA={underA} underB={underB} cntHighSeen={cntHighObserved} CRA=${cia2Cra:X2} CRB=${cia2Crb:X2} TB=${cia2TimerBCounter:X4}");
-                        }
                     }
                 }
 
@@ -1539,6 +1524,8 @@ namespace C64
             if (cycles <= 0 || display.IsResetting)
                 return;
 
+            RecordRecentPc();
+
             TryHandleKernalIecTrap();
             TryHandleKernalLoadTrap();
 
@@ -1593,41 +1580,49 @@ namespace C64
             switch (pc)
             {
                 case 0xFFB1: // LISTEN
-                    iecBus.Listen(cpu.registers.A);
+                    kernalIecTrapCount++;
+                    // iecBus.Listen(cpu.registers.A);
                     cpu.registers.Flags.C = false;
                     ReturnFromKernelTrap();
                     break;
                 case 0xFFB4: // TALK
+                    kernalIecTrapCount++;
                     iecBus.Talk(cpu.registers.A);
                     cpu.registers.Flags.C = false;
                     ReturnFromKernelTrap();
                     break;
                 case 0xFF93: // SECOND
+                    kernalIecTrapCount++;
                     iecBus.Second(cpu.registers.A);
                     cpu.registers.Flags.C = false;
                     ReturnFromKernelTrap();
                     break;
                 case 0xFF96: // TKSA
+                    kernalIecTrapCount++;
                     iecBus.Tksa(cpu.registers.A);
                     cpu.registers.Flags.C = false;
                     ReturnFromKernelTrap();
                     break;
                 case 0xFFA8: // CIOUT
+                    kernalIecTrapCount++;
                     iecBus.Ciout(cpu.registers.A);
                     cpu.registers.Flags.C = false;
                     ReturnFromKernelTrap();
                     break;
                 case 0xFFA5: // ACPTR
+                    kernalIecTrapCount++;
                     cpu.registers.A = iecBus.Acptr();
                     cpu.registers.Flags.C = false;
                     ReturnFromKernelTrap();
                     break;
                 case 0xFFAE: // UNLSN
+                    kernalIecTrapCount++;
                     iecBus.Unlisten();
                     cpu.registers.Flags.C = false;
                     ReturnFromKernelTrap();
                     break;
                 case 0xFFAB: // UNTLK
+                    kernalIecTrapCount++;
                     iecBus.Untalk();
                     cpu.registers.Flags.C = false;
                     ReturnFromKernelTrap();
@@ -1640,6 +1635,8 @@ namespace C64
             // KERNAL LOAD entry. Trap after JSR has transferred PC to $FFD5.
             if (cpu.registers.PC != 0xFFD5)
                 return;
+
+            kernalLoadTrapCount++;
 
             byte[] mem = cpu.memory.memory;
 
@@ -1662,6 +1659,7 @@ namespace C64
             }
 
             byte currentDevice = mem[0x00BA];
+
             if (currentDevice == 8 && drive.HasMedia)
             {
                 byte[] prg;
@@ -1680,13 +1678,27 @@ namespace C64
 
                 try
                 {
-                    (_, ushort end) = LoadPrgFromBytes(prg);
+                    (ushort startAddr, ushort end) = LoadPrgFromBytes(prg);
                     cpu.registers.X = (byte)(end & 0xFF);
                     cpu.registers.Y = (byte)(end >> 8);
                     cpu.registers.A = 0x00;
                     cpu.registers.Flags.C = false;
+                    // Mirror end address into KERNAL/BASIC scratch ($AE/$AF) and
+                    // clear IEC STATUS so BASIC's READST after LOAD sees success.
+                    cpu.memory.WriteByte(0x00AE, (byte)(end & 0xFF));
+                    cpu.memory.WriteByte(0x00AF, (byte)(end >> 8));
+                    cpu.memory.WriteByte(0x0090, 0x00);
                     SetLastHostLoadedFile(drive.AttachedPath);
-                    Console.WriteLine($"[IEC] LOADED '{resolvedName}' FROM D64");
+                    byte pe2D = cpu.memory.ReadByte(0x002D);
+                    byte pe2E = cpu.memory.ReadByte(0x002E);
+                    // Dump first 16 bytes at $0801 and $0810 (BASIC stub + first machine code) so we can verify writes landed.
+                    var sb801 = new System.Text.StringBuilder();
+                    for (int dump = 0; dump < 16; dump++)
+                        sb801.Append(cpu.memory.ReadByte((ulong)(0x0801 + dump)).ToString("X2") + " ");
+                    var sb810 = new System.Text.StringBuilder();
+                    for (int dump = 0; dump < 16; dump++)
+                        sb810.Append(cpu.memory.ReadByte((ulong)(0x0810 + dump)).ToString("X2") + " ");
+                    // Diagnostic output removed
                 }
                 catch
                 {
@@ -1716,6 +1728,9 @@ namespace C64
                 cpu.registers.Y = (byte)(end >> 8);
                 cpu.registers.A = 0x00;
                 cpu.registers.Flags.C = false;
+                cpu.memory.WriteByte(0x00AE, (byte)(end & 0xFF));
+                cpu.memory.WriteByte(0x00AF, (byte)(end >> 8));
+                cpu.memory.WriteByte(0x0090, 0x00);
 
                 SetLastHostLoadedFile(resolved);
             }
@@ -1775,19 +1790,18 @@ namespace C64
 
         public void Run()
         {
+
             string? audioDevice = Sound.PromptForDevice();
             display.Init();
             sound.Init(audioDevice);
 
             var token = cts.Token;
 
-            if (TraceVicStates)
-                _ = Task.Run(() => TraceVicStatesAsync(token));
 
-            cpuThread = new Thread(() =>
+            var cpuThread = new Thread(() =>
             {
                 try { cpu.Run(); }
-                catch (Exception ex) { Console.Error.WriteLine($"CPU thread crashed: {ex}"); }
+                catch (Exception) { }
             })
             {
                 IsBackground = true,
@@ -1861,6 +1875,7 @@ namespace C64
                 if ((int)(now - nextDraw) >= 0)
                 {
                     display.RedrawScreen();
+                    MaybeTraceUnexpectedReadyReturn();
                     nextDraw = now + drawIntervalMs;
                 }
                 else
@@ -1874,7 +1889,7 @@ namespace C64
 
         public void Dispose()
         {
-            try { cts.Cancel(); } catch { }
+            try { cts?.Cancel(); } catch { }
             sound.Dispose();
             display.Dispose();
             reu.Dispose();
@@ -1887,6 +1902,15 @@ namespace C64
 
             keyboard.Reset();
             reu.Reset();
+            iecBus.SetHostLooseProgramPresent(!string.IsNullOrWhiteSpace(lastHostLoadedFile));
+
+            kernalLoadTrapCount = 0;
+            kernalIecTrapCount = 0;
+            recentPcWriteIndex = 0;
+            recentPcCount = 0;
+            lastFastloadDd00Read = 0xFF;
+            fastloadDd00ActivityCount = 0;
+            fastloadNoDriveWarningEmitted = false;
 
             cpu.RequestReset();
         }
@@ -1922,11 +1946,27 @@ namespace C64
             // BASIC tokenises RUN.
             await Task.Delay(50).ConfigureAwait(false);
 
-            await TypePetsciiLikeHumanAsync(
-                new byte[] { (byte)'R', (byte)'U', (byte)'N', 0x0D },
-                minInterKeyMs: 110,
-                maxInterKeyMs: 220,
-                enterExtraMs: 120).ConfigureAwait(false);
+
+            // Disk images don't load any program into memory on attach; the user
+            // must issue LOAD"*",8,1 (or similar) themselves. Skip the auto-RUN.
+            string ext = Path.GetExtension(path).ToLowerInvariant();
+            if (ext == ".d64")
+            {
+                await TypePetsciiLikeHumanAsync(
+                    //new byte[] { (byte)'L', (byte)'O', (byte)'A', (byte)'D', (byte)' ', (byte)'"', (byte)'*', (byte)'"', (byte)',', (byte)'8', 0x0D },
+                    new byte[] { (byte)'L', (byte)'O', (byte)'A', (byte)'D', (byte)' ', (byte)'"', (byte)'*', (byte)'"', (byte)',', (byte)'8', (byte)',', (byte)'1', 0x0D },
+                    minInterKeyMs: 110,
+                    maxInterKeyMs: 220,
+                    enterExtraMs: 120).ConfigureAwait(false);
+                return;
+            }
+
+
+            //await TypePetsciiLikeHumanAsync(
+            //    new byte[] { (byte)'R', (byte)'U', (byte)'N', 0x0D },
+            //    minInterKeyMs: 110,
+            //    maxInterKeyMs: 220,
+            //    enterExtraMs: 120).ConfigureAwait(false);
         }
 
         private async Task TypePetsciiLikeHumanAsync(
@@ -2037,6 +2077,42 @@ namespace C64
             }
         }
 
+        private async Task TracePcAsync(CancellationToken token)
+        {
+            // Periodic dump of CPU + key VIC state so we can diagnose "frozen" games.
+            // Enable with C64_TRACE_PC=1. Prints once every 500 ms.
+            while (!token.IsCancellationRequested)
+            {
+                try { await Task.Delay(500, token).ConfigureAwait(false); }
+                catch (OperationCanceledException) { break; }
+
+                try
+                {
+                    byte[] m = cpu.memory.memory;
+                    ushort pc = (ushort)cpu.registers.PC;
+                    byte a = cpu.registers.A;
+                    byte x = cpu.registers.X;
+                    byte y = cpu.registers.Y;
+                    byte s = cpu.registers.S;
+                    byte p01 = m[0x0001];
+                    byte d011 = m[0xD011];
+                    byte d012 = (byte)(display.CurrentRasterLine & 0xFF);
+                    byte d019 = m[0xD019];
+                    byte d01a = m[0xD01A];
+                    byte fffe_lo = cpu.memory.ReadByte(0xFFFE);
+                    byte fffe_hi = cpu.memory.ReadByte(0xFFFF);
+                    Console.Error.WriteLine(
+                        $"[PC] PC=${pc:X4} A=${a:X2} X=${x:X2} Y=${y:X2} S=${s:X2} I={(cpu.registers.Flags.I ? 1 : 0)} " +
+                        $"$01=${p01:X2} D011=${d011:X2} D012=${d012:X2}(line={display.CurrentRasterLine}) D019=${d019:X2} D01A=${d01a:X2} " +
+                        $"IRQvec=${fffe_hi:X2}{fffe_lo:X2}");
+                }
+                catch (Exception ex)
+                {
+                    Console.Error.WriteLine($"[PC] trace error: {ex.Message}");
+                }
+            }
+        }
+
         private void LoadProgram()
         {
             Task.Run(() =>
@@ -2118,13 +2194,62 @@ namespace C64
         {
             lastHostLoadedFile = path;
             display.SetLoadedFileInTitle(path);
+            iecBus.SetHostLooseProgramPresent(!string.IsNullOrWhiteSpace(path));
         }
 
         private void ClearLastHostLoadedFile()
         {
             lastHostLoadedFile = null;
             display.SetLoadedFileInTitle(null);
+            iecBus.SetHostLooseProgramPresent(false);
         }
+
+        private void RecordRecentPc()
+        {
+            recentPcHistory[recentPcWriteIndex] = (ushort)(cpu.registers.PC & 0xFFFF);
+            recentPcWriteIndex = (recentPcWriteIndex + 1) % recentPcHistory.Length;
+            if (recentPcCount < recentPcHistory.Length)
+                recentPcCount++;
+        }
+
+        private string BuildRecentPcTrace()
+        {
+            if (recentPcCount == 0)
+                return "";
+
+            int start = (recentPcWriteIndex - recentPcCount + recentPcHistory.Length) % recentPcHistory.Length;
+            var sb = new System.Text.StringBuilder(recentPcCount * 6);
+            for (int i = 0; i < recentPcCount; i++)
+            {
+                int idx = (start + i) % recentPcHistory.Length;
+                if (i > 0)
+                    sb.Append(' ');
+                sb.Append('$');
+                sb.Append(recentPcHistory[idx].ToString("X4"));
+            }
+            return sb.ToString();
+        }
+
+        private void MaybeTraceUnexpectedReadyReturn()
+        {
+            // Diagnostic trace removed
+        }
+
+        private void MaybeWarnFastloaderWithoutDrive()
+        {
+            if (fastloadNoDriveWarningEmitted)
+                return;
+            if (drive.HasMedia)
+                return;
+            if (string.IsNullOrWhiteSpace(lastHostLoadedFile))
+                return;
+            if (fastloadDd00ActivityCount < 200)
+                return;
+
+            fastloadNoDriveWarningEmitted = true;
+            // Diagnostic trace removed
+        }
+
 
         private (ushort LoadAddress, ushort EndAddress) LoadPrgFromBytes(byte[] data)
         {

@@ -148,7 +148,6 @@ namespace C64
             SDL_Keycode sym = ke.keysym.sym;
             SDL_Keymod mod = ke.keysym.mod;
             bool ctrl = (mod & SDL_Keymod.KMOD_CTRL) != 0;
-            bool gui = (mod & SDL_Keymod.KMOD_GUI) != 0;
             bool shift = (mod & SDL_Keymod.KMOD_SHIFT) != 0;
             bool alt = (mod & SDL_Keymod.KMOD_ALT) != 0;
 
@@ -179,19 +178,33 @@ namespace C64
                 return false;
             }
 
-            if (sym == SDL_Keycode.SDLK_q && (shift || alt) && !ctrl && !gui)
+            // Let common text-entry punctuation land in the BASIC input buffer
+            // as the character the user typed on the host keyboard.
+            if (!ctrl && !alt && sym == SDL_Keycode.SDLK_8 && shift)
+            {
+                keyQueue.Enqueue((byte)'*');
+                return false;
+            }
+
+            if (!ctrl && !alt && sym == SDL_Keycode.SDLK_KP_MULTIPLY)
+            {
+                keyQueue.Enqueue((byte)'*');
+                return false;
+            }
+
+            if (sym == SDL_Keycode.SDLK_q && (shift || alt) && !ctrl)
             {
                 OnDump?.Invoke();
                 return true;
             }
 
-            if (sym == SDL_Keycode.SDLK_s && shift && !ctrl && !gui && !alt)
+            if (sym == SDL_Keycode.SDLK_s && shift && !ctrl && !alt)
             {
                 OnScreenshot?.Invoke();
                 return false;
             }
 
-            if ((ctrl || gui) && !shift && !alt)
+            if (ctrl && !shift && !alt)
             {
                 switch (sym)
                 {
@@ -262,8 +275,9 @@ namespace C64
                     5 => (byte)'%',
                     6 => (byte)'&',
                     7 => (byte)'\'',
-                    8 => (byte)'(',
-                    9 => (byte)')',
+                    8 => (byte)'*',
+                    9 => (byte)'(',
+                    0 => (byte)')',
                     _ => 0
                 };
             }
@@ -290,7 +304,7 @@ namespace C64
                 SDL_Keycode.SDLK_COMMA => shift ? (byte)'<' : (byte)',',
                 SDL_Keycode.SDLK_SLASH => shift ? (byte)'?' : (byte)'/',
                 SDL_Keycode.SDLK_SEMICOLON => shift ? (byte)':' : (byte)';',
-                SDL_Keycode.SDLK_QUOTE => shift ? (byte)'"' : (byte)'\'',
+                SDL_Keycode.SDLK_QUOTE => shift ? (byte)'@' : (byte)'\'',
                 SDL_Keycode.SDLK_MINUS => shift ? (byte)'_' : (byte)'-',
                 SDL_Keycode.SDLK_EQUALS => shift ? (byte)'+' : (byte)'=',
                 SDL_Keycode.SDLK_LEFTBRACKET => shift ? (byte)'{' : (byte)'[',
@@ -418,8 +432,10 @@ namespace C64
                 case SDL_Keycode.SDLK_COMMA: SetMatrixKey(5, 7, pressed); return;
                 case SDL_Keycode.SDLK_PERIOD: SetMatrixKey(5, 4, pressed); return;
                 case SDL_Keycode.SDLK_SLASH: SetMatrixKey(6, 7, pressed); return;
-                case SDL_Keycode.SDLK_SEMICOLON: SetMatrixKey(6, 2, pressed); return;
-                case SDL_Keycode.SDLK_QUOTE: SetMatrixKey(6, 1, pressed); return;
+                // UK punctuation mode: host ';:' key targets C64 ':' key.
+                case SDL_Keycode.SDLK_SEMICOLON: SetMatrixKey(5, 5, pressed); return;
+                // UK punctuation mode: host ''@' key targets C64 ';' key.
+                case SDL_Keycode.SDLK_QUOTE: SetMatrixKey(6, 2, pressed); return;
                 case SDL_Keycode.SDLK_LEFTBRACKET: SetMatrixKey(6, 0, pressed); return;
                 case SDL_Keycode.SDLK_RIGHTBRACKET: SetMatrixKey(6, 3, pressed); return;
                 case SDL_Keycode.SDLK_BACKSLASH: SetMatrixKey(5, 6, pressed); return;
@@ -442,8 +458,7 @@ namespace C64
             SDL_Keycode.SDLK_LEFT => 0x04,
             SDL_Keycode.SDLK_RIGHT => 0x08,
             SDL_Keycode.SDLK_RCTRL => 0x10, // fire
-            SDL_Keycode.SDLK_LCTRL => 0x10, // fire (MacBook-friendly)
-            SDL_Keycode.SDLK_LALT => 0x10, // fire alternate
+            SDL_Keycode.SDLK_LCTRL => 0x10, // fire
             _ => 0
         };
     }

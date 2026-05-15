@@ -32,14 +32,14 @@ Commodore 64 emulator application using SDL2 for display/input/audio. Key featur
 
 Most-used non-standard key mappings:
 
-| C64 key / function | UK 101 | MacBook |
-|---|---|---|
-| RESTORE (NMI) | `PageUp` or `Pause` | `Fn + Up Arrow` (PageUp) |
-| COMMODORE (`C=`) | `Right Alt` (AltGr) | `Right Option` |
-| RUN/STOP | `Esc` | `Esc` |
-| SHIFT LOCK | `Caps Lock` (toggle) | `Caps Lock` (toggle) |
-| CLR/HOME | `Home` | `Fn + Left Arrow` (Home) |
-| INST/DEL | `Insert` or `Backspace/Delete` | `Fn + Enter` (Insert, model dependent) or `Backspace` |
+| C64 key / function | UK 101 |
+|---|---|
+| RESTORE (NMI) | `PageUp` or `Pause` |
+| COMMODORE (`C=`) | `Right Alt` (AltGr) |
+| RUN/STOP | `Esc` |
+| SHIFT LOCK | `Caps Lock` (toggle) |
+| CLR/HOME | `Home` |
+| INST/DEL | `Insert` or `Backspace/Delete` |
 
 For the complete mapping and notes, see the full table in the keyboard section below.
 
@@ -117,29 +117,31 @@ dotnet run -c Release
 | `Caps Lock` | Toggle C64 SHIFT LOCK |
 | `Page Up` or `Pause` | Trigger RESTORE NMI |
 
-## Keyboard Mapping (C64 vs UK 101 vs MacBook)
+## Keyboard Mapping (C64 vs UK 101)
 
-This emulator maps non-standard C64 keys to practical modern equivalents.
+This emulator is wired for UK keyboard layout and UK punctuation mode.
 
-| C64 key / function | UK 101 keyboard | MacBook keyboard (ISO/ANSI common) | Notes |
-|---|---|---|---|
-| RESTORE (NMI) | `PageUp` or `Pause` | `Fn + Up Arrow` (PageUp) or `Fn + P` (Pause, if available) | Triggers NMI callback (not CIA matrix key) |
-| COMMODORE (`C=`) | `Right Alt` (AltGr) | `Right Option` (or map external Right Alt) | Used as Commodore modifier; required for C=`+1..8` colors |
-| RUN/STOP | `Esc` | `Esc` | Matrix mapped for software polling keyboard matrix |
-| SHIFT LOCK | `Caps Lock` (toggle) | `Caps Lock` (toggle) | Latches C64 shift in matrix |
-| CLR/HOME | `Home` | `Fn + Left Arrow` (Home) | Matrix key + PETSCII home behavior |
-| INST/DEL | `Insert` or `Backspace/Delete` | `Fn + Enter` (Insert on many Mac mappings) or `Backspace` | Shares C64 INST/DEL key behavior |
-| Cursor Left/Right | `Left` / `Right` arrows | `Left` / `Right` arrows | C64 cursor semantics |
-| Cursor Up/Down | `Up` / `Down` arrows | `Up` / `Down` arrows | Also used for joystick mapping in many game profiles |
-| F1/F3/F5/F7 | `F1/F3/F5/F7` | `Fn + F1/F3/F5/F7` (depending on macOS Fn mode) | C64 function pairs are handled in PETSCII layer |
-| Color shortcuts `Ctrl+1..8` | `Left Ctrl + 1..8` | `Left Control + 1..8` | PETSCII control-color codes |
-| Color shortcuts `C=+1..8` | `Right Alt + 1..8` | `Right Option + 1..8` | PETSCII Commodore-color codes |
-| Joystick fire (port 2) | `Right Ctrl` or `Left Ctrl` or `Left Alt` | `Right Control`/`Left Control`/`Left Option` | `Right Alt/Option` is reserved for Commodore key |
+| C64 key / function | UK 101 keyboard | Notes |
+|---|---|---|
+| RESTORE (NMI) | `PageUp` or `Pause` | Triggers NMI callback (not CIA matrix key) |
+| COMMODORE (`C=`) | `Right Alt` (AltGr) | Used as Commodore modifier; required for C=`+1..8` colors |
+| RUN/STOP | `Esc` | Matrix mapped for software polling keyboard matrix |
+| SHIFT LOCK | `Caps Lock` (toggle) | Latches C64 shift in matrix |
+| CLR/HOME | `Home` | Matrix key + PETSCII home behavior |
+| INST/DEL | `Insert` or `Backspace/Delete` | Shares C64 INST/DEL key behavior |
+| Cursor Left/Right | `Left` / `Right` arrows | C64 cursor semantics |
+| Cursor Up/Down | `Up` / `Down` arrows | Also used for joystick mapping in many game profiles |
+| F1/F3/F5/F7 | `F1/F3/F5/F7` | C64 function pairs are handled in PETSCII layer |
+| Color shortcuts `Ctrl+1..8` | `Left Ctrl + 1..8` | PETSCII control-color codes |
+| Color shortcuts `C=+1..8` | `Right Alt + 1..8` | PETSCII Commodore-color codes |
+| Joystick fire (port 2) | `Right Ctrl` or `Left Ctrl` | `Right Alt` is reserved for Commodore key |
+| UK punctuation `;:` | Host `;:` key | Mapped to C64 `:` key matrix position |
+| UK punctuation `'@` | Host `'@` key | Mapped to C64 `;` key matrix position |
 
 Notes:
-- On compact MacBook keyboards, `PageUp`, `Home`, and `Insert` are commonly available via `Fn` combinations and may vary by model/layout.
-- If your host keyboard does not expose a usable right-side Alt/Option key, remap COMMODORE in `C64/Keyboard.cs`.
-- A focused UK mapping reference also exists at `C64/KEYMAP_UK101.md`.
+- `Right Alt` (AltGr) is reserved for the C64 COMMODORE key.
+- The emulator does not use macOS `Command` key aliases for control shortcuts.
+- If your host keyboard lacks a usable right-side Alt key, remap COMMODORE in `C64/Keyboard.cs`.
 
 ## References
 

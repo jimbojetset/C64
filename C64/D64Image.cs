@@ -37,11 +37,19 @@ namespace C64
             var files = new List<string>();
             foreach (var e in ReadDirectoryEntries())
             {
-                if (e.FileType != 0x82) // PRG
+                if (!IsLoadableFileType(e.FileType)) // Accept PRG-like files
                     continue;
                 files.Add(e.Name);
             }
             return files;
+        }
+
+        private static bool IsLoadableFileType(byte fileType)
+        {
+            // Low 3 bits of the type byte are the CBM file type: 2 = PRG.
+            // The 0x80 bit indicates the file was properly closed; many cracked
+            // disks leave it clear, so accept both 0x82 and 0x02.
+            return (fileType & 0x07) == 0x02;
         }
 
         public bool TryLoadPrg(string? requestedName, out byte[] prgBytes, out string resolvedName)
@@ -54,15 +62,22 @@ namespace C64
                 return false;
 
             DirectoryEntry? selected = null;
-            if (string.IsNullOrWhiteSpace(requestedName))
+            string wanted = NormalizeName(requestedName ?? string.Empty);
+            if (string.IsNullOrEmpty(wanted) || wanted == "*")
             {
-                selected = entries.FirstOrDefault(e => e.FileType == 0x82);
+                // CBM DOS: empty name or "*" means the first file on the disk.
+                selected = entries.FirstOrDefault(e => IsLoadableFileType(e.FileType));
+            }
+            else if (wanted.EndsWith("*", StringComparison.Ordinal))
+            {
+                // Prefix wildcard, e.g. LOAD"ELI*",8
+                string prefix = wanted.Substring(0, wanted.Length - 1);
+                selected = entries.FirstOrDefault(e => IsLoadableFileType(e.FileType) && NormalizeName(e.Name).StartsWith(prefix, StringComparison.Ordinal));
             }
             else
             {
-                string wanted = NormalizeName(requestedName);
-                selected = entries.FirstOrDefault(e => e.FileType == 0x82 && NormalizeName(e.Name) == wanted);
-                selected ??= entries.FirstOrDefault(e => e.FileType == 0x82 && NormalizeName(e.Name).StartsWith(wanted, StringComparison.Ordinal));
+                selected = entries.FirstOrDefault(e => IsLoadableFileType(e.FileType) && NormalizeName(e.Name) == wanted);
+                selected ??= entries.FirstOrDefault(e => IsLoadableFileType(e.FileType) && NormalizeName(e.Name).StartsWith(wanted, StringComparison.Ordinal));
             }
 
             if (selected is null)
@@ -120,7 +135,11 @@ namespace C64
 
                 for (int i = 0; i < 8; i++)
                 {
-                    int eoff = off + 2 + i * 32;
+                    // Each directory entry is 32 bytes long starting at sector offset i*32.
+                    // The first two bytes of entry 0 hold the chain link (already read above);
+                    // the remaining entries' first two bytes are unused. File type lives at
+                    // entry offset 2 regardless.
+                    int eoff = off + i * 32;
                     byte fileType = (byte)(raw[eoff + 2] & 0x87);
                     if (fileType == 0)
                         continue;
