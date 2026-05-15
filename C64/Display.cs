@@ -1,5 +1,4 @@
-﻿using System.Diagnostics;
-using _6502CPU;
+﻿using _6502CPU;
 using static SDL2.SDL;
 
 namespace C64
@@ -15,7 +14,7 @@ namespace C64
         private const int FramePlayfieldY = (FrameH - ScreenH) / 2;
 
         private const int PalRasterLines = 312;
-        private const int RasterLinesPerSecond = PalRasterLines * 50;
+        private const int CyclesPerRasterLine = 63;
 
         private const int VisibleTop = 51;
         private const int VisibleBottom = 250;
@@ -63,9 +62,8 @@ namespace C64
         private volatile int currentRasterLine;
         private volatile bool isResetting;
         private volatile bool resyncPending;
-
-        private Thread? rasterThread;
-        private CancellationToken cancellationToken;
+        private int rasterCycleInLine;
+        private readonly bool[] busStealMask = new bool[CyclesPerRasterLine];
 
         public Display(_6502_CPU cpu)
         {
@@ -92,8 +90,10 @@ namespace C64
         public void EndReset()
         {
             currentRasterLine = 0;
+            rasterCycleInLine = 0;
             rasterCompare = 0;
             resyncPending = true;
+            Array.Clear(busStealMask, 0, busStealMask.Length);
             ClearFramebuffers();
             // Invalidate bitmap row cache on reset
             for (int i = 0; i < cachedBitmapRowNum.Length; i++)
@@ -147,17 +147,7 @@ namespace C64
             charRom = File.ReadAllBytes(Path.Combine("ROMS", "characters.901225-01.bin"));
         }
 
-        public void Start(CancellationToken token)
-        {
-            cancellationToken = token;
-            rasterThread = new Thread(RasterLoop)
-            {
-                IsBackground = true,
-                Name = "VIC-II raster",
-                Priority = ThreadPriority.AboveNormal,
-            };
-            rasterThread.Start();
-        }
+        public void Start(CancellationToken token) { }
 
         public void RedrawScreen()
         {
@@ -189,169 +179,194 @@ namespace C64
 
         public void Dispose()
         {
-            try { rasterThread?.Join(200); } catch { }
-
             if (texture != IntPtr.Zero) { SDL_DestroyTexture(texture); texture = IntPtr.Zero; }
             if (renderer != IntPtr.Zero) { SDL_DestroyRenderer(renderer); renderer = IntPtr.Zero; }
             if (window != IntPtr.Zero) { SDL_DestroyWindow(window); window = IntPtr.Zero; }
         }
 
-        private void RasterLoop()
+        public uint StepCycles(uint cycles, bool accountBusSteal)
         {
-            int line = 0;
-            long lineNumerator = 0;
-            long lastCpuCycles = cpu.TotalCycles;
-            byte[] mem = cpu.memory.memory;
-            while (!cancellationToken.IsCancellationRequested)
+            if (cycles == 0 || isResetting)
+                return 0;
+
+            if (resyncPending)
             {
-                if (isResetting)
+                currentRasterLine = 0;
+                rasterCycleInLine = 0;
+                resyncPending = false;
+                Array.Clear(busStealMask, 0, busStealMask.Length);
+            }
+
+            byte[] mem = cpu.memory.memory;
+            uint stolen = 0;
+            while (cycles > 0)
+            {
+                if (rasterCycleInLine == 0)
                 {
-                    line = 0;
-                    currentRasterLine = 0;
-                    lineNumerator = 0;
-                    lastCpuCycles = cpu.TotalCycles;
-                    Thread.SpinWait(32);
-                    continue;
+                    ProcessRasterLine(currentRasterLine, mem);
+                    if (accountBusSteal)
+                        BuildLineBusStealMask(currentRasterLine, mem, busStealMask);
+                    else
+                        Array.Clear(busStealMask, 0, busStealMask.Length);
                 }
 
-                if (resyncPending)
+                int toBoundary = CyclesPerRasterLine - rasterCycleInLine;
+                int step = (int)Math.Min(cycles, (uint)toBoundary);
+
+                if (accountBusSteal)
                 {
-                    line = 0;
-                    currentRasterLine = 0;
-                    resyncPending = false;
-                    lineNumerator = 0;
-                    lastCpuCycles = cpu.TotalCycles;
-                }
-
-                long nowCpuCycles = cpu.TotalCycles;
-                long deltaCpuCycles = nowCpuCycles - lastCpuCycles;
-                if (deltaCpuCycles < 0)
-                {
-                    // CPU reset rewinds TotalCycles to 0; resync baseline immediately
-                    // so the raster thread does not stall on a negative delta.
-                    lastCpuCycles = nowCpuCycles;
-                    lineNumerator = 0;
-                    continue;
-                }
-                if (deltaCpuCycles == 0)
-                {
-                    Thread.SpinWait(16);
-                    continue;
-                }
-                lastCpuCycles = nowCpuCycles;
-
-                lineNumerator += deltaCpuCycles * RasterLinesPerSecond;
-                long linesToAdvance = lineNumerator / cpu.ClockFrequency;
-                lineNumerator %= cpu.ClockFrequency;
-
-                if (linesToAdvance <= 0)
-                    continue;
-
-                if (linesToAdvance > PalRasterLines * 4)
-                    linesToAdvance = PalRasterLines * 4;
-
-                while (linesToAdvance-- > 0)
-                {
-                    currentRasterLine = line;
-
-                    if (line == rasterCompare)
+                    int start = rasterCycleInLine;
+                    int end = start + step;
+                    for (int c = start; c < end; c++)
                     {
-                        bool rasterIrqEnabled = (mem[0xD01A] & 0x01) != 0;
-                        if (rasterIrqEnabled)
-                        {
-                            mem[0xD019] = (byte)(mem[0xD019] | 0x81);
-                            cpu.InitiateIRQ(0xFFFE);
-                        }
+                        if (busStealMask[c])
+                            stolen++;
                     }
+                }
 
-                    if (line >= VisibleTop && line <= VisibleBottom)
+                rasterCycleInLine += step;
+                cycles -= (uint)step;
+
+                if (rasterCycleInLine >= CyclesPerRasterLine)
+                {
+                    rasterCycleInLine = 0;
+                    int nextLine = currentRasterLine + 1;
+                    if (nextLine >= PalRasterLines)
                     {
-                        byte d011 = mem[0xD011];
-                        byte d016 = mem[0xD016];
-                        byte d018 = mem[0xD018];
-                        byte bg0 = (byte)(mem[0xD021] & 0x0F);
-                        byte bg1 = (byte)(mem[0xD022] & 0x0F);
-                        byte bg2 = (byte)(mem[0xD023] & 0x0F);
-                        byte bg3 = (byte)(mem[0xD024] & 0x0F);
-                        byte dd00 = mem[0xDD00];
-                        byte dd02 = mem[0xDD02];
-                        byte spriteEnable = mem[0xD015];
-                        byte spriteXExpand = mem[0xD01D];
-                        byte spriteYExpand = mem[0xD017];
-                        byte spriteMulticolor = mem[0xD01C];
-                        byte spritePriority = mem[0xD01B];
-                        byte spriteXHigh = mem[0xD010];
-                        byte spriteMc1Color = mem[0xD025];
-                        byte spriteMc2Color = mem[0xD026];
-                        byte[] spriteColors = new byte[8];
-                        byte[] spriteXPos = new byte[8];
-                        byte[] spriteYPos = new byte[8];
-                        byte[] spritePtrs = new byte[8];
-                        for (int i = 0; i < 8; i++)
-                        {
-                            spriteColors[i] = mem[0xD027 + i];
-                            spriteXPos[i] = mem[0xD000 + i * 2];
-                            spriteYPos[i] = mem[0xD001 + i * 2];
-                        }
-
-                        int playY = line - VisibleTop;
-                        int fineY = d011 & 0x07;
-                        int fineYOffset = (fineY + 1) >> 1;
-                        int scrolledY = playY - fineYOffset;
-                        int row = scrolledY >> 3;
-                        int dy = scrolledY & 0x07;
-                        int wrappedRow = ((row % 25) + 25) % 25;
-
-                        bool matrixVisible = playY >= 0 && playY < ScreenH;
-                        int bank = GetVicBankBase(dd00, dd02);
-                        int screenAddr = bank + ((d018 >> 4) & 0x0F) * 0x400;
-                        int spritePtrBase = screenAddr + 0x03F8;
-                        for (int i = 0; i < 8; i++)
-                            spritePtrs[i] = cpu.memory.ReadVicByte((ulong)(spritePtrBase + i));
-
-                        // Snapshot row data every scanline so raster splits never reuse stale data.
-                        if (matrixVisible)
-                        {
-                            for (int col = 0; col < 40; col++)
-                            {
-                                cachedScreenRow[col] = cpu.memory.ReadVicByte((ulong)(screenAddr + wrappedRow * 40 + col));
-                            }
-
-                            int bitmapAddr = bank + (((d018 & 0x08) != 0) ? 0x2000 : 0x0000);
-                            if (cachedBitmapRows[dy] == null || cachedBitmapRowNum[dy] != wrappedRow)
-                            {
-                                cachedBitmapRows[dy] = new byte[40];  // One byte per column for this dy
-                                cachedBitmapRowNum[dy] = wrappedRow;
-                            }
-                            for (int col = 0; col < 40; col++)
-                            {
-                                cachedBitmapRows[dy][col] = cpu.memory.ReadVicByte((ulong)(bitmapAddr + (wrappedRow * 40 + col) * 8 + dy));
-                            }
-                        }
-
-                        byte[] colorRow = new byte[40];
-                        if (matrixVisible)
-                        {
-                            for (int col = 0; col < 40; col++)
-                            {
-                                colorRow[col] = mem[0xD800 + wrappedRow * 40 + col];
-                            }
-                        }
-
-                        RenderScanline(playY, d011, d016, d018, bg0, bg1, bg2, bg3, dd00, dd02, spriteEnable, spriteXExpand, spriteYExpand, spriteMulticolor, spritePriority, spriteXHigh, spriteMc1Color, spriteMc2Color, spriteColors, spriteXPos, spriteYPos, spritePtrs, colorRow, cachedScreenRow, cachedBitmapRows, dy, matrixVisible);
-                    }
-
-                    line++;
-                    if (line >= PalRasterLines)
-                    {
-                        line = 0;
+                        nextLine = 0;
                         lock (swapLock)
                         {
                             (renderBuf, displayBuf) = (displayBuf, renderBuf);
                         }
                     }
+
+                    currentRasterLine = nextLine;
                 }
             }
+
+            return stolen;
+        }
+
+        private static void BuildLineBusStealMask(int line, byte[] mem, bool[] mask)
+        {
+            Array.Clear(mask, 0, mask.Length);
+
+            bool den = (mem[0xD011] & 0x10) != 0;
+            int yScroll = mem[0xD011] & 0x07;
+            bool badline = den && line >= 0x30 && line <= 0xF7 && ((line & 0x07) == yScroll);
+            if (badline)
+            {
+                // VIC steals CPU slots during character matrix fetch on badlines.
+                // Approximate C15..C54 (40 cycles) on PAL 63-cycle lines.
+                for (int c = 15; c <= 54 && c < mask.Length; c++)
+                    mask[c] = true;
+            }
+
+            byte spriteEnable = mem[0xD015];
+            byte spriteYExpand = mem[0xD017];
+            for (int s = 0; s < 8; s++)
+            {
+                int spriteBit = 1 << s;
+                if ((spriteEnable & spriteBit) == 0)
+                    continue;
+
+                int spriteY = mem[0xD001 + s * 2];
+                int height = (spriteYExpand & spriteBit) != 0 ? 42 : 21;
+                if (line >= spriteY && line < spriteY + height)
+                {
+                    // Approximate 2 DMA cycles per active sprite line.
+                    // Assign each sprite a stable pair near the latter half
+                    // of the raster line so overlap is represented naturally.
+                    int baseCycle = 40 + (s * 2);
+                    if (baseCycle < mask.Length)
+                        mask[baseCycle] = true;
+                    if (baseCycle + 1 < mask.Length)
+                        mask[baseCycle + 1] = true;
+                }
+            }
+        }
+
+        private void ProcessRasterLine(int line, byte[] mem)
+        {
+            if (line == rasterCompare)
+            {
+                bool rasterIrqEnabled = (mem[0xD01A] & 0x01) != 0;
+                if (rasterIrqEnabled)
+                {
+                    mem[0xD019] = (byte)(mem[0xD019] | 0x81);
+                    cpu.InitiateIRQ(0xFFFE);
+                }
+            }
+
+            if (line < VisibleTop || line > VisibleBottom)
+                return;
+
+            byte d011 = mem[0xD011];
+            byte d016 = mem[0xD016];
+            byte d018 = mem[0xD018];
+            byte bg0 = (byte)(mem[0xD021] & 0x0F);
+            byte bg1 = (byte)(mem[0xD022] & 0x0F);
+            byte bg2 = (byte)(mem[0xD023] & 0x0F);
+            byte bg3 = (byte)(mem[0xD024] & 0x0F);
+            byte dd00 = mem[0xDD00];
+            byte dd02 = mem[0xDD02];
+            byte spriteEnable = mem[0xD015];
+            byte spriteXExpand = mem[0xD01D];
+            byte spriteYExpand = mem[0xD017];
+            byte spriteMulticolor = mem[0xD01C];
+            byte spritePriority = mem[0xD01B];
+            byte spriteXHigh = mem[0xD010];
+            byte spriteMc1Color = mem[0xD025];
+            byte spriteMc2Color = mem[0xD026];
+            byte[] spriteColors = new byte[8];
+            byte[] spriteXPos = new byte[8];
+            byte[] spriteYPos = new byte[8];
+            byte[] spritePtrs = new byte[8];
+            for (int i = 0; i < 8; i++)
+            {
+                spriteColors[i] = mem[0xD027 + i];
+                spriteXPos[i] = mem[0xD000 + i * 2];
+                spriteYPos[i] = mem[0xD001 + i * 2];
+            }
+
+            int playY = line - VisibleTop;
+            int fineY = d011 & 0x07;
+            int fineYOffset = (fineY + 1) >> 1;
+            int scrolledY = playY - fineYOffset;
+            int row = scrolledY >> 3;
+            int dy = scrolledY & 0x07;
+            int wrappedRow = ((row % 25) + 25) % 25;
+
+            bool matrixVisible = playY >= 0 && playY < ScreenH;
+            int bank = GetVicBankBase(dd00, dd02);
+            int screenAddr = bank + ((d018 >> 4) & 0x0F) * 0x400;
+            int spritePtrBase = screenAddr + 0x03F8;
+            for (int i = 0; i < 8; i++)
+                spritePtrs[i] = cpu.memory.ReadVicByte((ulong)(spritePtrBase + i));
+
+            if (matrixVisible)
+            {
+                for (int col = 0; col < 40; col++)
+                    cachedScreenRow[col] = cpu.memory.ReadVicByte((ulong)(screenAddr + wrappedRow * 40 + col));
+
+                int bitmapAddr = bank + (((d018 & 0x08) != 0) ? 0x2000 : 0x0000);
+                if (cachedBitmapRows[dy] == null || cachedBitmapRowNum[dy] != wrappedRow)
+                {
+                    cachedBitmapRows[dy] = new byte[40];
+                    cachedBitmapRowNum[dy] = wrappedRow;
+                }
+                for (int col = 0; col < 40; col++)
+                    cachedBitmapRows[dy][col] = cpu.memory.ReadVicByte((ulong)(bitmapAddr + (wrappedRow * 40 + col) * 8 + dy));
+            }
+
+            byte[] colorRow = new byte[40];
+            if (matrixVisible)
+            {
+                for (int col = 0; col < 40; col++)
+                    colorRow[col] = mem[0xD800 + wrappedRow * 40 + col];
+            }
+
+            RenderScanline(playY, d011, d016, d018, bg0, bg1, bg2, bg3, dd00, dd02, spriteEnable, spriteXExpand, spriteYExpand, spriteMulticolor, spritePriority, spriteXHigh, spriteMc1Color, spriteMc2Color, spriteColors, spriteXPos, spriteYPos, spritePtrs, colorRow, cachedScreenRow, cachedBitmapRows, dy, matrixVisible);
         }
 
         private void RenderScanline(int y, byte d011, byte d016, byte d018, byte bg0, byte bg1, byte bg2, byte bg3, byte dd00, byte dd02, byte spriteEnable, byte spriteXExpand, byte spriteYExpand, byte spriteMulticolor, byte spritePriority, byte spriteXHigh, byte spriteMc1Color, byte spriteMc2Color, byte[] spriteColors, byte[] spriteXPos, byte[] spriteYPos, byte[] spritePtrs, byte[] colorRow, byte[] cachedScreenRow, byte[][] cachedBitmapRows, int dy, bool matrixVisible)

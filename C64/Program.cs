@@ -79,7 +79,7 @@ namespace C64
         private const int Clock_PAL = 985_248;   // 6510 @ PAL
         private const int Clock_NTSC = 1_022_727; // 6510 @ NTSC
 
-        private const int CiaTickHz = 1000;
+        private const int KeyboardDrainPeriodCycles = Clock_PAL / 1000;
         private static readonly bool VerboseIoTrace = false;
         private static readonly bool TraceVicStates =
             string.Equals(Environment.GetEnvironmentVariable("C64_TRACE_VIC"), "1", StringComparison.Ordinal);
@@ -87,6 +87,10 @@ namespace C64
         private readonly Display display;
         private readonly Keyboard keyboard;
         private readonly Sound sound;
+        private readonly VirtualDrive1541 drive;
+        private readonly IecBus iecBus;
+        private readonly DatasetteDevice datasette;
+        private bool lastDatasetteReadHigh = true;
 
         private readonly object cia1Lock = new object();
         private ushort cia1TimerALatch = 0xFFFF;
@@ -95,14 +99,38 @@ namespace C64
         private ushort cia1TimerBCounter = 0xFFFF;
         private byte cia1Cra;
         private byte cia1Crb;
+        private byte cia1Sdr;
         private byte cia1IcrMask;
         private byte cia1IcrStatus;
-
-        private bool cia1CntHigh = true;
+        private byte cia1TodTenths;
+        private byte cia1TodSeconds;
+        private byte cia1TodMinutes;
+        private byte cia1TodHours;
+        private byte cia1AlarmTenths;
+        private byte cia1AlarmSeconds;
+        private byte cia1AlarmMinutes;
+        private byte cia1AlarmHours;
+        private byte cia1TodLatchTenths;
+        private byte cia1TodLatchSeconds;
+        private byte cia1TodLatchMinutes;
+        private byte cia1TodLatchHours;
+        private bool cia1TodLatched;
+        private long cia1TodNumerator;
+        private int cia1TodSubTicks;
+        private bool cia1SpInHigh = true;
+        private bool cia1CntInHigh = true;
+        private bool cia1SpOutHigh = true;
+        private uint cia1CntPulseBudget;
+        private byte cia1SerialShiftReg;
+        private int cia1SerialBitsRemaining;
+        private bool cia1SerialOutputActive;
+        private bool cia1SerialDataPending;
+        private byte cia1SerialInShiftReg;
+        private int cia1SerialInBits;
+        private int keyboardDrainCycleBudget;
 
         private readonly CancellationTokenSource cts = new CancellationTokenSource();
         private Thread? cpuThread;
-        private Thread? irqThread;
 
         private byte cia1PortA = 0xFF;
         private byte cia1PortB = 0xFF;
@@ -118,19 +146,52 @@ namespace C64
         private ushort cia2TimerBCounter = 0xFFFF;
         private byte cia2Cra;
         private byte cia2Crb;
+        private byte cia2Sdr;
+        private byte cia2IcrMask;
+        private byte cia2IcrStatus;
+        private byte cia2TodTenths;
+        private byte cia2TodSeconds;
+        private byte cia2TodMinutes;
+        private byte cia2TodHours;
+        private byte cia2AlarmTenths;
+        private byte cia2AlarmSeconds;
+        private byte cia2AlarmMinutes;
+        private byte cia2AlarmHours;
+        private byte cia2TodLatchTenths;
+        private byte cia2TodLatchSeconds;
+        private byte cia2TodLatchMinutes;
+        private byte cia2TodLatchHours;
+        private bool cia2TodLatched;
+        private long cia2TodNumerator;
+        private int cia2TodSubTicks;
+        private bool cia2SpInHigh = true;
+        private bool cia2CntInHigh = true;
+        private bool cia2SpOutHigh = true;
+        private uint cia2CntPulseBudget;
+        private byte cia2SerialShiftReg;
+        private int cia2SerialBitsRemaining;
+        private bool cia2SerialOutputActive;
+        private bool cia2SerialDataPending;
+        private byte cia2SerialInShiftReg;
+        private int cia2SerialInBits;
 
         private readonly ConcurrentQueue<(string Path, bool AutoRun)> pendingLoads
             = new ConcurrentQueue<(string Path, bool AutoRun)>();
+        private string? lastHostLoadedFile;
 
         public C64Emulator()
         {
             cpu = new _6502_CPU(Clock_PAL);
+            cpu.OnCyclesExecuted = OnCpuCyclesExecuted;
             cpu.memory.LoadBankedROM(Path.Combine("ROMS", "basic.901226-01.bin"), Memory.BankSlot.Basic);
             cpu.memory.LoadBankedROM(Path.Combine("ROMS", "kernal.901227-03.bin"), Memory.BankSlot.Kernal);
             cpu.memory.LoadBankedROM(Path.Combine("ROMS", "characters.901225-01.bin"), Memory.BankSlot.Char);
             display = new Display(cpu);
             keyboard = new Keyboard(cpu);
             sound = new Sound();
+            drive = new VirtualDrive1541();
+            iecBus = new IecBus(drive);
+            datasette = new DatasetteDevice();
             keyboard.OnHardReset = HardReset;
             keyboard.OnLoad = LoadProgram;
             keyboard.OnSave = SaveProgram;
@@ -187,14 +248,45 @@ namespace C64
                 cia1TimerBCounter = 0xFFFF;
                 cia1Cra = 0x00;
                 cia1Crb = 0x00;
+                cia1Sdr = 0x00;
                 cia1IcrMask = 0x00;
                 cia1IcrStatus = 0x00;
-                cia1CntHigh = true;
+                cia1TodTenths = 0x00;
+                cia1TodSeconds = 0x00;
+                cia1TodMinutes = 0x00;
+                cia1TodHours = 0x01;
+                cia1AlarmTenths = 0x00;
+                cia1AlarmSeconds = 0x00;
+                cia1AlarmMinutes = 0x00;
+                cia1AlarmHours = 0x01;
+                cia1TodLatchTenths = 0x00;
+                cia1TodLatchSeconds = 0x00;
+                cia1TodLatchMinutes = 0x00;
+                cia1TodLatchHours = 0x01;
+                cia1TodLatched = false;
+                cia1TodNumerator = 0;
+                cia1TodSubTicks = 0;
+                cia1SpInHigh = true;
+                cia1CntInHigh = true;
+                cia1SpOutHigh = true;
+                cia1CntPulseBudget = 0;
+                cia1SerialShiftReg = 0;
+                cia1SerialBitsRemaining = 0;
+                cia1SerialOutputActive = false;
+                cia1SerialDataPending = false;
+                cia1SerialInShiftReg = 0;
+                cia1SerialInBits = 0;
             }
+            keyboardDrainCycleBudget = 0;
             m[0xDC04] = 0xFF;
             m[0xDC05] = 0xFF;
             m[0xDC06] = 0xFF;
             m[0xDC07] = 0xFF;
+            m[0xDC08] = cia1TodTenths;
+            m[0xDC09] = cia1TodSeconds;
+            m[0xDC0A] = cia1TodMinutes;
+            m[0xDC0B] = cia1TodHours;
+            m[0xDC0C] = cia1Sdr;
             m[0xDC0D] = 0x00;
             m[0xDC0E] = 0x00;
             m[0xDC0F] = 0x00;
@@ -210,6 +302,7 @@ namespace C64
             cia2Ddra = 0x3F;
             m[0xDD00] = 0x17;
             m[0xDD02] = 0x3F;
+            iecBus.UpdateHostCia2PortA(m[0xDD00], m[0xDD02]);
             lock (cia2Lock)
             {
                 cia2TimerALatch = 0xFFFF;
@@ -218,11 +311,45 @@ namespace C64
                 cia2TimerBCounter = 0xFFFF;
                 cia2Cra = 0x00;
                 cia2Crb = 0x00;
+                cia2Sdr = 0x00;
+                cia2IcrMask = 0x00;
+                cia2IcrStatus = 0x00;
+                cia2TodTenths = 0x00;
+                cia2TodSeconds = 0x00;
+                cia2TodMinutes = 0x00;
+                cia2TodHours = 0x01;
+                cia2AlarmTenths = 0x00;
+                cia2AlarmSeconds = 0x00;
+                cia2AlarmMinutes = 0x00;
+                cia2AlarmHours = 0x01;
+                cia2TodLatchTenths = 0x00;
+                cia2TodLatchSeconds = 0x00;
+                cia2TodLatchMinutes = 0x00;
+                cia2TodLatchHours = 0x01;
+                cia2TodLatched = false;
+                cia2TodNumerator = 0;
+                cia2TodSubTicks = 0;
+                cia2SpInHigh = true;
+                cia2CntInHigh = true;
+                cia2SpOutHigh = true;
+                cia2CntPulseBudget = 0;
+                cia2SerialShiftReg = 0;
+                cia2SerialBitsRemaining = 0;
+                cia2SerialOutputActive = false;
+                cia2SerialDataPending = false;
+                cia2SerialInShiftReg = 0;
+                cia2SerialInBits = 0;
             }
             m[0xDD04] = 0xFF;
             m[0xDD05] = 0xFF;
             m[0xDD06] = 0xFF;
             m[0xDD07] = 0xFF;
+            m[0xDD08] = cia2TodTenths;
+            m[0xDD09] = cia2TodSeconds;
+            m[0xDD0A] = cia2TodMinutes;
+            m[0xDD0B] = cia2TodHours;
+            m[0xDD0C] = cia2Sdr;
+            m[0xDD0D] = 0x00;
             m[0xDD0E] = 0x00;
             m[0xDD0F] = 0x00;
 
@@ -251,6 +378,7 @@ namespace C64
 
             keyboard.Reset();
             sound.Reset();
+            lastDatasetteReadHigh = datasette.ReadHigh;
 
             display.EndReset();
         }
@@ -391,6 +519,32 @@ namespace C64
                         }
                         return true;
                     }
+                case 0xDC08:
+                case 0xDC09:
+                case 0xDC0A:
+                case 0xDC0B:
+                    {
+                        lock (cia1Lock)
+                        {
+                            bool writeAlarm = (cia1Crb & 0x80) != 0;
+                            WriteCiaTodRegister((int)(addr - 0xDC08), value, writeAlarm,
+                                ref cia1TodTenths, ref cia1TodSeconds, ref cia1TodMinutes, ref cia1TodHours,
+                                ref cia1AlarmTenths, ref cia1AlarmSeconds, ref cia1AlarmMinutes, ref cia1AlarmHours,
+                                ref cia1TodLatched);
+                            UpdateCiaTodMirror(0xDC08, cia1TodTenths, cia1TodSeconds, cia1TodMinutes, cia1TodHours);
+                        }
+                        return true;
+                    }
+                case 0xDC0C:
+                    {
+                        lock (cia1Lock)
+                        {
+                            cia1Sdr = value;
+                            cia1SerialDataPending = true;
+                            cpu.memory.memory[0xDC0C] = cia1Sdr;
+                        }
+                        return true;
+                    }
                 case 0xDC0F:
                     {
                         lock (cia1Lock)
@@ -426,10 +580,12 @@ namespace C64
                 case 0xDD00:
                     cia2PortA = value;
                     cpu.memory.memory[addr] = value;
+                    iecBus.UpdateHostCia2PortA(cia2PortA, cia2Ddra);
                     return true;
                 case 0xDD02:
                     cia2Ddra = (byte)(value & 0x3F);
                     cpu.memory.memory[addr] = value;
+                    iecBus.UpdateHostCia2PortA(cia2PortA, cia2Ddra);
                     return true;
                 case 0xDD04:
                     lock (cia2Lock)
@@ -471,6 +627,61 @@ namespace C64
                         cpu.memory.memory[0xDD07] = (byte)(cia2TimerBCounter >> 8);
                     }
                     return true;
+                case 0xDD08:
+                case 0xDD09:
+                case 0xDD0A:
+                case 0xDD0B:
+                    {
+                        lock (cia2Lock)
+                        {
+                            bool writeAlarm = (cia2Crb & 0x80) != 0;
+                            WriteCiaTodRegister((int)(addr - 0xDD08), value, writeAlarm,
+                                ref cia2TodTenths, ref cia2TodSeconds, ref cia2TodMinutes, ref cia2TodHours,
+                                ref cia2AlarmTenths, ref cia2AlarmSeconds, ref cia2AlarmMinutes, ref cia2AlarmHours,
+                                ref cia2TodLatched);
+                            UpdateCiaTodMirror(0xDD08, cia2TodTenths, cia2TodSeconds, cia2TodMinutes, cia2TodHours);
+                        }
+                        return true;
+                    }
+                case 0xDD0C:
+                    {
+                        lock (cia2Lock)
+                        {
+                            cia2Sdr = value;
+                            cia2SerialDataPending = true;
+                            cpu.memory.memory[0xDD0C] = cia2Sdr;
+                        }
+                        return true;
+                    }
+                case 0xDD0D:
+                    {
+                        bool raiseNmi = false;
+                        lock (cia2Lock)
+                        {
+                            byte bits = (byte)(value & 0x1F);
+                            if ((value & 0x80) != 0)
+                                cia2IcrMask |= bits;
+                            else
+                                cia2IcrMask = (byte)(cia2IcrMask & ~bits);
+
+                            if ((cia2IcrStatus & cia2IcrMask & 0x1F) != 0)
+                            {
+                                bool wasSet = (cia2IcrStatus & 0x80) != 0;
+                                cia2IcrStatus |= 0x80;
+                                if (!wasSet) raiseNmi = true;
+                            }
+                            else
+                            {
+                                cia2IcrStatus = (byte)(cia2IcrStatus & 0x7F);
+                            }
+
+                            cpu.memory.memory[0xDD0D] = cia2IcrStatus;
+                        }
+
+                        if (raiseNmi)
+                            cpu.InitiateNMI(0xFFFA);
+                        return true;
+                    }
                 case 0xDD0E:
                     lock (cia2Lock)
                     {
@@ -535,7 +746,7 @@ namespace C64
                     return cia1Ddrb;
                 case 0xDD00:
                     {
-                        byte external = 0xFF;
+                        byte external = iecBus.BuildExternalCia2PortA(0xFF);
                         byte v = MergeCiaPortRead(cia2PortA, cia2Ddra, external);
                         return (byte)(v | 0xC0);
                     }
@@ -553,6 +764,18 @@ namespace C64
                 case 0xDD07:
                     lock (cia2Lock)
                         return (byte)(cia2TimerBCounter >> 8);
+                case 0xDD08:
+                case 0xDD09:
+                case 0xDD0A:
+                case 0xDD0B:
+                    lock (cia2Lock)
+                        return ReadCiaTodRegister((int)(addr - 0xDD08),
+                            ref cia2TodLatched,
+                            ref cia2TodLatchTenths, ref cia2TodLatchSeconds, ref cia2TodLatchMinutes, ref cia2TodLatchHours,
+                            cia2TodTenths, cia2TodSeconds, cia2TodMinutes, cia2TodHours);
+                case 0xDD0C:
+                    lock (cia2Lock)
+                        return cia2Sdr;
                 case 0xDD0E:
                     return cia2Cra;
                 case 0xDD0F:
@@ -577,6 +800,22 @@ namespace C64
                         lock (cia1Lock)
                             return (byte)(cia1TimerBCounter >> 8);
                     }
+                case 0xDC08:
+                case 0xDC09:
+                case 0xDC0A:
+                case 0xDC0B:
+                    {
+                        lock (cia1Lock)
+                            return ReadCiaTodRegister((int)(addr - 0xDC08),
+                                ref cia1TodLatched,
+                                ref cia1TodLatchTenths, ref cia1TodLatchSeconds, ref cia1TodLatchMinutes, ref cia1TodLatchHours,
+                                cia1TodTenths, cia1TodSeconds, cia1TodMinutes, cia1TodHours);
+                    }
+                case 0xDC0C:
+                    {
+                        lock (cia1Lock)
+                            return cia1Sdr;
+                    }
                 case 0xD01E:
                 case 0xD01F:
                     {
@@ -596,9 +835,13 @@ namespace C64
                     }
                 case 0xDD0D:
                     {
-                        byte value = cpu.memory.memory[addr];
-                        cpu.memory.memory[addr] = 0;
-                        return value;
+                        lock (cia2Lock)
+                        {
+                            byte value = cia2IcrStatus;
+                            cia2IcrStatus = 0x00;
+                            cpu.memory.memory[0xDD0D] = 0x00;
+                            return value;
+                        }
                     }
                 default:
                     // SID readback registers are mirrored across $D400-$D7FF.
@@ -628,6 +871,384 @@ namespace C64
             byte outBits = (byte)((latch & external) & ddr);
             byte inBits = (byte)(external & (byte)~ddr);
             return (byte)(outBits | inBits);
+        }
+
+        // External serial/user-port model entry points. CNT rising edges drive
+        // serial input mode and timer CNT-counting modes.
+        public void SetCia1SerialPins(bool spHigh, bool cntHigh)
+        {
+            bool raiseIrq = false;
+            lock (cia1Lock)
+            {
+                bool prevCnt = cia1CntInHigh;
+                cia1SpInHigh = spHigh;
+                cia1CntInHigh = cntHigh;
+                if (!prevCnt && cntHigh)
+                    OnCia1CntRisingEdge(ref raiseIrq);
+            }
+
+            if (raiseIrq)
+                cpu.InitiateIRQ(0xFFFE);
+        }
+
+        public void SetCia2SerialPins(bool spHigh, bool cntHigh)
+        {
+            bool raiseNmi = false;
+            lock (cia2Lock)
+            {
+                bool prevCnt = cia2CntInHigh;
+                cia2SpInHigh = spHigh;
+                cia2CntInHigh = cntHigh;
+                if (!prevCnt && cntHigh)
+                    OnCia2CntRisingEdge(ref raiseNmi);
+            }
+
+            if (raiseNmi)
+                cpu.InitiateNMI(0xFFFA);
+        }
+
+        private void OnCia1CntRisingEdge(ref bool raiseIrq)
+        {
+            cia1CntPulseBudget++;
+
+            // Serial input mode (CRA bit 6 clear): sample SP on CNT rising edges.
+            if ((cia1Cra & 0x40) != 0)
+                return;
+
+            cia1SerialInShiftReg = (byte)((cia1SerialInShiftReg << 1) | (cia1SpInHigh ? 1 : 0));
+            cia1SerialInBits++;
+            if (cia1SerialInBits < 8)
+                return;
+
+            cia1SerialInBits = 0;
+            cia1Sdr = cia1SerialInShiftReg;
+            cpu.memory.memory[0xDC0C] = cia1Sdr;
+
+            cia1IcrStatus |= 0x08;
+            if ((cia1IcrMask & 0x08) != 0)
+            {
+                bool wasSet = (cia1IcrStatus & 0x80) != 0;
+                cia1IcrStatus |= 0x80;
+                if (!wasSet)
+                    raiseIrq = true;
+            }
+        }
+
+        private void OnCia2CntRisingEdge(ref bool raiseNmi)
+        {
+            cia2CntPulseBudget++;
+
+            if ((cia2Cra & 0x40) != 0)
+                return;
+
+            cia2SerialInShiftReg = (byte)((cia2SerialInShiftReg << 1) | (cia2SpInHigh ? 1 : 0));
+            cia2SerialInBits++;
+            if (cia2SerialInBits < 8)
+                return;
+
+            cia2SerialInBits = 0;
+            cia2Sdr = cia2SerialInShiftReg;
+            cpu.memory.memory[0xDD0C] = cia2Sdr;
+
+            cia2IcrStatus |= 0x08;
+            if ((cia2IcrMask & 0x08) != 0)
+            {
+                bool wasSet = (cia2IcrStatus & 0x80) != 0;
+                cia2IcrStatus |= 0x80;
+                if (!wasSet)
+                    raiseNmi = true;
+            }
+        }
+
+        private void StepCia1SerialOutputFromTimerA(int underflows, ref bool raiseIrq)
+        {
+            if (underflows <= 0 || (cia1Cra & 0x40) == 0)
+                return;
+
+            for (int i = 0; i < underflows; i++)
+            {
+                if (!cia1SerialOutputActive)
+                {
+                    if (!cia1SerialDataPending)
+                        break;
+                    cia1SerialShiftReg = cia1Sdr;
+                    cia1SerialBitsRemaining = 8;
+                    cia1SerialOutputActive = true;
+                    cia1SerialDataPending = false;
+                }
+
+                cia1SpOutHigh = (cia1SerialShiftReg & 0x80) != 0;
+                cia1SerialShiftReg <<= 1;
+                cia1SerialBitsRemaining--;
+
+                // Output mode drives CNT pulses for each shifted bit.
+                if (cia1SerialBitsRemaining == 0)
+                {
+                    cia1SerialOutputActive = false;
+                    cia1IcrStatus |= 0x08;
+                    if ((cia1IcrMask & 0x08) != 0)
+                    {
+                        bool wasSet = (cia1IcrStatus & 0x80) != 0;
+                        cia1IcrStatus |= 0x80;
+                        if (!wasSet)
+                            raiseIrq = true;
+                    }
+                }
+            }
+        }
+
+        private void StepCia2SerialOutputFromTimerA(int underflows, ref bool raiseNmi)
+        {
+            if (underflows <= 0 || (cia2Cra & 0x40) == 0)
+                return;
+
+            for (int i = 0; i < underflows; i++)
+            {
+                if (!cia2SerialOutputActive)
+                {
+                    if (!cia2SerialDataPending)
+                        break;
+                    cia2SerialShiftReg = cia2Sdr;
+                    cia2SerialBitsRemaining = 8;
+                    cia2SerialOutputActive = true;
+                    cia2SerialDataPending = false;
+                }
+
+                cia2SpOutHigh = (cia2SerialShiftReg & 0x80) != 0;
+                cia2SerialShiftReg <<= 1;
+                cia2SerialBitsRemaining--;
+
+                if (cia2SerialBitsRemaining == 0)
+                {
+                    cia2SerialOutputActive = false;
+                    cia2IcrStatus |= 0x08;
+                    if ((cia2IcrMask & 0x08) != 0)
+                    {
+                        bool wasSet = (cia2IcrStatus & 0x80) != 0;
+                        cia2IcrStatus |= 0x80;
+                        if (!wasSet)
+                            raiseNmi = true;
+                    }
+                }
+            }
+        }
+
+        private static void WriteCiaTodRegister(
+            int reg,
+            byte value,
+            bool writeAlarm,
+            ref byte todTenths,
+            ref byte todSeconds,
+            ref byte todMinutes,
+            ref byte todHours,
+            ref byte alarmTenths,
+            ref byte alarmSeconds,
+            ref byte alarmMinutes,
+            ref byte alarmHours,
+            ref bool todLatched)
+        {
+            if (writeAlarm)
+            {
+                switch (reg)
+                {
+                    case 0: alarmTenths = (byte)(value & 0x0F); break;
+                    case 1: alarmSeconds = (byte)(value & 0x7F); break;
+                    case 2: alarmMinutes = (byte)(value & 0x7F); break;
+                    case 3: alarmHours = (byte)(value & 0x9F); break;
+                }
+            }
+            else
+            {
+                switch (reg)
+                {
+                    case 0: todTenths = (byte)(value & 0x0F); break;
+                    case 1: todSeconds = (byte)(value & 0x7F); break;
+                    case 2: todMinutes = (byte)(value & 0x7F); break;
+                    case 3: todHours = (byte)(value & 0x9F); break;
+                }
+                todLatched = false;
+            }
+        }
+
+        private static byte ReadCiaTodRegister(
+            int reg,
+            ref bool latched,
+            ref byte latchTenths,
+            ref byte latchSeconds,
+            ref byte latchMinutes,
+            ref byte latchHours,
+            byte todTenths,
+            byte todSeconds,
+            byte todMinutes,
+            byte todHours)
+        {
+            // CIA TOD reads latch on HOURS and release on TENTHS.
+            if (reg == 3 && !latched)
+            {
+                latchTenths = todTenths;
+                latchSeconds = todSeconds;
+                latchMinutes = todMinutes;
+                latchHours = todHours;
+                latched = true;
+            }
+
+            byte value = reg switch
+            {
+                0 => latched ? latchTenths : todTenths,
+                1 => latched ? latchSeconds : todSeconds,
+                2 => latched ? latchMinutes : todMinutes,
+                3 => latched ? latchHours : todHours,
+                _ => 0
+            };
+
+            if (reg == 0)
+                latched = false;
+
+            return value;
+        }
+
+        private void UpdateCiaTodMirror(int baseAddr, byte tenths, byte seconds, byte minutes, byte hours)
+        {
+            cpu.memory.memory[baseAddr] = tenths;
+            cpu.memory.memory[baseAddr + 1] = seconds;
+            cpu.memory.memory[baseAddr + 2] = minutes;
+            cpu.memory.memory[baseAddr + 3] = hours;
+        }
+
+        private static int BcdToInt(byte v)
+        {
+            return ((v >> 4) & 0x0F) * 10 + (v & 0x0F);
+        }
+
+        private static byte IntToBcd(int v)
+        {
+            return (byte)(((v / 10) << 4) | (v % 10));
+        }
+
+        private static void IncrementTod(ref byte tenths, ref byte seconds, ref byte minutes, ref byte hours)
+        {
+            int t = (tenths & 0x0F) + 1;
+            if (t < 10)
+            {
+                tenths = (byte)t;
+                return;
+            }
+
+            tenths = 0x00;
+
+            int s = BcdToInt((byte)(seconds & 0x7F)) + 1;
+            if (s < 60)
+            {
+                seconds = IntToBcd(s);
+                return;
+            }
+
+            seconds = 0x00;
+
+            int m = BcdToInt((byte)(minutes & 0x7F)) + 1;
+            if (m < 60)
+            {
+                minutes = IntToBcd(m);
+                return;
+            }
+
+            minutes = 0x00;
+
+            int h = BcdToInt((byte)(hours & 0x1F));
+            if (h < 1 || h > 12) h = 12;
+            bool pm = (hours & 0x80) != 0;
+
+            if (h == 11)
+            {
+                h = 12;
+                pm = !pm;
+            }
+            else if (h == 12)
+            {
+                h = 1;
+            }
+            else
+            {
+                h++;
+            }
+
+            hours = (byte)((pm ? 0x80 : 0x00) | (IntToBcd(h) & 0x1F));
+        }
+
+        private void StepCia1Tod(uint cycles, ref bool raiseIrq)
+        {
+            int todHz = (cia1Cra & 0x80) != 0 ? 50 : 60;
+            int subTicksPerTenth = todHz / 10;
+
+            cia1TodNumerator += (long)cycles * todHz;
+            while (cia1TodNumerator >= Clock_PAL)
+            {
+                cia1TodNumerator -= Clock_PAL;
+                cia1TodSubTicks++;
+                if (cia1TodSubTicks >= subTicksPerTenth)
+                {
+                    cia1TodSubTicks = 0;
+                    IncrementTod(ref cia1TodTenths, ref cia1TodSeconds, ref cia1TodMinutes, ref cia1TodHours);
+
+                    bool alarmMatch =
+                        (cia1TodTenths & 0x0F) == (cia1AlarmTenths & 0x0F) &&
+                        (cia1TodSeconds & 0x7F) == (cia1AlarmSeconds & 0x7F) &&
+                        (cia1TodMinutes & 0x7F) == (cia1AlarmMinutes & 0x7F) &&
+                        (cia1TodHours & 0x9F) == (cia1AlarmHours & 0x9F);
+
+                    if (alarmMatch)
+                    {
+                        cia1IcrStatus |= 0x04;
+                        if ((cia1IcrMask & 0x04) != 0)
+                        {
+                            bool wasSet = (cia1IcrStatus & 0x80) != 0;
+                            cia1IcrStatus |= 0x80;
+                            if (!wasSet)
+                                raiseIrq = true;
+                        }
+                    }
+                }
+            }
+
+            UpdateCiaTodMirror(0xDC08, cia1TodTenths, cia1TodSeconds, cia1TodMinutes, cia1TodHours);
+        }
+
+        private void StepCia2Tod(uint cycles, ref bool raiseNmi)
+        {
+            int todHz = (cia2Cra & 0x80) != 0 ? 50 : 60;
+            int subTicksPerTenth = todHz / 10;
+
+            cia2TodNumerator += (long)cycles * todHz;
+            while (cia2TodNumerator >= Clock_PAL)
+            {
+                cia2TodNumerator -= Clock_PAL;
+                cia2TodSubTicks++;
+                if (cia2TodSubTicks >= subTicksPerTenth)
+                {
+                    cia2TodSubTicks = 0;
+                    IncrementTod(ref cia2TodTenths, ref cia2TodSeconds, ref cia2TodMinutes, ref cia2TodHours);
+
+                    bool alarmMatch =
+                        (cia2TodTenths & 0x0F) == (cia2AlarmTenths & 0x0F) &&
+                        (cia2TodSeconds & 0x7F) == (cia2AlarmSeconds & 0x7F) &&
+                        (cia2TodMinutes & 0x7F) == (cia2AlarmMinutes & 0x7F) &&
+                        (cia2TodHours & 0x9F) == (cia2AlarmHours & 0x9F);
+
+                    if (alarmMatch)
+                    {
+                        cia2IcrStatus |= 0x04;
+                        if ((cia2IcrMask & 0x04) != 0)
+                        {
+                            bool wasSet = (cia2IcrStatus & 0x80) != 0;
+                            cia2IcrStatus |= 0x80;
+                            if (!wasSet)
+                                raiseNmi = true;
+                        }
+                    }
+                }
+            }
+
+            UpdateCiaTodMirror(0xDD08, cia2TodTenths, cia2TodSeconds, cia2TodMinutes, cia2TodHours);
         }
 
 
@@ -664,7 +1285,8 @@ namespace C64
             bool raiseIrq = false;
             lock (cia1Lock)
             {
-                uint cntPulses = cia1CntHigh ? cycles : 0u;
+                uint cntPulses = cia1CntPulseBudget;
+                cia1CntPulseBudget = 0;
 
                 uint ticksA = (cia1Cra & 0x20) == 0 ? cycles : cntPulses;
                 int underA = CountUnderflows(
@@ -683,6 +1305,8 @@ namespace C64
                     }
                 }
 
+                StepCia1SerialOutputFromTimerA(underA, ref raiseIrq);
+
                 if ((cia1Cra & 0x40) != 0 && underA > 0)
                     cntPulses = Math.Max(cntPulses, (uint)underA);
 
@@ -695,7 +1319,7 @@ namespace C64
                 else if (tbMode == 2)
                     ticksB = (uint)underA;
                 else
-                    ticksB = cia1CntHigh ? (uint)underA : 0;
+                    ticksB = cia1CntInHigh ? (uint)underA : 0;
 
                 if (ticksB > 0)
                 {
@@ -721,10 +1345,13 @@ namespace C64
                 else
                     cia1IcrStatus = (byte)(cia1IcrStatus & 0x7F);
 
+                StepCia1Tod(cycles, ref raiseIrq);
+
                 cpu.memory.memory[0xDC04] = (byte)(cia1TimerACounter & 0xFF);
                 cpu.memory.memory[0xDC05] = (byte)(cia1TimerACounter >> 8);
                 cpu.memory.memory[0xDC06] = (byte)(cia1TimerBCounter & 0xFF);
                 cpu.memory.memory[0xDC07] = (byte)(cia1TimerBCounter >> 8);
+                cpu.memory.memory[0xDC0C] = cia1Sdr;
                 cpu.memory.memory[0xDC0D] = cia1IcrStatus;
                 cpu.memory.memory[0xDC0E] = cia1Cra;
                 cpu.memory.memory[0xDC0F] = cia1Crb;
@@ -738,39 +1365,75 @@ namespace C64
         {
             if (cycles == 0) return;
 
+            bool raiseNmi = false;
             lock (cia2Lock)
             {
+                uint cntPulses = cia2CntPulseBudget;
+                cia2CntPulseBudget = 0;
+
                 int underA = CountUnderflows(
                     ref cia2TimerACounter,
                     cia2TimerALatch,
-                    cycles,
+                    (cia2Cra & 0x20) == 0 ? cycles : cntPulses,
                     (cia2Cra & 0x08) != 0,
                     ref cia2Cra);
 
+                StepCia2SerialOutputFromTimerA(underA, ref raiseNmi);
+
+                if ((cia2Cra & 0x40) != 0 && underA > 0)
+                    cntPulses = Math.Max(cntPulses, (uint)underA);
+
                 uint ticksB = cycles;
                 int tbMode = (cia2Crb >> 5) & 0x03;
-                if (tbMode == 2)
+                if (tbMode == 1)
+                    ticksB = cntPulses;
+                else if (tbMode == 2)
                     ticksB = (uint)Math.Max(underA, 0);
-                else if (tbMode != 0)
-                    ticksB = 0;
+                else if (tbMode == 3)
+                    ticksB = cia2CntInHigh ? (uint)Math.Max(underA, 0) : 0u;
 
                 if (ticksB > 0)
                 {
-                    CountUnderflows(
+                    int underB = CountUnderflows(
                         ref cia2TimerBCounter,
                         cia2TimerBLatch,
                         ticksB,
                         (cia2Crb & 0x08) != 0,
                         ref cia2Crb);
+
+                    if (underB > 0)
+                        cia2IcrStatus |= 0x02;
                 }
+
+                if (underA > 0)
+                    cia2IcrStatus |= 0x01;
+
+                if ((cia2IcrStatus & cia2IcrMask & 0x1F) != 0)
+                {
+                    bool wasSet = (cia2IcrStatus & 0x80) != 0;
+                    cia2IcrStatus |= 0x80;
+                    if (!wasSet)
+                        raiseNmi = true;
+                }
+                else
+                {
+                    cia2IcrStatus = (byte)(cia2IcrStatus & 0x7F);
+                }
+
+                StepCia2Tod(cycles, ref raiseNmi);
 
                 cpu.memory.memory[0xDD04] = (byte)(cia2TimerACounter & 0xFF);
                 cpu.memory.memory[0xDD05] = (byte)(cia2TimerACounter >> 8);
                 cpu.memory.memory[0xDD06] = (byte)(cia2TimerBCounter & 0xFF);
                 cpu.memory.memory[0xDD07] = (byte)(cia2TimerBCounter >> 8);
+                cpu.memory.memory[0xDD0C] = cia2Sdr;
+                cpu.memory.memory[0xDD0D] = cia2IcrStatus;
                 cpu.memory.memory[0xDD0E] = cia2Cra;
                 cpu.memory.memory[0xDD0F] = cia2Crb;
             }
+
+            if (raiseNmi)
+                cpu.InitiateNMI(0xFFFA);
         }
 
         private string BuildDebugStateLine(string prefix)
@@ -809,6 +1472,239 @@ namespace C64
         {
         }
 
+        // Drive CIA state directly from executed CPU cycles so timer and IRQ/NMI
+        // behavior follows CPU progression instead of coarse host wall-clock ticks.
+        private void OnCpuCyclesExecuted(int cycles)
+        {
+            if (cycles <= 0 || display.IsResetting)
+                return;
+
+            TryHandleKernalIecTrap();
+            TryHandleKernalLoadTrap();
+
+            byte p1 = cpu.memory.memory[0x0001];
+            bool motorOn = (p1 & 0x20) == 0;
+            datasette.SetMotor(motorOn);
+
+            uint step = (uint)cycles;
+            uint vicSteal = display.StepCycles(step, accountBusSteal: true);
+            if (vicSteal > 0)
+            {
+                cpu.RequestExternalStallCycles((int)vicSteal);
+                _ = display.StepCycles(vicSteal, accountBusSteal: false);
+            }
+
+            uint elapsed = step + vicSteal;
+            bool tapeEdge = datasette.Step(elapsed);
+            if (tapeEdge || datasette.ReadHigh != lastDatasetteReadHigh)
+            {
+                SetCia1SerialPins(datasette.ReadHigh, datasette.ReadHigh);
+                lastDatasetteReadHigh = datasette.ReadHigh;
+            }
+
+            // Keep a simple sense bit mirror on processor-port bit 4.
+            if (datasette.SenseHigh)
+                cpu.memory.memory[0x0001] |= 0x10;
+            else
+                cpu.memory.memory[0x0001] &= 0xEF;
+
+            StepCia1Timers(elapsed);
+            StepCia2Timers(elapsed);
+
+            keyboardDrainCycleBudget += (int)elapsed;
+            if (keyboardDrainCycleBudget >= KeyboardDrainPeriodCycles)
+            {
+                keyboardDrainCycleBudget %= KeyboardDrainPeriodCycles;
+                keyboard.DrainQueue();
+            }
+        }
+
+        private void TryHandleKernalIecTrap()
+        {
+            ulong pc = cpu.registers.PC;
+            switch (pc)
+            {
+                case 0xFFB1: // LISTEN
+                    iecBus.Listen(cpu.registers.A);
+                    cpu.registers.Flags.C = false;
+                    ReturnFromKernelTrap();
+                    break;
+                case 0xFFB4: // TALK
+                    iecBus.Talk(cpu.registers.A);
+                    cpu.registers.Flags.C = false;
+                    ReturnFromKernelTrap();
+                    break;
+                case 0xFF93: // SECOND
+                    iecBus.Second(cpu.registers.A);
+                    cpu.registers.Flags.C = false;
+                    ReturnFromKernelTrap();
+                    break;
+                case 0xFF96: // TKSA
+                    iecBus.Tksa(cpu.registers.A);
+                    cpu.registers.Flags.C = false;
+                    ReturnFromKernelTrap();
+                    break;
+                case 0xFFA8: // CIOUT
+                    iecBus.Ciout(cpu.registers.A);
+                    cpu.registers.Flags.C = false;
+                    ReturnFromKernelTrap();
+                    break;
+                case 0xFFA5: // ACPTR
+                    cpu.registers.A = iecBus.Acptr();
+                    cpu.registers.Flags.C = false;
+                    ReturnFromKernelTrap();
+                    break;
+                case 0xFFAE: // UNLSN
+                    iecBus.Unlisten();
+                    cpu.registers.Flags.C = false;
+                    ReturnFromKernelTrap();
+                    break;
+                case 0xFFAB: // UNTLK
+                    iecBus.Untalk();
+                    cpu.registers.Flags.C = false;
+                    ReturnFromKernelTrap();
+                    break;
+            }
+        }
+
+        private void TryHandleKernalLoadTrap()
+        {
+            // KERNAL LOAD entry. Trap after JSR has transferred PC to $FFD5.
+            if (cpu.registers.PC != 0xFFD5)
+                return;
+
+            byte[] mem = cpu.memory.memory;
+
+            // KERNAL parameter block used by SETLFS/SETNAM:
+            //   $B7 filename length
+            //   $BB/$BC filename pointer
+            byte nameLen = mem[0x00B7];
+            ushort namePtr = (ushort)(mem[0x00BB] | (mem[0x00BC] << 8));
+
+            string? requestedName = null;
+            if (nameLen != 0)
+            {
+                var chars = new char[nameLen];
+                for (int i = 0; i < nameLen; i++)
+                {
+                    byte b = cpu.memory.ReadByte((ulong)(namePtr + i));
+                    chars[i] = b >= 0x20 && b <= 0x7E ? (char)b : '?';
+                }
+                requestedName = new string(chars).Trim();
+            }
+
+            byte currentDevice = mem[0x00BA];
+            if (currentDevice == 8 && drive.HasMedia)
+            {
+                byte[] prg;
+                string resolvedName;
+                bool ok = string.IsNullOrWhiteSpace(requestedName)
+                    ? iecBus.TryLoadFromDrive(out prg, out resolvedName)
+                    : iecBus.TryLoadFromDrive(requestedName, out prg, out resolvedName);
+
+                if (!ok)
+                {
+                    cpu.registers.A = 0x04;
+                    cpu.registers.Flags.C = true;
+                    ReturnFromKernelTrap();
+                    return;
+                }
+
+                try
+                {
+                    (_, ushort end) = LoadPrgFromBytes(prg);
+                    cpu.registers.X = (byte)(end & 0xFF);
+                    cpu.registers.Y = (byte)(end >> 8);
+                    cpu.registers.A = 0x00;
+                    cpu.registers.Flags.C = false;
+                    lastHostLoadedFile = drive.AttachedPath;
+                    Console.WriteLine($"[IEC] LOADED '{resolvedName}' FROM D64");
+                }
+                catch
+                {
+                    cpu.registers.A = 0x1F;
+                    cpu.registers.Flags.C = true;
+                }
+
+                ReturnFromKernelTrap();
+                return;
+            }
+
+            string? resolved = ResolveKernelLoadPath(requestedName);
+            if (resolved is null)
+            {
+                cpu.registers.A = 0x04; // FILE NOT FOUND
+                cpu.registers.Flags.C = true;
+                ReturnFromKernelTrap();
+                return;
+            }
+
+            try
+            {
+                (ushort start, ushort end) = LoadPrgFromBytes(File.ReadAllBytes(resolved));
+
+                // LOAD returns end address in X/Y and C clear on success.
+                cpu.registers.X = (byte)(end & 0xFF);
+                cpu.registers.Y = (byte)(end >> 8);
+                cpu.registers.A = 0x00;
+                cpu.registers.Flags.C = false;
+
+                lastHostLoadedFile = resolved;
+            }
+            catch
+            {
+                cpu.registers.A = 0x1F; // generic LOAD error
+                cpu.registers.Flags.C = true;
+            }
+
+            ReturnFromKernelTrap();
+        }
+
+        private string? ResolveKernelLoadPath(string? requestedName)
+        {
+            if (!string.IsNullOrWhiteSpace(requestedName))
+            {
+                string name = requestedName.Trim().Trim('"', '\'');
+                if (!Path.HasExtension(name))
+                    name += ".prg";
+
+                if (Path.IsPathRooted(name) && File.Exists(name))
+                    return name;
+
+                string cwdCandidate = Path.Combine(Environment.CurrentDirectory, name);
+                if (File.Exists(cwdCandidate))
+                    return cwdCandidate;
+
+                if (!string.IsNullOrWhiteSpace(lastHostLoadedFile))
+                {
+                    string? dir = Path.GetDirectoryName(lastHostLoadedFile);
+                    if (!string.IsNullOrWhiteSpace(dir))
+                    {
+                        string nearLast = Path.Combine(dir, name);
+                        if (File.Exists(nearLast))
+                            return nearLast;
+                    }
+                }
+
+                return null;
+            }
+
+            // LOAD"",x reuses the most recent host-backed file when available.
+            if (!string.IsNullOrWhiteSpace(lastHostLoadedFile) && File.Exists(lastHostLoadedFile))
+                return lastHostLoadedFile;
+
+            return null;
+        }
+
+        private void ReturnFromKernelTrap()
+        {
+            byte s = cpu.registers.S;
+            byte lo = cpu.memory.ReadByte((ulong)(0x100 + (byte)(s + 1)));
+            byte hi = cpu.memory.ReadByte((ulong)(0x100 + (byte)(s + 2)));
+            cpu.registers.S = (byte)(s + 2);
+            cpu.registers.PC = (ushort)(((hi << 8) | lo) + 1);
+        }
+
         public void Run()
         {
             string? audioDevice = Sound.PromptForDevice();
@@ -834,13 +1730,6 @@ namespace C64
 
             display.Start(token);
             sound.Start(token);
-
-            irqThread = new Thread(() => IrqLoop(token))
-            {
-                IsBackground = true,
-                Name = "CIA-1 IRQ"
-            };
-            irqThread.Start();
 
             // Run the exact same reset path used by Ctrl+R after all worker
             // threads are alive. This avoids startup-only races where the
@@ -922,61 +1811,6 @@ namespace C64
             display.Dispose();
             SDL_Quit();
         }
-
-        private void IrqLoop(CancellationToken token)
-        {
-            long ticksPerTick = Stopwatch.Frequency / CiaTickHz;
-            long next = Stopwatch.GetTimestamp() + ticksPerTick;
-            long remCyclesNumerator = 0;
-            long lastStamp = Stopwatch.GetTimestamp();
-            while (!token.IsCancellationRequested)
-            {
-                keyboard.DrainQueue();
-
-                long now = Stopwatch.GetTimestamp();
-                long elapsedTicks = now - lastStamp;
-                if (elapsedTicks < 0) elapsedTicks = 0;
-                lastStamp = now;
-
-                if (display.IsResetting)
-                {
-                    long pauseRemaining = next - Stopwatch.GetTimestamp();
-                    if (pauseRemaining > 0)
-                    {
-                        while (Stopwatch.GetTimestamp() < next)
-                            Thread.SpinWait(32);
-                    }
-                    next += ticksPerTick;
-                    continue;
-                }
-
-                long numer = elapsedTicks * Clock_PAL + remCyclesNumerator;
-                if (numer >= Stopwatch.Frequency)
-                {
-                    uint cycles = (uint)(numer / Stopwatch.Frequency);
-                    remCyclesNumerator = numer % Stopwatch.Frequency;
-                    StepCia1Timers(cycles);
-                    StepCia2Timers(cycles);
-                }
-                else
-                {
-                    remCyclesNumerator = numer;
-                }
-
-                long remaining = next - Stopwatch.GetTimestamp();
-                if (remaining > 0)
-                {
-                    long remainingMs = remaining * 1000 / Stopwatch.Frequency;
-                    if (remainingMs > 2)
-                        Thread.Sleep((int)(remainingMs - 1));
-                    while (Stopwatch.GetTimestamp() < next)
-                        Thread.SpinWait(32);
-                }
-                next += ticksPerTick;
-            }
-        }
-
-
 
         private void HardReset()
         {
@@ -1128,7 +1962,7 @@ namespace C64
             {
                 try
                 {
-                    Console.Write("Load file (.prg, .t64, .tap, .bas, .txt) - path: ");
+                    Console.Write("Load file (.prg, .d64, .t64, .tap, .bas, .txt) - path: ");
                     string? path = Console.ReadLine();
                     if (string.IsNullOrWhiteSpace(path)) return;
                     path = path.Trim().Trim('"', '\'');
@@ -1164,8 +1998,16 @@ namespace C64
                 }
                 else if (ext == ".tap")
                 {
-                    var entries = TapeLoader.ReadTap(File.ReadAllBytes(path));
-                    LoadTapeEntries(entries, Path.GetFileName(path));
+                    datasette.AttachTap(File.ReadAllBytes(path));
+                    lastHostLoadedFile = path;
+                    Console.WriteLine($"Attached datasette TAP {Path.GetFileName(path)}");
+                }
+                else if (ext == ".d64")
+                {
+                    drive.AttachD64(path);
+                    lastHostLoadedFile = path;
+                    IReadOnlyList<string> files = drive.ListFiles();
+                    Console.WriteLine($"Attached D64 {Path.GetFileName(path)} ({files.Count} PRG entries)");
                 }
                 else
                 {
@@ -1185,7 +2027,12 @@ namespace C64
 
         private void LoadPrg(string path)
         {
-            byte[] data = File.ReadAllBytes(path);
+            LoadPrgFromBytes(File.ReadAllBytes(path));
+            lastHostLoadedFile = path;
+        }
+
+        private (ushort LoadAddress, ushort EndAddress) LoadPrgFromBytes(byte[] data)
+        {
             if (data.Length < 3)
                 throw new InvalidDataException("PRG file is too small (need 2-byte header + body).");
 
@@ -1199,9 +2046,9 @@ namespace C64
             for (int i = 0; i < progLen; i++)
                 cpu.memory.WriteRamByte((ulong)(loadAddr + i), data[2 + i]);
 
+            int endAddr = loadAddr + progLen;
             if (loadAddr == 0x0801)
             {
-                int endAddr = loadAddr + progLen;
                 cpu.memory.WriteByte(0x002D, (byte)(endAddr & 0xFF));
                 cpu.memory.WriteByte(0x002E, (byte)(endAddr >> 8));
                 cpu.memory.WriteByte(0x002F, (byte)(endAddr & 0xFF));
@@ -1210,6 +2057,7 @@ namespace C64
                 cpu.memory.WriteByte(0x0032, (byte)(endAddr >> 8));
             }
 
+            return (loadAddr, (ushort)endAddr);
         }
 
         private void DumpGraphicsStateToFile()

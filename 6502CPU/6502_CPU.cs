@@ -48,6 +48,14 @@ namespace _6502CPU
         private int cyclesThisOperation = 0;
         private long totalCycles;
         public long TotalCycles => Interlocked.Read(ref totalCycles);
+        public Action<int>? OnCyclesExecuted;
+        private int externalStallCycles;
+
+        public void RequestExternalStallCycles(int cycles)
+        {
+            if (cycles <= 0) return;
+            Interlocked.Add(ref externalStallCycles, cycles);
+        }
 
         public _6502_CPU(int freq = 1000000)
         {
@@ -127,6 +135,14 @@ namespace _6502CPU
                     cyclesThisOperation = 0;
                     while (cyclesThisOperation < sliceCycles)
                     {
+                        int stall = Interlocked.Exchange(ref externalStallCycles, 0);
+                        if (stall > 0)
+                        {
+                            cyclesThisOperation += stall;
+                            Interlocked.Add(ref totalCycles, stall);
+                            continue;
+                        }
+
                         while (NMI_Buffer.TryDequeue(out ulong nmiValue))
                         {
                             if (nmiValue != 0xFFFA)
@@ -146,7 +162,10 @@ namespace _6502CPU
                         Execute(GetNextByteInstruction());
                         int deltaCycles = cyclesThisOperation - beforeCycles;
                         if (deltaCycles > 0)
+                        {
                             Interlocked.Add(ref totalCycles, deltaCycles);
+                            OnCyclesExecuted?.Invoke(deltaCycles);
+                        }
                     }
 
                     WaitUntil(nextDeadline);
@@ -847,8 +866,18 @@ namespace _6502CPU
                 case 0x0B: case 0x2B: ANC_IM(); cyclesThisOperation += 2; break;
                 case 0x4B: ALR_IM(); cyclesThisOperation += 2; break;
                 case 0x6B: ARR_IM(); cyclesThisOperation += 2; break;
+                case 0x8B: XAA_IM(); cyclesThisOperation += 2; break;
+                case 0xAB: LAX_IM(); cyclesThisOperation += 2; break;
+                case 0xBB: LAS_AY(); cyclesThisOperation += 4; break;
                 case 0xCB: AXS_IM(); cyclesThisOperation += 2; break;
                 case 0xEB: SBCI();   /* duplicate of $E9 SBC #imm */ break;
+
+                // ---- Store-high variants used by some packed/cracked code. ----
+                case 0x93: AHX_IY(); cyclesThisOperation += 6; break;
+                case 0x9B: TAS_AY(); cyclesThisOperation += 5; break;
+                case 0x9C: SHY_AX(); cyclesThisOperation += 5; break;
+                case 0x9E: SHX_AY(); cyclesThisOperation += 5; break;
+                case 0x9F: AHX_AY(); cyclesThisOperation += 5; break;
 
                 // ---- JAM / KIL: real CPU halts. We treat as NOP so a
                 // game that mis-branches into one doesn't freeze the
@@ -869,7 +898,7 @@ namespace _6502CPU
                 #endregion
 
                 default:
-                    break;
+                    throw new InvalidOperationException($"Unhandled opcode ${opcode:X2} at ${((registers.PC - 1) & 0xFFFF):X4}");
                 #endregion
             }
         }
@@ -994,6 +1023,78 @@ namespace _6502CPU
             registers.X = (byte)t;
             registers.Flags.C = (t & 0x100) == 0;
             Set_FlagsNZ(registers.X);
+        }
+
+        // XAA / ANE (unstable on real silicon). Common practical approximation:
+        // A = X AND immediate.
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private void XAA_IM()
+        {
+            registers.A = (byte)(registers.X & Immediate());
+            Set_FlagsNZ(registers.A);
+        }
+
+        // LAX immediate unofficial variant.
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private void LAX_IM()
+        {
+            byte v = Immediate();
+            registers.A = v;
+            registers.X = v;
+            Set_FlagsNZ(v);
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private void LAS_AY()
+        {
+            ulong addr = Y_Indexed_Absolute();
+            byte v = (byte)(ReadByteFromMemory(addr) & registers.S);
+            registers.A = v;
+            registers.X = v;
+            registers.S = v;
+            Set_FlagsNZ(v);
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private void AHX_IY()
+        {
+            ulong addr = Zero_Page_Indirect_Y_Indexed(false);
+            byte m = (byte)(((addr >> 8) + 1) & 0xFF);
+            WriteByteToMemory(addr, (byte)(registers.A & registers.X & m));
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private void AHX_AY()
+        {
+            ulong addr = Y_Indexed_Absolute(false);
+            byte m = (byte)(((addr >> 8) + 1) & 0xFF);
+            WriteByteToMemory(addr, (byte)(registers.A & registers.X & m));
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private void TAS_AY()
+        {
+            ulong addr = Y_Indexed_Absolute(false);
+            byte s = (byte)(registers.A & registers.X);
+            registers.S = s;
+            byte m = (byte)(((addr >> 8) + 1) & 0xFF);
+            WriteByteToMemory(addr, (byte)(s & m));
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private void SHY_AX()
+        {
+            ulong addr = X_Indexed_Absolute(false);
+            byte m = (byte)(((addr >> 8) + 1) & 0xFF);
+            WriteByteToMemory(addr, (byte)(registers.Y & m));
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private void SHX_AY()
+        {
+            ulong addr = Y_Indexed_Absolute(false);
+            byte m = (byte)(((addr >> 8) + 1) & 0xFF);
+            WriteByteToMemory(addr, (byte)(registers.X & m));
         }
         #endregion
 
@@ -1305,6 +1406,7 @@ namespace _6502CPU
         {
             registers.A = registers.Y;
             Set_FlagsNZ(registers.A);
+            cyclesThisOperation += 2;
         }
         #endregion
 
@@ -1392,7 +1494,7 @@ namespace _6502CPU
         }
         private void DECXA()
         {
-            ulong addr = X_Indexed_Absolute();
+            ulong addr = X_Indexed_Absolute(false);
             byte value1 = ReadByteFromMemory(addr);
             byte value2 = (byte)((value1 + (~0x01)) + 1);
             WriteByteToMemory(addr, value2);
@@ -1445,7 +1547,7 @@ namespace _6502CPU
         }
         private void INCXA()
         {
-            ulong addr = X_Indexed_Absolute();
+            ulong addr = X_Indexed_Absolute(false);
             byte value1 = ReadByteFromMemory(addr);
             value1++;
             WriteByteToMemory(addr, value1);
@@ -1691,7 +1793,7 @@ namespace _6502CPU
         {
             byte value = Immediate();
             SBC(value);
-            cyclesThisOperation += 3;
+            cyclesThisOperation += 2;
         }
         private void SBCA()
         {
@@ -2181,7 +2283,7 @@ namespace _6502CPU
             registers.Flags.C = ((value & (1 << 0)) != 0);
             Set_FlagsNZ(value2);
             WriteByteToMemory(addr, value2);
-            cyclesThisOperation += 7;
+            cyclesThisOperation += 6;
         }
         private void RORXA()
         {
