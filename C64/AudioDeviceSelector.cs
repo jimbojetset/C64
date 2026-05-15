@@ -73,6 +73,10 @@ namespace C64
                         ImGui.EndPopup();
                         return;
                     }
+
+                    // Set keyboard focus to the first (default) item on first frame
+                    if (i == 0)
+                        ImGui.SetItemDefaultFocus();
                 }
 
                 // Number-key selection (matches the previous command-line behaviour).

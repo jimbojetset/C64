@@ -2,9 +2,14 @@ namespace C64
 {
     internal sealed class DatasetteDevice
     {
+        private const int PalCpuHz = 985_248;
+        private const int MotorSpinupMs = 200;
+        private const int MotorSpinupCycles = (PalCpuHz * MotorSpinupMs) / 1000;
+
         private readonly List<int> pulseCycles = new List<int>();
         private int pulseIndex;
         private int pulseRemaining;
+        private int motorSpinupRemaining;
 
         public bool HasTape => pulseCycles.Count > 0;
         public bool MotorOn { get; private set; }
@@ -16,6 +21,7 @@ namespace C64
             pulseCycles.Clear();
             pulseIndex = 0;
             pulseRemaining = 0;
+            motorSpinupRemaining = 0;
             ReadHigh = true;
 
             if (raw.Length < 20)
@@ -64,11 +70,14 @@ namespace C64
             pulseCycles.Clear();
             pulseIndex = 0;
             pulseRemaining = 0;
+            motorSpinupRemaining = 0;
             ReadHigh = true;
         }
 
         public void SetMotor(bool on)
         {
+            if (on && !MotorOn)
+                motorSpinupRemaining = MotorSpinupCycles;
             MotorOn = on;
         }
 
@@ -77,6 +86,16 @@ namespace C64
         {
             if (!MotorOn || !HasTape || cycles == 0)
                 return false;
+
+            if (motorSpinupRemaining > 0)
+            {
+                int consume = Math.Min((int)cycles, motorSpinupRemaining);
+                motorSpinupRemaining -= consume;
+                if (consume == (int)cycles)
+                    return false;
+
+                cycles -= (uint)consume;
+            }
 
             bool toggled = false;
             int remaining = (int)cycles;

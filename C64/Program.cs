@@ -83,6 +83,8 @@ namespace C64
         private static readonly bool VerboseIoTrace = false;
         private static readonly bool TraceVicStates =
             string.Equals(Environment.GetEnvironmentVariable("C64_TRACE_VIC"), "1", StringComparison.Ordinal);
+        private static readonly bool TraceTimerBClock =
+            string.Equals(Environment.GetEnvironmentVariable("C64_TRACE_TIMERB"), "1", StringComparison.Ordinal);
 
         private readonly Display display;
         private readonly Keyboard keyboard;
@@ -90,6 +92,7 @@ namespace C64
         private readonly VirtualDrive1541 drive;
         private readonly IecBus iecBus;
         private readonly DatasetteDevice datasette;
+        private readonly REU reu;  // SEVERITY 4 FIX: RAM Expansion Unit
         private bool lastDatasetteReadHigh = true;
 
         private readonly object cia1Lock = new object();
@@ -119,6 +122,7 @@ namespace C64
         private int cia1TodSubTicks;
         private bool cia1SpInHigh = true;
         private bool cia1CntInHigh = true;
+        private bool cia1CntHighSeen = true;
         private bool cia1SpOutHigh = true;
         private uint cia1CntPulseBudget;
         private byte cia1SerialShiftReg;
@@ -166,6 +170,7 @@ namespace C64
         private int cia2TodSubTicks;
         private bool cia2SpInHigh = true;
         private bool cia2CntInHigh = true;
+        private bool cia2CntHighSeen = true;
         private bool cia2SpOutHigh = true;
         private uint cia2CntPulseBudget;
         private byte cia2SerialShiftReg;
@@ -192,6 +197,8 @@ namespace C64
             drive = new VirtualDrive1541();
             iecBus = new IecBus(drive);
             datasette = new DatasetteDevice();
+            reu = new REU(128);  // SEVERITY 4 FIX: Initialize 128KB REU
+            reu.OnIrqRequest = () => cpu.InitiateIRQ(0xFFFE);
             keyboard.OnHardReset = HardReset;
             keyboard.OnLoad = LoadProgram;
             keyboard.OnSave = SaveProgram;
@@ -269,6 +276,7 @@ namespace C64
                 cia1TodSubTicks = 0;
                 cia1SpInHigh = true;
                 cia1CntInHigh = true;
+                cia1CntHighSeen = true;
                 cia1SpOutHigh = true;
                 cia1CntPulseBudget = 0;
                 cia1SerialShiftReg = 0;
@@ -332,6 +340,7 @@ namespace C64
                 cia2TodSubTicks = 0;
                 cia2SpInHigh = true;
                 cia2CntInHigh = true;
+                cia2CntHighSeen = true;
                 cia2SpOutHigh = true;
                 cia2CntPulseBudget = 0;
                 cia2SerialShiftReg = 0;
@@ -711,6 +720,14 @@ namespace C64
                     return true;
             }
 
+            // SEVERITY 4 FIX: REU (RAM Expansion Unit) write handler
+            if (addr >= 0xDF00 && addr <= 0xDFFF)
+            {
+                reu.Write((int)addr, value);
+                cpu.memory.memory[addr] = value;
+                return true;
+            }
+
             // SID registers are mirrored across $D400-$D7FF in 32-byte blocks.
             // Accept mirrored writes so routines using alternate SID mirrors
             // (common in some games/effects code) are not lost.
@@ -844,7 +861,11 @@ namespace C64
                             return value;
                         }
                     }
+                // SEVERITY 4 FIX: REU (RAM Expansion Unit) read handler
                 default:
+                    if (addr >= 0xDF00 && addr <= 0xDFFF)
+                        return reu.Read((int)addr);
+
                     // SID readback registers are mirrored across $D400-$D7FF.
                     // We only provide meaningful values for $19-$1C (POT/POT/OSC3/ENV3).
                     if (addr >= 0xD400 && addr <= 0xD7FF)
@@ -884,6 +905,8 @@ namespace C64
                 bool prevCnt = cia1CntInHigh;
                 cia1SpInHigh = spHigh;
                 cia1CntInHigh = cntHigh;
+                if (cntHigh)
+                    cia1CntHighSeen = true;
                 if (!prevCnt && cntHigh)
                     OnCia1CntRisingEdge(ref raiseIrq);
             }
@@ -900,6 +923,8 @@ namespace C64
                 bool prevCnt = cia2CntInHigh;
                 cia2SpInHigh = spHigh;
                 cia2CntInHigh = cntHigh;
+                if (cntHigh)
+                    cia2CntHighSeen = true;
                 if (!prevCnt && cntHigh)
                     OnCia2CntRisingEdge(ref raiseNmi);
             }
@@ -1286,8 +1311,11 @@ namespace C64
             bool raiseIrq = false;
             lock (cia1Lock)
             {
+                bool wasIrqPending = (cia1IcrStatus & 0x80) != 0;
                 uint cntPulses = cia1CntPulseBudget;
                 cia1CntPulseBudget = 0;
+                bool cntHighObserved = cia1CntInHigh || cia1CntHighSeen;
+                cia1CntHighSeen = false;
 
                 uint ticksA = (cia1Cra & 0x20) == 0 ? cycles : cntPulses;
                 int underA = CountUnderflows(
@@ -1299,11 +1327,6 @@ namespace C64
                 if (underA > 0)
                 {
                     cia1IcrStatus |= 0x01;
-                    if ((cia1IcrMask & 0x01) != 0)
-                    {
-                        cia1IcrStatus |= 0x80;
-                        raiseIrq = true;
-                    }
                 }
 
                 StepCia1SerialOutputFromTimerA(underA, ref raiseIrq);
@@ -1320,7 +1343,7 @@ namespace C64
                 else if (tbMode == 2)
                     ticksB = (uint)underA;
                 else
-                    ticksB = cia1CntInHigh ? (uint)underA : 0;
+                    ticksB = cntHighObserved ? (uint)underA : 0;
 
                 if (ticksB > 0)
                 {
@@ -1333,10 +1356,11 @@ namespace C64
                     if (underB > 0)
                     {
                         cia1IcrStatus |= 0x02;
-                        if ((cia1IcrMask & 0x02) != 0)
+
+                        if (TraceTimerBClock && tbMode >= 2)
                         {
-                            cia1IcrStatus |= 0x80;
-                            raiseIrq = true;
+                            Console.Error.WriteLine(
+                                $"[CIA1-TB] mode={tbMode} underA={underA} underB={underB} cntHighSeen={cntHighObserved} CRA=${cia1Cra:X2} CRB=${cia1Crb:X2} TB=${cia1TimerBCounter:X4}");
                         }
                     }
                 }
@@ -1345,6 +1369,10 @@ namespace C64
                     cia1IcrStatus |= 0x80;
                 else
                     cia1IcrStatus = (byte)(cia1IcrStatus & 0x7F);
+
+                bool isIrqPending = (cia1IcrStatus & 0x80) != 0;
+                if (isIrqPending && !wasIrqPending)
+                    raiseIrq = true;
 
                 StepCia1Tod(cycles, ref raiseIrq);
 
@@ -1371,6 +1399,8 @@ namespace C64
             {
                 uint cntPulses = cia2CntPulseBudget;
                 cia2CntPulseBudget = 0;
+                bool cntHighObserved = cia2CntInHigh || cia2CntHighSeen;
+                cia2CntHighSeen = false;
 
                 int underA = CountUnderflows(
                     ref cia2TimerACounter,
@@ -1391,7 +1421,7 @@ namespace C64
                 else if (tbMode == 2)
                     ticksB = (uint)Math.Max(underA, 0);
                 else if (tbMode == 3)
-                    ticksB = cia2CntInHigh ? (uint)Math.Max(underA, 0) : 0u;
+                    ticksB = cntHighObserved ? (uint)Math.Max(underA, 0) : 0u;
 
                 if (ticksB > 0)
                 {
@@ -1403,7 +1433,15 @@ namespace C64
                         ref cia2Crb);
 
                     if (underB > 0)
+                    {
                         cia2IcrStatus |= 0x02;
+
+                        if (TraceTimerBClock && tbMode >= 2)
+                        {
+                            Console.Error.WriteLine(
+                                $"[CIA2-TB] mode={tbMode} underA={underA} underB={underB} cntHighSeen={cntHighObserved} CRA=${cia2Cra:X2} CRB=${cia2Crb:X2} TB=${cia2TimerBCounter:X4}");
+                        }
+                    }
                 }
 
                 if (underA > 0)
@@ -1509,8 +1547,16 @@ namespace C64
             else
                 cpu.memory.memory[0x0001] &= 0xEF;
 
+            // Reflect IEC data/clock line levels onto CIA2 SP/CNT pins so
+            // external clock/input timer modes observe real bus transitions.
+            byte iecExternal = iecBus.BuildExternalCia2PortA(0xFF);
+            bool iecDataHigh = (iecExternal & 0x20) != 0;
+            bool iecClockHigh = (iecExternal & 0x10) != 0;
+            SetCia2SerialPins(iecDataHigh, iecClockHigh);
+
             StepCia1Timers(elapsed);
             StepCia2Timers(elapsed);
+            reu.StepDma((int)cycles, cpu.memory);  // SEVERITY 4 FIX: Step REU DMA transfers
 
             keyboardDrainCycleBudget += (int)elapsed;
             if (keyboardDrainCycleBudget >= KeyboardDrainPeriodCycles)
@@ -1810,6 +1856,7 @@ namespace C64
             try { cts.Cancel(); } catch { }
             sound.Dispose();
             display.Dispose();
+            reu.Dispose();
             SDL_Quit();
         }
 
@@ -1818,6 +1865,7 @@ namespace C64
             display.BeginReset();
 
             keyboard.Reset();
+            reu.Reset();
 
             cpu.RequestReset();
         }

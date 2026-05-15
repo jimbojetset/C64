@@ -217,7 +217,7 @@ namespace _6502CPU
             // $A000-$BFFF: BASIC ROM if both LORAM and HIRAM set.
             if (addr < 0xC000)
             {
-                byte port = memory[0x0001];
+                byte port = GetProcessorPortEffective();
                 if (basicRom is not null && (port & 0x03) == 0x03)
                     return basicRom[addr - 0xA000];
                 return memory[addr];
@@ -234,7 +234,7 @@ namespace _6502CPU
                     // Color RAM remains CPU-visible independently of CHAREN mapping.
                     return memory[addr];
                 }
-                byte port = memory[0x0001];
+                byte port = GetProcessorPortEffective();
                 int loHi = port & 0x03;            // LORAM | HIRAM
                 bool charen = (port & 0x04) != 0;
                 if (loHi == 0)
@@ -258,7 +258,7 @@ namespace _6502CPU
             }
 
             // $E000-$FFFF: KERNAL ROM if HIRAM set.
-            byte p2 = memory[0x0001];
+            byte p2 = GetProcessorPortEffective();
             if (kernalRom is not null && (p2 & 0x02) != 0)
                 return kernalRom[addr - 0xE000];
             return memory[addr];
@@ -269,10 +269,20 @@ namespace _6502CPU
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private bool Is_IO_Mapped()
         {
-            byte port = memory[0x0001];
+            byte port = GetProcessorPortEffective();
             int loHi = port & 0x03;
             bool charen = (port & 0x04) != 0;
             return loHi != 0 && charen;
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private byte GetProcessorPortEffective()
+        {
+            // 6510 processor port: $0000 is DDR, $0001 is data register.
+            // Output bits come from data register; input bits read high due to pull-ups.
+            byte ddr = memory[0x0000];
+            byte data = memory[0x0001];
+            return (byte)((data & ddr) | (~ddr & 0xFF));
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
