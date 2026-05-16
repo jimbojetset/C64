@@ -1062,7 +1062,6 @@ namespace _6502CPU
             Set_FlagsNZ(v);
         }
 
-        // SEVERITY 5 FIX: Illegal Opcode Undocumented Behavior - AHX Edge Cases
         // AHX stores (A AND X AND (high_byte_of_effective_address + 1)).
         // With page-boundary crossing addressing modes, the actual address calculation
         // may wrap differently than expected. The high-byte formula captures this subtlety.

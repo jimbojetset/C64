@@ -74,7 +74,6 @@ namespace C64
         private double _filterQ = 1.0;      // 1/Q damping coefficient
         private int _lastFcReg = -1;    // cached to detect register changes
         private int _lastResReg = -1;
-        // SEVERITY 4 FIX: SID Advanced Filter Behavior
         // Capacitor state modeling for smoother filter transients and improved stability
         private double _filterCapacitorLeakage = 0.9999;  // capacitor discharge modeling
         private double _resonancePeakDamping = 1.0;  // dynamic damping for high Q stability
@@ -92,7 +91,6 @@ namespace C64
         private short[] _buf = Array.Empty<short>();
 
         // ?? Voice-3 oscillator / envelope readback ($D41B / $D41C) ????????????
-        // SEVERITY 5 FIX: Voice 3 OSC/ENV Readback Stability
         // Double-buffer mechanism to ensure cycle-consistent snapshots
         // (prevents torn reads when synthesis updates values mid-read)
         private byte _v3WaveSnapshot;     // Buffered oscillator value
@@ -247,7 +245,6 @@ namespace C64
         {
             25 => 0xFF,      // $D419 POTX � paddle not emulated
             26 => 0xFF,      // $D41A POTY � paddle not emulated
-            // SEVERITY 5 FIX: Return snapshot values for cycle-consistent readback
             27 => _v3WaveSnapshot,   // $D41B voice-3 oscillator output
             28 => _v3EnvSnapshot,    // $D41C voice-3 envelope output
             _ => 0,
@@ -282,7 +279,7 @@ namespace C64
                 _fadeInSamplesRemaining = _fadeInSamplesTotal;
                 _writeCycleCursor = 0;
                 _synthCycleCursor = 0.0;
-                _v3WaveSnapshot = 0;     // SEVERITY 5 FIX: Reset Voice 3 snapshots
+                _v3WaveSnapshot = 0;
                 _v3EnvSnapshot = 0;
 
                 if (haveDevice)
@@ -425,7 +422,6 @@ namespace C64
                 double v2 = StepVoice(2, r, mute: false);
 
                 // Voice-3 readback for $D41B/$D41C
-                // SEVERITY 5 FIX: Update snapshots atomically at start of sample
                 // so reads see consistent values throughout sample duration
                 _v3WaveSnapshot = (byte)(_voices[2].LastWaveform >> 4); // 12-bit → 8-bit
                 _v3EnvSnapshot = (byte)_voices[2].EnvelopeLevel;
@@ -854,7 +850,6 @@ namespace C64
             _filterF = 2.0 * Math.Sin(Math.PI * fc / SampleRate);
             if (_filterF > 1.4) _filterF = 1.4; // guard against instability
 
-            // SEVERITY 4 FIX: SID Advanced Filter Behavior
             // Resonance damping: Q from 0.5 (low) to ~2.5 (high), 1/Q is the damping.
             // At high resonance (Q > 8), apply dynamic peak damping to prevent
             // filter from self-oscillating and distorting the output.
@@ -877,7 +872,6 @@ namespace C64
 
         private double StepFilter(double input, bool lpOn, bool bpOn, bool hpOn)
         {
-            // SEVERITY 4 FIX: SID Advanced Filter Behavior
             // Enhanced Chamberlin two-pole state-variable filter with capacitor modeling
             // and resonance peak stabilization for more accurate tone reproduction.
 

@@ -325,7 +325,6 @@ namespace C64
 
             bool den = (mem[0xD011] & 0x10) != 0;
             int yScroll = mem[0xD011] & 0x07;
-            // SEVERITY 3 FIX: VIC Bus Stall Cycle Accuracy - Precise cycle-by-cycle model
             // Badline detection: DEN=1, line in 0x30-0xF7, and raster line & 0x07 == fine Y scroll
             // When badline condition is true, VIC steals cycles during character/sprite data fetch
             bool badline = den && line >= 0x30 && line <= 0xF7 && ((line & 0x07) == yScroll);
@@ -823,8 +822,7 @@ namespace C64
             for (int col = 0; col < 40; col++)
             {
                 byte code = cachedScreenRow[col];
-                // SEVERITY 3 FIX: ECM color interpretation - color RAM provides actual foreground color per character
-                // (not just a selector), and upper 2 bits of code select background from bg0-bg3
+                // Color RAM provides the foreground color; upper code bits select bg0-bg3.
                 int fgC = C64Palette[colorRow[col] & 0x0F];
                 int bgIdx = (code >> 6) & 0x03;
                 int bgColor = bgC[bgIdx];
@@ -945,7 +943,6 @@ namespace C64
                 int spriteRow = frameY - frameSpriteY;
                 if (spriteRow < 0 || spriteRow >= spriteHeight) continue;
 
-                // SEVERITY 3 FIX: Sprite Y-Expansion - Exact pixel-by-pixel doubling
                 // When Y-expanded, each sprite row becomes 2 scanlines; divide by 2 to get source row index
                 int row = yExp ? (spriteRow >> 1) : spriteRow;
                 int spritePtr = spritePtrs[s];

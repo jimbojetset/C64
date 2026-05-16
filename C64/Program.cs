@@ -188,7 +188,7 @@ namespace C64
             drive = new VirtualDrive1541();
             iecBus = new IecBus(drive);
             datasette = new DatasetteDevice();
-            reu = new REU(128);  // SEVERITY 4 FIX: Initialize 128KB REU
+            reu = new REU(128);
             reu.OnIrqRequest = () => cpu.InitiateIRQ(0xFFFE);
             keyboard.OnHardReset = HardResetFromKeyboard;
             keyboard.OnLoad = LoadProgram;
@@ -264,7 +264,7 @@ namespace C64
                 cia1CntHighSeen = true;
                 cia1SpOutHigh = true;
                 cia1CntPulseBudget = 0;
-                cia1Pa6PrescalerPrevState = true;  // SEVERITY 5 FIX: Reset prescaler state
+                cia1Pa6PrescalerPrevState = true;
                 cia1SerialShiftReg = 0;
                 cia1SerialBitsRemaining = 0;
                 cia1SerialOutputActive = false;
@@ -702,7 +702,6 @@ namespace C64
                 return true;
             }
 
-            // SEVERITY 4 FIX: REU (RAM Expansion Unit) write handler
             if (addr >= 0xDF00 && addr <= 0xDFFF)
             {
                 reu.Write((int)addr, value);
@@ -866,7 +865,6 @@ namespace C64
                             return value;
                         }
                     }
-                // SEVERITY 4 FIX: REU (RAM Expansion Unit) read handler
                 default:
                     if (addr >= 0xDF00 && addr <= 0xDFFF)
                         return reu.Read((int)addr);
@@ -1120,7 +1118,6 @@ namespace C64
             byte todMinutes,
             byte todHours)
         {
-            // SEVERITY 5 FIX: TOD Latching Edge Cases
             // CIA TOD reads latch on HOURS (reg 3) and release on TENTHS (reg 0).
             // The latch captures all four registers atomically to prevent torn reads
             // when TOD simultaneously advances during multi-byte read sequence.
@@ -1333,7 +1330,6 @@ namespace C64
                 bool cntHighObserved = cia1CntInHigh || cia1CntHighSeen;
                 cia1CntHighSeen = false;
 
-                // SEVERITY 5 FIX: Timer Prescaler Edge Cases
                 // When timer A is in external count mode (CRA bit 5 = 1), count external PA6 pulses
                 // instead of system cycles. The prescaler behavior must detect rising edges on PA6.
                 // Current port A bit 6 state affects timer A clock source selection.
@@ -1539,7 +1535,7 @@ namespace C64
 
             StepCia1Timers(elapsed);
             StepCia2Timers(elapsed);
-            reu.StepDma((int)cycles, cpu.memory);  // SEVERITY 4 FIX: Step REU DMA transfers
+            reu.StepDma((int)cycles, cpu.memory);
 
             keyboardDrainCycleBudget += (int)elapsed;
             if (keyboardDrainCycleBudget >= KeyboardDrainPeriodCycles)
