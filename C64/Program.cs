@@ -1751,8 +1751,9 @@ namespace C64
 
             try
             {
-                PrintKernalLoadMessages(requestedName);
-                (ushort start, ushort end) = LoadPrgFromBytes(File.ReadAllBytes(resolved), loadOverride);
+                (ushort start, ushort end) = Path.GetExtension(resolved).Equals(".t64", StringComparison.OrdinalIgnoreCase)
+                    ? LoadT64FromLoadCommand(resolved, requestedName)
+                    : LoadPrgFromLoadCommand(resolved, requestedName, loadOverride);
 
                 // LOAD returns end address in X/Y and C clear on success.
                 cpu.registers.X = (byte)(end & 0xFF);
@@ -1772,6 +1773,60 @@ namespace C64
             }
 
             ReturnFromKernelTrap();
+        }
+
+        private (ushort Start, ushort End) LoadPrgFromLoadCommand(string path, string? requestedName, ushort? loadOverride)
+        {
+            PrintKernalLoadMessages(requestedName);
+            return LoadPrgFromBytes(File.ReadAllBytes(path), loadOverride);
+        }
+
+        private (ushort Start, ushort End) LoadT64FromLoadCommand(string path, string? requestedName)
+        {
+            List<TapeEntry> entries = TapeLoader.ReadT64(File.ReadAllBytes(path));
+            TapeEntry? entry = SelectTapeEntry(entries, requestedName);
+            if (entry is null)
+                throw new FileNotFoundException("No matching T64 entry found.");
+
+            PrintTapeLoadMessages(entry.Name);
+            return LoadTapeEntry(entry);
+        }
+
+        private static TapeEntry? SelectTapeEntry(List<TapeEntry> entries, string? requestedName)
+        {
+            if (entries.Count == 0)
+                return null;
+
+            string wanted = NormalizeTapeName(requestedName);
+            if (string.IsNullOrEmpty(wanted) || wanted == "*")
+                return entries[0];
+
+            if (wanted.EndsWith("*", StringComparison.Ordinal))
+            {
+                string prefix = wanted.Substring(0, wanted.Length - 1);
+                return entries.FirstOrDefault(e => NormalizeTapeName(e.Name).StartsWith(prefix, StringComparison.Ordinal));
+            }
+
+            return entries.FirstOrDefault(e => NormalizeTapeName(e.Name) == wanted)
+                ?? entries.FirstOrDefault(e => NormalizeTapeName(e.Name).StartsWith(wanted, StringComparison.Ordinal));
+        }
+
+        private static string NormalizeTapeName(string? name)
+        {
+            return string.IsNullOrWhiteSpace(name)
+                ? string.Empty
+                : name.Trim().Trim('"', '\'').ToUpperInvariant();
+        }
+
+        private void PrintTapeLoadMessages(string name)
+        {
+            EnsureScreenLineStart();
+            WriteScreenText("SEARCHING");
+            NewScreenLine();
+            WriteScreenText($"FOUND {name.ToUpperInvariant()}");
+            NewScreenLine();
+            WriteScreenText("LOADING");
+            NewScreenLine();
         }
 
         private void PrintKernalLoadMessages(string? requestedName)
@@ -2091,13 +2146,12 @@ namespace C64
 
             DoLoad(path);
 
-            // Small settle so the load has fully landed in memory before
-            // BASIC tokenises RUN.
+            // Small settle so directly loaded files have fully landed in memory
+            // before BASIC tokenises RUN.
             await Task.Delay(50).ConfigureAwait(false);
 
 
-            // Disk images don't load any program into memory on attach; the user
-            // must issue LOAD"*",8,1 (or similar) themselves. Skip the auto-RUN.
+            // Disk images attach media first, then use the C64 LOAD command.
             string ext = Path.GetExtension(path).ToLowerInvariant();
             if (ext == ".d64")
             {
@@ -2117,6 +2171,24 @@ namespace C64
                 }
                 return;
             } 
+            else if (ext == ".t64")
+            {
+                await TypePetsciiLikeHumanAsync(
+                    new byte[] { (byte)'L', (byte)'O', (byte)'A', (byte)'D', 0x0D },
+                    minInterKeyMs: 110,
+                    maxInterKeyMs: 220,
+                    enterExtraMs: 120).ConfigureAwait(false);
+
+                if (await WaitForReadyPromptAsync(timeoutMs: 8000).ConfigureAwait(false))
+                {
+                    await TypePetsciiLikeHumanAsync(
+                        new byte[] { (byte)'R', (byte)'U', (byte)'N', 0x0D },
+                        minInterKeyMs: 110,
+                        maxInterKeyMs: 220,
+                        enterExtraMs: 120).ConfigureAwait(false);
+                }
+                return;
+            }
             else if (ext == ".prg")
             {
                 await TypePetsciiLikeHumanAsync(
@@ -2247,9 +2319,9 @@ namespace C64
                 }
                 else if (ext == ".t64")
                 {
-                    var entries = TapeLoader.ReadT64(File.ReadAllBytes(path));
-                    LoadTapeEntries(entries, Path.GetFileName(path));
+                    TapeLoader.ReadT64(File.ReadAllBytes(path));
                     SetLastHostLoadedFile(path);
+                    Console.WriteLine($"Attached T64 {Path.GetFileName(path)}");
                 }
                 else if (ext == ".tap")
                 {
@@ -2337,35 +2409,18 @@ namespace C64
             int loaded = 0;
             foreach (TapeEntry entry in entries)
             {
-                byte[] mem = cpu.memory.memory;
-                int dataLen = entry.Data.Length;
-
-                if (entry.LoadAddress + dataLen > mem.Length)
+                try
                 {
-                    Console.Error.WriteLine(
-                        $"  Skipping '{entry.Name}': would load past end of memory.");
-                    continue;
+                    (ushort _, ushort endAddr) = LoadTapeEntry(entry);
+                    Console.WriteLine(
+                        $"  FOUND  {entry.Name,-16}  ${entry.LoadAddress:X4}-" +
+                        $"${endAddr - 1:X4}  ({entry.Data.Length} bytes)");
+                    loaded++;
                 }
-
-                for (int i = 0; i < dataLen; i++)
-                    cpu.memory.WriteRamByte((ulong)(entry.LoadAddress + i), entry.Data[i]);
-
-                if (entry.IsBasic)
+                catch (Exception ex)
                 {
-                    // Update BASIC end-of-program pointers.
-                    int endAddr = entry.LoadAddress + dataLen;
-                    cpu.memory.WriteByte(0x002D, (byte)(endAddr & 0xFF));
-                    cpu.memory.WriteByte(0x002E, (byte)(endAddr >> 8));
-                    cpu.memory.WriteByte(0x002F, (byte)(endAddr & 0xFF));
-                    cpu.memory.WriteByte(0x0030, (byte)(endAddr >> 8));
-                    cpu.memory.WriteByte(0x0031, (byte)(endAddr & 0xFF));
-                    cpu.memory.WriteByte(0x0032, (byte)(endAddr >> 8));
+                    Console.Error.WriteLine($"  Skipping '{entry.Name}': {ex.Message}");
                 }
-
-                Console.WriteLine(
-                    $"  FOUND  {entry.Name,-16}  ${entry.LoadAddress:X4}–" +
-                    $"${entry.LoadAddress + dataLen - 1:X4}  ({dataLen} bytes)");
-                loaded++;
             }
 
             if (loaded == 0)
@@ -2375,6 +2430,31 @@ namespace C64
             }
 
             Console.WriteLine($"Loaded {archiveName}  ({loaded} block{(loaded == 1 ? "" : "s")})");
+        }
+
+        private (ushort LoadAddress, ushort EndAddress) LoadTapeEntry(TapeEntry entry)
+        {
+            byte[] mem = cpu.memory.memory;
+            int dataLen = entry.Data.Length;
+
+            if (entry.LoadAddress + dataLen > mem.Length)
+                throw new InvalidDataException("would load past end of memory.");
+
+            for (int i = 0; i < dataLen; i++)
+                cpu.memory.WriteRamByte((ulong)(entry.LoadAddress + i), entry.Data[i]);
+
+            int endAddr = entry.LoadAddress + dataLen;
+            if (entry.IsBasic)
+            {
+                cpu.memory.WriteByte(0x002D, (byte)(endAddr & 0xFF));
+                cpu.memory.WriteByte(0x002E, (byte)(endAddr >> 8));
+                cpu.memory.WriteByte(0x002F, (byte)(endAddr & 0xFF));
+                cpu.memory.WriteByte(0x0030, (byte)(endAddr >> 8));
+                cpu.memory.WriteByte(0x0031, (byte)(endAddr & 0xFF));
+                cpu.memory.WriteByte(0x0032, (byte)(endAddr >> 8));
+            }
+
+            return (entry.LoadAddress, (ushort)endAddr);
         }
 
         private void LoadText(string path)
