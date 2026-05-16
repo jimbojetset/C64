@@ -419,6 +419,7 @@ namespace C64
             bool bmm = (d011 & 0x20) != 0;
             bool ecm = (d011 & 0x40) != 0;
             bool mcm = (d016 & 0x10) != 0;
+            bool invalidBitmapMode = bmm && ecm;
 
             Array.Clear(fgLine, 0, fgLine.Length);
             Array.Clear(spriteLine, 0, spriteLine.Length);
@@ -427,6 +428,8 @@ namespace C64
             {
                 FillLineSolid(frameY, (byte)(cpu.memory.memory[0xD020] & 0x0F));
             }
+            else if (invalidBitmapMode)
+                FillLineSolid(frameY, 0);
             else if (bmm && mcm)
                 RenderLineMulticolorBitmap(frameY, bg0, colorRow, cachedScreenRow, cachedBitmapRows, dy);
             else if (bmm)
