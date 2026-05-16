@@ -730,7 +730,8 @@ namespace C64
             byte oldValue = cpu.memory.memory[addr];
             cpu.memory.memory[addr] = value;
             display.RecordRasterWrite(addr, oldValue, value);
-            display.RefreshCurrentRasterLine();
+            if (!IsVicSpriteRenderRegister(addr))
+                display.RefreshCurrentRasterLine();
         }
 
         private static bool IsVicRenderRegister(ulong addr)
@@ -744,6 +745,21 @@ namespace C64
                 0xD01C => true,                  // sprite multicolor enable
                 0xD01D => true,                  // sprite X expansion
                 >= 0xD020 and <= 0xD02E => true, // border/background/sprite colors
+                _ => false
+            };
+        }
+
+        private static bool IsVicSpriteRenderRegister(ulong addr)
+        {
+            return addr switch
+            {
+                >= 0xD000 and <= 0xD010 => true,
+                0xD015 => true,
+                0xD017 => true,
+                0xD01B => true,
+                0xD01C => true,
+                0xD01D => true,
+                >= 0xD025 and <= 0xD02E => true,
                 _ => false
             };
         }

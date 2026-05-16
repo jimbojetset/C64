@@ -342,7 +342,8 @@ namespace C64
                 if (rasterCycleInLine == 0)
                 {
                     ClearRasterWriteEventsForLine(currentRasterLine);
-                    ProcessRasterLine(currentRasterLine, mem, raiseRasterIrq: true);
+                    RaiseRasterIrqForLine(currentRasterLine, mem);
+                    ProcessRasterLine(currentRasterLine, mem);
                     if (accountBusSteal)
                         BuildLineBusStealMask(currentRasterLine, mem, busStealMask);
                     else
@@ -434,7 +435,7 @@ namespace C64
             if (isResetting)
                 return;
 
-            ProcessRasterLine(currentRasterLine, cpu.memory.memory, raiseRasterIrq: false);
+            ProcessRasterLine(currentRasterLine, cpu.memory.memory);
         }
 
         private void ClearRasterWriteEvents()
@@ -467,17 +468,42 @@ namespace C64
                 for (int i = 0; i < events.Count; i++)
                 {
                     RasterWriteEvent evt = events[i];
-                    if (evt.Address == vicAddress)
+                    if (evt.Address != vicAddress)
+                        continue;
+
+                    if (IsSpriteRasterRegister(vicAddress))
                         return evt.OldValue;
+
+                    // If a raster split writes before the visible playfield starts,
+                    // use the new value for this line. Late writes still keep the
+                    // old value so they don't repaint pixels that were already drawn.
+                    return RasterCycleToFrameX(evt.Cycle) <= FramePlayfieldX
+                        ? evt.NewValue
+                        : evt.OldValue;
                 }
             }
 
             return fallback;
         }
 
-        private void ProcessRasterLine(int line, byte[] mem, bool raiseRasterIrq)
+        private static bool IsSpriteRasterRegister(ushort address)
         {
-            if (raiseRasterIrq && line == rasterCompare)
+            return address switch
+            {
+                >= 0xD000 and <= 0xD010 => true,
+                0xD015 => true,
+                0xD017 => true,
+                0xD01B => true,
+                0xD01C => true,
+                0xD01D => true,
+                >= 0xD025 and <= 0xD02E => true,
+                _ => false
+            };
+        }
+
+        private void RaiseRasterIrqForLine(int line, byte[] mem)
+        {
+            if (line == rasterCompare)
             {
                 bool rasterIrqEnabled = (mem[0xD01A] & 0x01) != 0;
                 if (rasterIrqEnabled)
@@ -486,7 +512,10 @@ namespace C64
                     cpu.InitiateIRQ(0xFFFE);
                 }
             }
+        }
 
+        private void ProcessRasterLine(int line, byte[] mem)
+        {
             int frameY = line - FrameFirstRasterLine;
             if (line >= FrameFirstRasterLine && line <= FrameLastRasterLine)
                 FillFrameLineWithBorderEvents(frameY, line, 0, FrameW - 1, (byte)(mem[0xD020] & 0x0F));
@@ -545,11 +574,8 @@ namespace C64
                     cachedScreenRow[col] = cpu.memory.ReadVicByte((ulong)(screenAddr + row * 40 + col));
 
                 int bitmapAddr = bank + (((d018 & 0x08) != 0) ? 0x2000 : 0x0000);
-                if (cachedBitmapRows[dy] == null || cachedBitmapRowNum[dy] != row)
-                {
-                    cachedBitmapRows[dy] = new byte[40];
-                    cachedBitmapRowNum[dy] = row;
-                }
+                cachedBitmapRows[dy] ??= new byte[40];
+                cachedBitmapRowNum[dy] = row;
                 for (int col = 0; col < 40; col++)
                     cachedBitmapRows[dy][col] = cpu.memory.ReadVicByte((ulong)(bitmapAddr + (row * 40 + col) * 8 + dy));
             }
@@ -975,7 +1001,7 @@ namespace C64
                 {
                     int pix = (bits >> ((3 - pair) * 2)) & 0x03;
                     int c = pix switch { 0 => bgC, 1 => cFg1, 2 => cFg2, _ => cFg3 };
-                    bool fg = pix != 0;
+                    bool fg = pix == 3;
                     renderBuf[p] = (byte)c;
                     renderBuf[p + 1] = (byte)(c >> 8);
                     renderBuf[p + 2] = (byte)(c >> 16);
@@ -1020,8 +1046,8 @@ namespace C64
                 int spriteRow = frameY - frameSpriteY;
                 if (spriteRow < 0 || spriteRow >= spriteHeight) continue;
 
-                // When Y-expanded, each sprite row becomes 2 scanlines; divide by 2 to get source row index
                 int row = yExp ? (spriteRow >> 1) : spriteRow;
+
                 int spritePtr = spritePtrs[s];
                 int dataAddr = bank + spritePtr * 64;
                 int rowAddr = dataAddr + row * 3;
