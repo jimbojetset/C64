@@ -1,4 +1,6 @@
 ﻿using _6502CPU;
+using System.Diagnostics;
+using System.Threading;
 using static SDL2.SDL;
 
 namespace C64
@@ -67,6 +69,8 @@ namespace C64
         private volatile int currentRasterLine;
         private volatile bool isResetting;
         private volatile bool resyncPending;
+        private volatile bool muteOverlayVisible;
+        private long driveActivityTicks;
         private int rasterCycleInLine;
         private readonly bool[] busStealMask = new bool[CyclesPerRasterLine];
         private readonly List<RasterWriteEvent>[] rasterWriteEvents = new List<RasterWriteEvent>[PalRasterLines];
@@ -106,6 +110,17 @@ namespace C64
         public int CurrentRasterCycle => rasterCycleInLine;
 
         public bool IsResetting => isResetting;
+
+        public bool MuteOverlayVisible
+        {
+            get => muteOverlayVisible;
+            set => muteOverlayVisible = value;
+        }
+
+        public void PulseDriveActivity()
+        {
+            Interlocked.Exchange(ref driveActivityTicks, Stopwatch.GetTimestamp());
+        }
 
         public void RecordRasterWrite(ulong address, byte oldValue, byte newValue)
         {
@@ -245,7 +260,59 @@ namespace C64
                 h = FrameH,
             };
             SDL_RenderCopy(renderer, texture, IntPtr.Zero, ref dst);
+            if (muteOverlayVisible)
+                DrawMuteOverlay();
+            DrawDriveActivityOverlay();
             SDL_RenderPresent(renderer);
+        }
+
+        private void DrawMuteOverlay()
+        {
+            const int x = 5;
+            const int y = FrameH - 12;
+
+            SDL_SetRenderDrawBlendMode(renderer, SDL_BlendMode.SDL_BLENDMODE_BLEND);
+
+            SDL_SetRenderDrawColor(renderer, 230, 230, 230, 150);
+            SDL_Rect body = new SDL_Rect { x = x, y = y + 4, w = 2, h = 3 };
+            SDL_RenderFillRect(renderer, ref body);
+
+            SDL_RenderDrawLine(renderer, x + 2, y + 4, x + 5, y + 1);
+            SDL_RenderDrawLine(renderer, x + 2, y + 6, x + 5, y + 9);
+            SDL_RenderDrawLine(renderer, x + 5, y + 1, x + 5, y + 9);
+
+            SDL_SetRenderDrawColor(renderer, 255, 80, 80, 165);
+            SDL_RenderDrawLine(renderer, x + 1, y + 2, x + 7, y + 8);
+            SDL_RenderDrawLine(renderer, x + 7, y + 2, x + 1, y + 8);
+
+            SDL_SetRenderDrawBlendMode(renderer, SDL_BlendMode.SDL_BLENDMODE_NONE);
+        }
+
+        private void DrawDriveActivityOverlay()
+        {
+            long ticks = Interlocked.Read(ref driveActivityTicks);
+            if (ticks == 0)
+                return;
+
+            double elapsedMs = (Stopwatch.GetTimestamp() - ticks) * 1000.0 / Stopwatch.Frequency;
+            if (elapsedMs > 180.0)
+                return;
+
+            byte alpha = (byte)Math.Max(45, 145 - (int)(elapsedMs * 100.0 / 180.0));
+            const int x = 16;
+            const int y = FrameH - 8;
+
+            SDL_SetRenderDrawBlendMode(renderer, SDL_BlendMode.SDL_BLENDMODE_BLEND);
+            SDL_SetRenderDrawColor(renderer, 95, 255, 125, alpha);
+
+            SDL_Rect led = new SDL_Rect { x = x, y = y, w = 4, h = 4 };
+            SDL_RenderFillRect(renderer, ref led);
+            SDL_RenderDrawPoint(renderer, x - 1, y + 1);
+            SDL_RenderDrawPoint(renderer, x + 4, y + 1);
+            SDL_RenderDrawPoint(renderer, x - 1, y + 2);
+            SDL_RenderDrawPoint(renderer, x + 4, y + 2);
+
+            SDL_SetRenderDrawBlendMode(renderer, SDL_BlendMode.SDL_BLENDMODE_NONE);
         }
 
         public void Dispose()

@@ -36,6 +36,8 @@ namespace C64
             this.drive = drive;
         }
 
+        public Action? OnDriveActivity { get; set; }
+
         public void UpdateHostCia2PortA(byte dd00, byte dd02)
         {
             // CIA2 port A IEC lines (active-low) on bits 5:DATA, 4:CLOCK, 3:ATN.
@@ -108,6 +110,7 @@ namespace C64
         {
             if (currentTalker != 8 || talkQueue.Count == 0)
                 return 0;
+            OnDriveActivity?.Invoke();
             return talkQueue.Dequeue();
         }
 
@@ -133,12 +136,18 @@ namespace C64
         {
             string? requested = pendingFilename;
             pendingFilename = null;
-            return drive.TryLoadPrg(requested, out prg, out resolvedName);
+            bool ok = drive.TryLoadPrg(requested, out prg, out resolvedName);
+            if (ok)
+                OnDriveActivity?.Invoke();
+            return ok;
         }
 
         public bool TryLoadFromDrive(string? requestedName, out byte[] prg, out string resolvedName)
         {
-            return drive.TryLoadPrg(requestedName, out prg, out resolvedName);
+            bool ok = drive.TryLoadPrg(requestedName, out prg, out resolvedName);
+            if (ok)
+                OnDriveActivity?.Invoke();
+            return ok;
         }
 
         private void PrepareTalkBuffer()
@@ -151,6 +160,7 @@ namespace C64
             if (!drive.TryLoadPrg(pendingFilename, out byte[] prg, out _))
                 return;
 
+            OnDriveActivity?.Invoke();
             talkQueue = new Queue<byte>(prg);
             devDataRelease = true;
             devClockRelease = true;

@@ -47,6 +47,9 @@ namespace C64
         /// <summary>Invoked when Shift+S is pressed (screenshot).</summary>
         public Action? OnScreenshot { get; set; }
 
+        /// <summary>Invoked when Ctrl+Q is pressed.</summary>
+        public Action? OnToggleMute { get; set; }
+
         private static readonly byte[] CtrlColours =
         {
             0x90, 0x05, 0x1C, 0x9F, 0x9C, 0x1E, 0x1F, 0x9E,
@@ -235,7 +238,7 @@ namespace C64
                     case SDL_Keycode.SDLK_s: OnSave?.Invoke(); return false;
                     case SDL_Keycode.SDLK_r:
                     case SDL_Keycode.SDLK_F12: OnHardReset?.Invoke(); return false;
-                    case SDL_Keycode.SDLK_q: return true;
+                    case SDL_Keycode.SDLK_q: OnToggleMute?.Invoke(); return false;
                     case SDL_Keycode.SDLK_w: return true;
                 }
             }

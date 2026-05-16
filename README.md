@@ -24,6 +24,7 @@ Commodore 64 emulator application using SDL2 for display/input/audio. Key featur
 - VIC raster stepping with bus-steal/stall accounting
 - SID synthesis with MODE/VOL semantics
 - CIA timer/ICR/TOD handling, serial shift behavior, and NMI/IRQ paths
+- Keyboard and SDL-compatible game controller joystick input
 - IEC + virtual 1541 D64 file loading support
 - TAP datasette pulse playback with motor/sense/read behavior
 - Host file loading for PRG/T64/TAP/D64
@@ -40,6 +41,7 @@ Most-used non-standard key mappings:
 | SHIFT LOCK | `Caps Lock` (toggle) |
 | CLR/HOME | `Home` |
 | INST/DEL | `Insert` or `Backspace/Delete` |
+| Mute/unmute audio | `Ctrl+Q` |
 
 For the complete mapping and notes, see the full table in the keyboard section below.
 
@@ -110,10 +112,11 @@ dotnet run -c Release
 | Keyboard Shortcut | Action |
 |---|---|
 | `F12` or `Ctrl+R` | Hard reset CPU and peripherals |
-| `F11` or `Ctrl+Q` or `Shift+Q` or `Alt+Q` | Debug dump (emulation state to stdout) |
+| `Ctrl+Q` | Toggle audio mute; shows a small mute icon in the bottom-left corner while muted |
 | `Ctrl+O` | Open file dialog (load PRG/D64/T64/TAP) |
 | `Ctrl+S` | Save memory range prompt |
 | `Shift+S` | Screenshot (saved as `c64_screenshot_*.bmp`) |
+| `Shift+Q` or `Alt+Q` or `Ctrl+W` | Quit emulator |
 | `Caps Lock` | Toggle C64 SHIFT LOCK |
 | `Page Up` or `Pause` | Trigger RESTORE NMI |
 
@@ -135,6 +138,7 @@ This emulator is wired for UK keyboard layout and UK punctuation mode.
 | Color shortcuts `Ctrl+1..8` | `Left Ctrl + 1..8` | PETSCII control-color codes |
 | Color shortcuts `C=+1..8` | `Right Alt + 1..8` | PETSCII Commodore-color codes |
 | Joystick fire (port 2) | `Right Ctrl` or `Left Ctrl` | `Right Alt` is reserved for Commodore key |
+| Joystick directions (port 2) | Arrow keys | Also drives C64 cursor keys |
 | UK punctuation `;:` | Host `;:` key | Mapped to C64 `:` key matrix position |
 | UK punctuation `'@` | Host `'@` key | Mapped to C64 `;` key matrix position |
 
@@ -142,6 +146,20 @@ Notes:
 - `Right Alt` (AltGr) is reserved for the C64 COMMODORE key.
 - The emulator does not use macOS `Command` key aliases for control shortcuts.
 - If your host keyboard lacks a usable right-side Alt key, remap COMMODORE in `C64/Keyboard.cs`.
+
+### Joystick / Controller Input
+
+Joystick input is currently mapped to C64 joystick port 2, which is the port used by many games.
+
+| Input | C64 joystick action |
+|---|---|
+| Arrow keys | Up/down/left/right |
+| `Left Ctrl` or `Right Ctrl` | Fire |
+| SDL game controller D-pad | Up/down/left/right |
+| SDL game controller left stick | Up/down/left/right, with dead zone |
+| SDL game controller A/B/X/Y or shoulder buttons | Fire |
+
+SDL-compatible controllers are detected at startup, and the emulator will open the first available controller. If that controller is disconnected, it will try to reopen another available one.
 
 ## References
 

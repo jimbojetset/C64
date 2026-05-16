@@ -187,6 +187,7 @@ namespace C64
             sound = new Sound();
             drive = new VirtualDrive1541();
             iecBus = new IecBus(drive);
+            iecBus.OnDriveActivity = display.PulseDriveActivity;
             datasette = new DatasetteDevice();
             reu = new REU(128);
             reu.OnIrqRequest = () => cpu.InitiateIRQ(0xFFFE);
@@ -198,6 +199,7 @@ namespace C64
             {
                 display.TakeScreenshot();
             };
+            keyboard.OnToggleMute = ToggleMute;
 
             byte[] kernal = cpu.memory.GetBankedROM(Memory.BankSlot.Kernal)!;
             kernal[0xFCF5 - 0xE000] = 0xEA;
@@ -1628,6 +1630,7 @@ namespace C64
             {
                 byte[] prg;
                 string resolvedName;
+                PrintKernalLoadMessages(requestedName);
                 bool ok = string.IsNullOrWhiteSpace(requestedName)
                     ? iecBus.TryLoadFromDrive(out prg, out resolvedName)
                     : iecBus.TryLoadFromDrive(requestedName, out prg, out resolvedName);
@@ -1675,6 +1678,7 @@ namespace C64
 
             try
             {
+                PrintKernalLoadMessages(requestedName);
                 (ushort start, ushort end) = LoadPrgFromBytes(File.ReadAllBytes(resolved), loadOverride);
 
                 // LOAD returns end address in X/Y and C clear on success.
@@ -1695,6 +1699,21 @@ namespace C64
             }
 
             ReturnFromKernelTrap();
+        }
+
+        private void PrintKernalLoadMessages(string? requestedName)
+        {
+            string name = string.IsNullOrWhiteSpace(requestedName)
+                ? "*"
+                : requestedName.Trim().Trim('"', '\'');
+            if (string.IsNullOrWhiteSpace(name))
+                name = "*";
+
+            EnsureScreenLineStart();
+            WriteScreenText($"SEARCHING FOR {name.ToUpperInvariant()}");
+            NewScreenLine();
+            WriteScreenText("LOADING");
+            NewScreenLine();
         }
 
         private string? ResolveKernelLoadPath(string? requestedName)
@@ -1731,6 +1750,104 @@ namespace C64
                 return lastHostLoadedFile;
 
             return null;
+        }
+
+        private void EnsureScreenLineStart()
+        {
+            if (cpu.memory.memory[0x00D3] != 0)
+                NewScreenLine();
+        }
+
+        private void NewScreenLine()
+        {
+            byte[] mem = cpu.memory.memory;
+            int row = Math.Min(mem[0x00D6] + 1, 24);
+            if (mem[0x00D6] >= 24)
+                ScrollBasicScreenUp();
+
+            mem[0x00D3] = 0;
+            mem[0x00D6] = (byte)row;
+        }
+
+        private void WriteScreenText(string text)
+        {
+            foreach (char ch in text)
+            {
+                if (ch == '\r' || ch == '\n')
+                {
+                    NewScreenLine();
+                    continue;
+                }
+
+                WriteScreenChar(ch);
+            }
+        }
+
+        private void WriteScreenChar(char ch)
+        {
+            byte[] mem = cpu.memory.memory;
+            int col = mem[0x00D3];
+            if (col >= 40)
+            {
+                NewScreenLine();
+                col = 0;
+            }
+
+            int row = Math.Min(mem[0x00D6], (byte)24);
+            int screenBase = mem[0x0288] << 8;
+            if (screenBase == 0)
+                screenBase = 0x0400;
+
+            int offset = row * 40 + col;
+            cpu.memory.WriteRamByte((ulong)(screenBase + offset), AsciiCharToScreenCode(ch));
+            cpu.memory.WriteByte((ulong)(0xD800 + offset), (byte)(mem[0x0286] & 0x0F));
+            mem[0x00D3] = (byte)(col + 1);
+        }
+
+        private void ScrollBasicScreenUp()
+        {
+            byte[] mem = cpu.memory.memory;
+            int screenBase = mem[0x0288] << 8;
+            if (screenBase == 0)
+                screenBase = 0x0400;
+
+            for (int i = 0; i < 24 * 40; i++)
+            {
+                cpu.memory.WriteRamByte((ulong)(screenBase + i), mem[screenBase + i + 40]);
+                cpu.memory.WriteByte((ulong)(0xD800 + i), cpu.memory.ReadByte((ulong)(0xD800 + i + 40)));
+            }
+
+            byte colour = (byte)(mem[0x0286] & 0x0F);
+            for (int i = 24 * 40; i < 25 * 40; i++)
+            {
+                cpu.memory.WriteRamByte((ulong)(screenBase + i), 0x20);
+                cpu.memory.WriteByte((ulong)(0xD800 + i), colour);
+            }
+        }
+
+        private static byte AsciiCharToScreenCode(char ch)
+        {
+            if (ch >= 'a' && ch <= 'z')
+                ch = (char)('A' + (ch - 'a'));
+            if (ch >= 'A' && ch <= 'Z')
+                return (byte)(ch - 'A' + 1);
+            if (ch >= '0' && ch <= '9')
+                return (byte)ch;
+
+            return ch switch
+            {
+                ' ' => 0x20,
+                '*' => 0x2A,
+                '$' => 0x24,
+                '.' => 0x2E,
+                ',' => 0x2C,
+                '-' => 0x2D,
+                '_' => 0x64,
+                ':' => 0x3A,
+                '/' => 0x2F,
+                '?' => 0x3F,
+                _ => 0x20
+            };
         }
 
         private void ReturnFromKernelTrap()
@@ -1878,6 +1995,13 @@ namespace C64
             cpu.InitiateNMI(0xFFFA);
         }
 
+        private void ToggleMute()
+        {
+            bool muted = !sound.Muted;
+            sound.Muted = muted;
+            display.MuteOverlayVisible = muted;
+        }
+
         /// <summary>
         /// Drag-and-drop flow: reset the emulator (Ctrl+R equivalent), wait
         /// for the KERNAL to reach the READY prompt, load the file, then
@@ -1905,10 +2029,19 @@ namespace C64
             if (ext == ".d64")
             {
                 await TypePetsciiLikeHumanAsync(
-                    new byte[] { (byte)'L', (byte)'O', (byte)'A', (byte)'D', (byte)' ', (byte)'"', (byte)'*', (byte)'"', (byte)',', (byte)'8', (byte)',', (byte)'1', 0x0D },
+                    new byte[] { (byte)'L', (byte)'O', (byte)'A', (byte)'D', (byte)' ', (byte)'"', (byte)'*', (byte)'"', (byte)',', (byte)'8', (byte)',', (byte)'1', 0x0D, 0x0D },
                     minInterKeyMs: 110,
                     maxInterKeyMs: 220,
                     enterExtraMs: 120).ConfigureAwait(false);
+
+                if (await WaitForReadyPromptAsync(timeoutMs: 8000).ConfigureAwait(false))
+                {
+                    await TypePetsciiLikeHumanAsync(
+                        new byte[] { (byte)'R', (byte)'U', (byte)'N', 0x0D },
+                        minInterKeyMs: 110,
+                        maxInterKeyMs: 220,
+                        enterExtraMs: 120).ConfigureAwait(false);
+                }
                 return;
             } 
             else if (ext == ".prg")
@@ -1948,7 +2081,7 @@ namespace C64
             }
         }
 
-        private async Task WaitForReadyPromptAsync(int timeoutMs)
+        private async Task<bool> WaitForReadyPromptAsync(int timeoutMs)
         {
             const int pollMs = 20;
             int waitedMs = 0;
@@ -1962,11 +2095,13 @@ namespace C64
             while (waitedMs < timeoutMs)
             {
                 if (HasReadyPromptOnScreen())
-                    return;
+                    return true;
 
                 await Task.Delay(pollMs).ConfigureAwait(false);
                 waitedMs += pollMs;
             }
+
+            return false;
         }
 
         private bool HasReadyPromptOnScreen()

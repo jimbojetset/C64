@@ -86,6 +86,7 @@ namespace C64
         private int _muteSamplesRemaining;
         private int _fadeInSamplesRemaining;
         private int _fadeInSamplesTotal;
+        private volatile bool muted;
 
         // ?? SDL audio ?????????????????????????????????????????????????????????
         private uint _dev;               // SDL audio device id (0 = none)
@@ -252,6 +253,12 @@ namespace C64
             28 => _v3EnvSnapshot,    // $D41C voice-3 envelope output
             _ => 0,
         };
+
+        public bool Muted
+        {
+            get => muted;
+            set => muted = value;
+        }
 
         /// <summary>Reset all SID registers and per-voice state.</summary>
         public void Reset()
@@ -469,7 +476,11 @@ namespace C64
                     mixed *= fade;
                 }
 
-                if (_muteSamplesRemaining > 0)
+                if (muted)
+                {
+                    buf[i] = 0;
+                }
+                else if (_muteSamplesRemaining > 0)
                 {
                     _muteSamplesRemaining--;
                     buf[i] = 0;
