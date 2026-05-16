@@ -715,7 +715,7 @@ namespace C64
             if (addr >= 0xD400 && addr <= 0xD7FF)
             {
                 int sidReg = (int)((addr - 0xD400) & 0x1F);
-                sound.WriteRegister(sidReg, value, cpu.TotalCycles);
+                sound.WriteRegister(sidReg, value);
                 cpu.memory.memory[addr] = value;
                 return true;
             }

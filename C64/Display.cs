@@ -536,6 +536,7 @@ namespace C64
             if (!invalidBitmapMode)
                 RenderSpritesScanline(frameY, bank, spriteEnable, spriteXExpand, spriteYExpand, spriteMulticolor, spritePriority, spriteXHigh, spriteMc1Color, spriteMc2Color, spriteColors, spriteXPos, spriteYPos, spritePtrs);
 
+            ApplyOuterBorders(frameY);
             ApplyInnerBorders(frameY, playY, d011, d016);
         }
 
@@ -702,6 +703,15 @@ namespace C64
                 ClearFgLineRange(0, 6);
                 ClearFgLineRange(ScreenW - 7, ScreenW - 1);
             }
+        }
+
+        private void ApplyOuterBorders(int frameY)
+        {
+            byte borderIdx = (byte)(cpu.memory.memory[0xD020] & 0x0F);
+            int rasterLine = frameY + FrameFirstRasterLine;
+
+            FillFrameLineWithBorderEvents(frameY, rasterLine, 0, FramePlayfieldX - 1, borderIdx);
+            FillFrameLineWithBorderEvents(frameY, rasterLine, FramePlayfieldX + ScreenW, FrameW - 1, borderIdx);
         }
 
         private void ClearFgLineRange(int xStart, int xEnd)

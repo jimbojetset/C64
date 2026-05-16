@@ -30,9 +30,9 @@ namespace C64
         private const int SampleRate = 44_100;
         private const double CyclesPerSample = CpuFreq / SampleRate; // ? 22.34
 
-        // Keep ~40 ms buffered in SDL's queue; stall when above ~80 ms.
-        private const int TargetLatencyMs = 40;
-        private const int MaxLatencyMs = 80;
+        // Keep the audio queue short so SID register writes are heard promptly.
+        private const int TargetLatencyMs = 25;
+        private const int MaxLatencyMs = 50;
 
         // ?? SID register file ($D400 = reg 0 � $D41C = reg 28) ????????????????
         // Synth-thread register image. CPU-thread writes are queued with
@@ -41,6 +41,7 @@ namespace C64
         private readonly ConcurrentQueue<SidWrite> _writeQueue = new();
         private static readonly double CyclesPerAudioSample = CyclesPerSample;
         private long _writeCycleCursor;
+        private long _publishedSynthCycle;
         private double _synthCycleCursor;
 
         // ?? Per-voice synthesis state (owned by the synthesis thread) ?????????
@@ -189,6 +190,7 @@ namespace C64
                 throw new Exception($"SDL_OpenAudioDevice failed: {SDL_GetError()}");
 
             _writeCycleCursor = 0;
+            _publishedSynthCycle = 0;
             _synthCycleCursor = 0.0;
             _lastDacTick = 0;
             _muteSamplesRemaining = (SampleRate * ResetMuteMs) / 1000;
@@ -225,12 +227,13 @@ namespace C64
         }
 
         /// <summary>Write a SID register (0�28 maps to $D400�$D41C).</summary>
-        public void WriteRegister(int reg, byte value, long cpuCycle)
+        public void WriteRegister(int reg, byte value)
         {
             if ((uint)reg < 29)
             {
                 long cursor = Interlocked.Read(ref _writeCycleCursor);
-                long cycle = Math.Max(cpuCycle, cursor);
+                long audioCycle = Interlocked.Read(ref _publishedSynthCycle);
+                long cycle = Math.Max(audioCycle, cursor);
                 Interlocked.Exchange(ref _writeCycleCursor, cycle + 1);
                 _writeQueue.Enqueue(new SidWrite(reg, value, cycle));
             }
@@ -278,6 +281,7 @@ namespace C64
                 _fadeInSamplesTotal = (SampleRate * ResetFadeInMs) / 1000;
                 _fadeInSamplesRemaining = _fadeInSamplesTotal;
                 _writeCycleCursor = 0;
+                _publishedSynthCycle = 0;
                 _synthCycleCursor = 0.0;
                 _v3WaveSnapshot = 0;
                 _v3EnvSnapshot = 0;
@@ -394,6 +398,7 @@ namespace C64
             {
                 _synthCycleCursor += CyclesPerAudioSample;
                 long sampleCycle = (long)_synthCycleCursor;
+                Interlocked.Exchange(ref _publishedSynthCycle, sampleCycle);
                 ApplyWritesUntil(sampleCycle, r);
                 AdvanceDacToTick(sampleCycle);
                 _volDacShaped += (_volDacHp - _volDacShaped) * VolumeDacSmoothing;
