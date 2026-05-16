@@ -12,6 +12,8 @@ namespace C64
         public const int FrameH = 272;
         private const int FramePlayfieldX = (FrameW - ScreenW) / 2;
         private const int FramePlayfieldY = (FrameH - ScreenH) / 2;
+        private const int FrameFirstRasterLine = VisibleTop - FramePlayfieldY;
+        private const int FrameLastRasterLine = FrameFirstRasterLine + FrameH - 1;
 
         private const int PalRasterLines = 312;
         private const int CyclesPerRasterLine = 63;
@@ -45,8 +47,8 @@ namespace C64
 
         private byte[] charRom = Array.Empty<byte>();
 
-        private byte[] renderBuf = new byte[ScreenW * ScreenH * 4];
-        private byte[] displayBuf = new byte[ScreenW * ScreenH * 4];
+        private byte[] renderBuf = new byte[FrameW * FrameH * 4];
+        private byte[] displayBuf = new byte[FrameW * FrameH * 4];
         private readonly object swapLock = new object();
 
         private readonly bool[] fgLine = new bool[ScreenW];
@@ -145,7 +147,7 @@ namespace C64
             texture = SDL_CreateTexture(renderer,
                 SDL_PIXELFORMAT_ARGB8888,
                 (int)SDL_TextureAccess.SDL_TEXTUREACCESS_STREAMING,
-                ScreenW, ScreenH);
+                FrameW, FrameH);
             if (texture == IntPtr.Zero)
                 throw new Exception($"SDL_CreateTexture failed: {SDL_GetError()}");
 
@@ -188,21 +190,17 @@ namespace C64
                 {
                     fixed (byte* p = displayBuf)
                     {
-                        SDL_UpdateTexture(texture, IntPtr.Zero, (IntPtr)p, ScreenW * 4);
+                        SDL_UpdateTexture(texture, IntPtr.Zero, (IntPtr)p, FrameW * 4);
                     }
                 }
             }
 
-            int border = C64Palette[cpu.memory.memory[0xD020] & 0x0F];
-            SDL_SetRenderDrawColor(renderer, (byte)(border >> 16), (byte)(border >> 8), (byte)border, 255);
-            SDL_RenderClear(renderer);
-
             SDL_Rect dst = new SDL_Rect
             {
-                x = FramePlayfieldX,
-                y = FramePlayfieldY,
-                w = ScreenW,
-                h = ScreenH,
+                x = 0,
+                y = 0,
+                w = FrameW,
+                h = FrameH,
             };
             SDL_RenderCopy(renderer, texture, IntPtr.Zero, ref dst);
             SDL_RenderPresent(renderer);
@@ -334,6 +332,10 @@ namespace C64
                 }
             }
 
+            int frameY = line - FrameFirstRasterLine;
+            if (line >= FrameFirstRasterLine && line <= FrameLastRasterLine)
+                FillFrameLineSolid(frameY, (byte)(mem[0xD020] & 0x0F));
+
             if (line < VisibleTop || line > VisibleBottom)
                 return;
 
@@ -404,10 +406,10 @@ namespace C64
                     colorRow[col] = mem[0xD800 + wrappedRow * 40 + col];
             }
 
-            RenderScanline(playY, d011, d016, d018, bg0, bg1, bg2, bg3, dd00, dd02, spriteEnable, spriteXExpand, spriteYExpand, spriteMulticolor, spritePriority, spriteXHigh, spriteMc1Color, spriteMc2Color, spriteColors, spriteXPos, spriteYPos, spritePtrs, colorRow, cachedScreenRow, cachedBitmapRows, dy, matrixVisible);
+            RenderScanline(frameY, playY, d011, d016, d018, bg0, bg1, bg2, bg3, dd00, dd02, spriteEnable, spriteXExpand, spriteYExpand, spriteMulticolor, spritePriority, spriteXHigh, spriteMc1Color, spriteMc2Color, spriteColors, spriteXPos, spriteYPos, spritePtrs, colorRow, cachedScreenRow, cachedBitmapRows, dy, matrixVisible);
         }
 
-        private void RenderScanline(int y, byte d011, byte d016, byte d018, byte bg0, byte bg1, byte bg2, byte bg3, byte dd00, byte dd02, byte spriteEnable, byte spriteXExpand, byte spriteYExpand, byte spriteMulticolor, byte spritePriority, byte spriteXHigh, byte spriteMc1Color, byte spriteMc2Color, byte[] spriteColors, byte[] spriteXPos, byte[] spriteYPos, byte[] spritePtrs, byte[] colorRow, byte[] cachedScreenRow, byte[][] cachedBitmapRows, int dy, bool matrixVisible)
+        private void RenderScanline(int frameY, int playY, byte d011, byte d016, byte d018, byte bg0, byte bg1, byte bg2, byte bg3, byte dd00, byte dd02, byte spriteEnable, byte spriteXExpand, byte spriteYExpand, byte spriteMulticolor, byte spritePriority, byte spriteXHigh, byte spriteMc1Color, byte spriteMc2Color, byte[] spriteColors, byte[] spriteXPos, byte[] spriteYPos, byte[] spritePtrs, byte[] colorRow, byte[] cachedScreenRow, byte[][] cachedBitmapRows, int dy, bool matrixVisible)
         {
             int bank = GetVicBankBase(dd00, dd02);
             int screenAddr = bank + ((d018 >> 4) & 0x0F) * 0x400;
@@ -423,23 +425,23 @@ namespace C64
 
             if (!screenOn || !matrixVisible)
             {
-                FillLineSolid(y, (byte)(cpu.memory.memory[0xD020] & 0x0F));
+                FillLineSolid(frameY, (byte)(cpu.memory.memory[0xD020] & 0x0F));
             }
             else if (bmm && mcm)
-                RenderLineMulticolorBitmap(y, bg0, colorRow, cachedScreenRow, cachedBitmapRows, dy);
+                RenderLineMulticolorBitmap(frameY, bg0, colorRow, cachedScreenRow, cachedBitmapRows, dy);
             else if (bmm)
-                RenderLineHiresBitmap(y, colorRow, cachedScreenRow, cachedBitmapRows, dy);
+                RenderLineHiresBitmap(frameY, colorRow, cachedScreenRow, cachedBitmapRows, dy);
             else if (ecm)
-                RenderLineExtendedBgText(y, charAddr, bg0, bg1, bg2, bg3, bank, colorRow, cachedScreenRow, dy);
+                RenderLineExtendedBgText(frameY, charAddr, bg0, bg1, bg2, bg3, bank, colorRow, cachedScreenRow, dy);
             else if (mcm)
-                RenderLineMulticolorText(y, charAddr, bg0, bg1, bg2, bank, colorRow, cachedScreenRow, dy);
+                RenderLineMulticolorText(frameY, charAddr, bg0, bg1, bg2, bank, colorRow, cachedScreenRow, dy);
             else
-                RenderLineStandardText(y, charAddr, bg0, bank, colorRow, cachedScreenRow, dy);
+                RenderLineStandardText(frameY, charAddr, bg0, bank, colorRow, cachedScreenRow, dy);
 
             if (screenOn && matrixVisible)
-                RenderSpritesScanline(y, bank, spriteEnable, spriteXExpand, spriteYExpand, spriteMulticolor, spritePriority, spriteXHigh, spriteMc1Color, spriteMc2Color, spriteColors, spriteXPos, spriteYPos, spritePtrs);
+                RenderSpritesScanline(frameY, playY, bank, spriteEnable, spriteXExpand, spriteYExpand, spriteMulticolor, spritePriority, spriteXHigh, spriteMc1Color, spriteMc2Color, spriteColors, spriteXPos, spriteYPos, spritePtrs);
 
-            ApplyInnerBorders(y, d011, d016);
+            ApplyInnerBorders(frameY, playY, d011, d016);
         }
 
         private static int GetVicBankBase(byte dd00, byte dd02)
@@ -480,8 +482,23 @@ namespace C64
         private void FillLineSolid(int y, byte colorIdx)
         {
             int c = C64Palette[colorIdx & 0x0F];
-            int p = y * ScreenW * 4;
+            int p = (y * FrameW + FramePlayfieldX) * 4;
             int end = p + ScreenW * 4;
+            while (p < end)
+            {
+                renderBuf[p] = (byte)c;
+                renderBuf[p + 1] = (byte)(c >> 8);
+                renderBuf[p + 2] = (byte)(c >> 16);
+                renderBuf[p + 3] = 0xFF;
+                p += 4;
+            }
+        }
+
+        private void FillFrameLineSolid(int y, byte colorIdx)
+        {
+            int c = C64Palette[colorIdx & 0x0F];
+            int p = y * FrameW * 4;
+            int end = p + FrameW * 4;
             while (p < end)
             {
                 renderBuf[p] = (byte)c;
@@ -498,7 +515,7 @@ namespace C64
             if (xEnd >= ScreenW) xEnd = ScreenW - 1;
             if (xStart > xEnd) return;
 
-            int p = (y * ScreenW + xStart) * 4;
+            int p = (y * FrameW + FramePlayfieldX + xStart) * 4;
             int count = xEnd - xStart + 1;
             for (int i = 0; i < count; i++)
             {
@@ -510,7 +527,7 @@ namespace C64
             }
         }
 
-        private void ApplyInnerBorders(int y, byte d011, byte d016)
+        private void ApplyInnerBorders(int frameY, int playY, byte d011, byte d016)
         {
             byte borderIdx = (byte)(cpu.memory.memory[0xD020] & 0x0F);
             int borderArgb = C64Palette[borderIdx];
@@ -520,9 +537,9 @@ namespace C64
             int firstVisibleY = row25 ? 0 : 4;
             int lastVisibleYExclusive = row25 ? ScreenH : (ScreenH - 4);
 
-            if (y < firstVisibleY || y >= lastVisibleYExclusive)
+            if (playY < firstVisibleY || playY >= lastVisibleYExclusive)
             {
-                FillLineSolid(y, borderIdx);
+                FillLineSolid(frameY, borderIdx);
                 return;
             }
 
@@ -530,8 +547,8 @@ namespace C64
             bool col40 = (d016 & 0x08) != 0;
             if (!col40)
             {
-                FillLineRange(y, 0, 6, borderArgb);
-                FillLineRange(y, ScreenW - 7, ScreenW - 1, borderArgb);
+                FillLineRange(frameY, 0, 6, borderArgb);
+                FillLineRange(frameY, ScreenW - 7, ScreenW - 1, borderArgb);
             }
         }
 
@@ -542,7 +559,7 @@ namespace C64
             int bgC = C64Palette[bg];
             bool charFromVicRam = ReferenceEquals(cs, cpu.memory.memory) && cb >= 0xD000 && cb < 0xE000;
 
-            int lineStart = y * ScreenW * 4;
+            int lineStart = (y * FrameW + FramePlayfieldX) * 4;
             int fgBase = 0;
 
             for (int col = 0; col < 40; col++)
@@ -578,7 +595,7 @@ namespace C64
             int[] mcc = { bgC, C64Palette[bg1], C64Palette[bg2], 0 };
             bool charFromVicRam = ReferenceEquals(cs, cpu.memory.memory) && cb >= 0xD000 && cb < 0xE000;
 
-            int lineStart = y * ScreenW * 4;
+            int lineStart = (y * FrameW + FramePlayfieldX) * 4;
             int fgBase = 0;
 
             for (int col = 0; col < 40; col++)
@@ -639,7 +656,7 @@ namespace C64
             int[] bgC = { C64Palette[bg0], C64Palette[bg1], C64Palette[bg2], C64Palette[bg3] };
             bool charFromVicRam = ReferenceEquals(cs, cpu.memory.memory) && cb >= 0xD000 && cb < 0xE000;
 
-            int lineStart = y * ScreenW * 4;
+            int lineStart = (y * FrameW + FramePlayfieldX) * 4;
             int fgBase = 0;
 
             for (int col = 0; col < 40; col++)
@@ -675,7 +692,7 @@ namespace C64
         {
             byte[] mem = cpu.memory.memory;
 
-            int lineStart = y * ScreenW * 4;
+            int lineStart = (y * FrameW + FramePlayfieldX) * 4;
             int fgBase = 0;
 
             for (int col = 0; col < 40; col++)
@@ -706,7 +723,7 @@ namespace C64
             byte[] mem = cpu.memory.memory;
             int bgC = C64Palette[bg0];
 
-            int lineStart = y * ScreenW * 4;
+            int lineStart = (y * FrameW + FramePlayfieldX) * 4;
             int fgBase = 0;
 
             for (int col = 0; col < 40; col++)
@@ -739,7 +756,7 @@ namespace C64
             }
         }
 
-        private void RenderSpritesScanline(int y, int bank, byte spriteEnable, byte spriteXExpand, byte spriteYExpand, byte spriteMulticolor, byte spritePriority, byte spriteXHigh, byte spriteMc1Color, byte spriteMc2Color, byte[] spriteColors, byte[] spriteXPos, byte[] spriteYPos, byte[] spritePtrs)
+        private void RenderSpritesScanline(int frameY, int playY, int bank, byte spriteEnable, byte spriteXExpand, byte spriteYExpand, byte spriteMulticolor, byte spritePriority, byte spriteXHigh, byte spriteMc1Color, byte spriteMc2Color, byte[] spriteColors, byte[] spriteXPos, byte[] spriteYPos, byte[] spritePtrs)
         {
             byte[] mem = cpu.memory.memory;
             if (spriteEnable == 0) return;
@@ -764,7 +781,7 @@ namespace C64
                 int color = C64Palette[spriteColors[s] & 0x0F];
 
                 int spriteHeight = yExp ? 42 : 21;
-                int spriteRow = y - fbY;
+                int spriteRow = playY - fbY;
                 if (spriteRow < 0 || spriteRow >= spriteHeight) continue;
 
                 // SEVERITY 3 FIX: Sprite Y-Expansion - Exact pixel-by-pixel doubling
@@ -788,7 +805,7 @@ namespace C64
                         int basePix = p * 2 * (xExp ? 2 : 1);
                         int width = 2 * (xExp ? 2 : 1);
                         for (int w = 0; w < width; w++)
-                            PaintSpritePixelLine(fbX + basePix + w, y, c, behindBg, s);
+                            PaintSpritePixelLine(fbX + basePix + w, frameY, playY, c, behindBg, s);
                     }
                 }
                 else
@@ -799,13 +816,13 @@ namespace C64
                         int basePix = p * (xExp ? 2 : 1);
                         int width = xExp ? 2 : 1;
                         for (int w = 0; w < width; w++)
-                            PaintSpritePixelLine(fbX + basePix + w, y, color, behindBg, s);
+                            PaintSpritePixelLine(fbX + basePix + w, frameY, playY, color, behindBg, s);
                     }
                 }
             }
         }
 
-        private void PaintSpritePixelLine(int x, int y, int color, bool behindBg, int spriteIdx)
+        private void PaintSpritePixelLine(int x, int frameY, int playY, int color, bool behindBg, int spriteIdx)
         {
             // SEVERITY 3 FIX: Sprite 9-bit X Positioning Edge Cases
             // Clamp to visible screen area; real C64 doesn't wrap horizontally at 320px boundary
@@ -823,7 +840,7 @@ namespace C64
                     mem[0xD019] |= 0x84;
                     cpu.InitiateIRQ(0xFFFE);
                     if (TraceSpriteCollisions)
-                        Console.Error.WriteLine($"[VIC-SPRCOL] x={x} y={y} self={spriteIdx} priorMask=${priorOtherSprites:X2} d01e=${mem[0xD01E]:X2}");
+                        Console.Error.WriteLine($"[VIC-SPRCOL] x={x} y={playY} self={spriteIdx} priorMask=${priorOtherSprites:X2} d01e=${mem[0xD01E]:X2}");
                 }
             }
 
@@ -841,7 +858,7 @@ namespace C64
 
             if (behindBg && fgLine[x]) return;
 
-            int p = (y * ScreenW + x) * 4;
+            int p = (frameY * FrameW + FramePlayfieldX + x) * 4;
             renderBuf[p] = (byte)color;
             renderBuf[p + 1] = (byte)(color >> 8);
             renderBuf[p + 2] = (byte)(color >> 16);
@@ -857,7 +874,7 @@ namespace C64
                     // Capture current display buffer and save as PNG
                     string timestamp = DateTime.Now.ToString("yyyyMMdd_HHmmss_fff");
                     string filename = $"c64_screenshot_{timestamp}.png";
-                    WritePng(filename, displayBuf, ScreenW, ScreenH);
+                    WritePng(filename, displayBuf, FrameW, FrameH);
                     Console.Error.WriteLine($"[SCREENSHOT] Saved to {filename}");
                 }
             }
