@@ -405,20 +405,22 @@ namespace C64
                     {
                         byte oldD011 = cpu.memory.memory[0xD011];
                         display.RasterCompare = (display.RasterCompare & 0xFF) | ((value & 0x80) << 1);
-                        byte oldHigh = (byte)(cpu.memory.memory[0xD011] & 0x80);
+                        byte oldHigh = (byte)(oldD011 & 0x80);
                         byte newVal = (byte)((value & 0x7F) | oldHigh);
-                        cpu.memory.memory[0xD011] = (byte)((value & 0x7F) | oldHigh);
+                        cpu.memory.memory[0xD011] = newVal;
+                        display.RecordRasterWrite(addr, oldD011, newVal);
+                        display.RefreshCurrentRasterLine();
                         // ...existing code...
                         return true;
                     }
                 case 0xD016:
                     {
-                        cpu.memory.memory[0xD016] = value;
+                        WriteVicRenderRegister(addr, value);
                         return true;
                     }
                 case 0xD018:
                     {
-                        cpu.memory.memory[0xD018] = value;
+                        WriteVicRenderRegister(addr, value);
                         return true;
                     }
                 case 0xD019:
@@ -490,7 +492,7 @@ namespace C64
                                 cpu.memory.memory[0xDC05] = (byte)(cia1TimerACounter >> 8);
                             }
 
-                            cia1Cra = (byte)(value & 0xEF);
+                            cia1Cra = NormalizeCiaControlWrite(value);
                             cpu.memory.memory[0xDC0E] = cia1Cra;
                         }
                         return true;
@@ -556,7 +558,7 @@ namespace C64
                                 cpu.memory.memory[0xDC07] = (byte)(cia1TimerBCounter >> 8);
                             }
 
-                            cia1Crb = (byte)(value & 0xEF);
+                            cia1Crb = NormalizeCiaControlWrite(value);
                             cpu.memory.memory[0xDC0F] = cia1Crb;
                         }
                         return true;
@@ -693,7 +695,7 @@ namespace C64
                             cpu.memory.memory[0xDD04] = (byte)(cia2TimerACounter & 0xFF);
                             cpu.memory.memory[0xDD05] = (byte)(cia2TimerACounter >> 8);
                         }
-                        cia2Cra = (byte)(value & 0xEF);
+                        cia2Cra = NormalizeCiaControlWrite(value);
                         cpu.memory.memory[0xDD0E] = cia2Cra;
                     }
                     return true;
@@ -706,10 +708,16 @@ namespace C64
                             cpu.memory.memory[0xDD06] = (byte)(cia2TimerBCounter & 0xFF);
                             cpu.memory.memory[0xDD07] = (byte)(cia2TimerBCounter >> 8);
                         }
-                        cia2Crb = (byte)(value & 0xEF);
+                        cia2Crb = NormalizeCiaControlWrite(value);
                         cpu.memory.memory[0xDD0F] = cia2Crb;
                     }
                     return true;
+            }
+
+            if (IsVicRenderRegister(addr))
+            {
+                WriteVicRenderRegister(addr, value);
+                return true;
             }
 
             // SEVERITY 4 FIX: REU (RAM Expansion Unit) write handler
@@ -726,12 +734,35 @@ namespace C64
             if (addr >= 0xD400 && addr <= 0xD7FF)
             {
                 int sidReg = (int)((addr - 0xD400) & 0x1F);
-                sound.WriteRegister(sidReg, value);
+                sound.WriteRegister(sidReg, value, cpu.TotalCycles);
                 cpu.memory.memory[addr] = value;
                 return true;
             }
 
             return false;
+        }
+
+        private void WriteVicRenderRegister(ulong addr, byte value)
+        {
+            byte oldValue = cpu.memory.memory[addr];
+            cpu.memory.memory[addr] = value;
+            display.RecordRasterWrite(addr, oldValue, value);
+            display.RefreshCurrentRasterLine();
+        }
+
+        private static bool IsVicRenderRegister(ulong addr)
+        {
+            return addr switch
+            {
+                >= 0xD000 and <= 0xD010 => true, // sprite positions and X high bits
+                0xD015 => true,                  // sprite enable
+                0xD017 => true,                  // sprite Y expansion
+                0xD01B => true,                  // sprite/background priority
+                0xD01C => true,                  // sprite multicolor enable
+                0xD01D => true,                  // sprite X expansion
+                >= 0xD020 and <= 0xD02E => true, // border/background/sprite colors
+                _ => false
+            };
         }
 
         private byte OnIORead(ulong addr, byte fallback)
@@ -871,6 +902,13 @@ namespace C64
                         return sound.ReadRegister((int)((addr - 0xD400) & 0x1F));
                     return fallback;
             }
+        }
+
+        private static byte NormalizeCiaControlWrite(byte value)
+        {
+            // Bit 4 force-loads the timer latch into the counter and then
+            // reads back clear; other control bits remain latched.
+            return (byte)(value & 0xEF);
         }
 
         private byte ReadCia1PortA()
@@ -1581,7 +1619,7 @@ namespace C64
             {
                 case 0xFFB1: // LISTEN
                     kernalIecTrapCount++;
-                    // iecBus.Listen(cpu.registers.A);
+                    iecBus.Listen(cpu.registers.A);
                     cpu.registers.Flags.C = false;
                     ReturnFromKernelTrap();
                     break;
@@ -1645,6 +1683,9 @@ namespace C64
             //   $BB/$BC filename pointer
             byte nameLen = mem[0x00B7];
             ushort namePtr = (ushort)(mem[0x00BB] | (mem[0x00BC] << 8));
+            byte secondaryAddress = mem[0x00B9];
+            ushort relocateAddress = (ushort)(cpu.registers.X | (cpu.registers.Y << 8));
+            ushort? loadOverride = secondaryAddress == 0 ? relocateAddress : null;
 
             string? requestedName = null;
             if (nameLen != 0)
@@ -1678,7 +1719,7 @@ namespace C64
 
                 try
                 {
-                    (ushort startAddr, ushort end) = LoadPrgFromBytes(prg);
+                    (ushort startAddr, ushort end) = LoadPrgFromBytes(prg, loadOverride);
                     cpu.registers.X = (byte)(end & 0xFF);
                     cpu.registers.Y = (byte)(end >> 8);
                     cpu.registers.A = 0x00;
@@ -1689,16 +1730,6 @@ namespace C64
                     cpu.memory.WriteByte(0x00AF, (byte)(end >> 8));
                     cpu.memory.WriteByte(0x0090, 0x00);
                     SetLastHostLoadedFile(drive.AttachedPath);
-                    byte pe2D = cpu.memory.ReadByte(0x002D);
-                    byte pe2E = cpu.memory.ReadByte(0x002E);
-                    // Dump first 16 bytes at $0801 and $0810 (BASIC stub + first machine code) so we can verify writes landed.
-                    var sb801 = new System.Text.StringBuilder();
-                    for (int dump = 0; dump < 16; dump++)
-                        sb801.Append(cpu.memory.ReadByte((ulong)(0x0801 + dump)).ToString("X2") + " ");
-                    var sb810 = new System.Text.StringBuilder();
-                    for (int dump = 0; dump < 16; dump++)
-                        sb810.Append(cpu.memory.ReadByte((ulong)(0x0810 + dump)).ToString("X2") + " ");
-                    // Diagnostic output removed
                 }
                 catch
                 {
@@ -1721,7 +1752,7 @@ namespace C64
 
             try
             {
-                (ushort start, ushort end) = LoadPrgFromBytes(File.ReadAllBytes(resolved));
+                (ushort start, ushort end) = LoadPrgFromBytes(File.ReadAllBytes(resolved), loadOverride);
 
                 // LOAD returns end address in X/Y and C clear on success.
                 cpu.registers.X = (byte)(end & 0xFF);
@@ -2251,12 +2282,12 @@ namespace C64
         }
 
 
-        private (ushort LoadAddress, ushort EndAddress) LoadPrgFromBytes(byte[] data)
+        private (ushort LoadAddress, ushort EndAddress) LoadPrgFromBytes(byte[] data, ushort? loadAddressOverride = null)
         {
             if (data.Length < 3)
                 throw new InvalidDataException("PRG file is too small (need 2-byte header + body).");
 
-            ushort loadAddr = (ushort)(data[0] | (data[1] << 8));
+            ushort loadAddr = loadAddressOverride ?? (ushort)(data[0] | (data[1] << 8));
             int progLen = data.Length - 2;
             byte[] mem = cpu.memory.memory;
 

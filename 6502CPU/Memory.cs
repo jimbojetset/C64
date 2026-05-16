@@ -229,11 +229,6 @@ namespace _6502CPU
             // $D000-$DFFF: I/O, CHAR ROM, or RAM. See PLA truth table.
             if (addr < 0xE000)
             {
-                if (addr >= 0xD800 && addr < 0xDC00)
-                {
-                    // Color RAM remains CPU-visible independently of CHAREN mapping.
-                    return memory[addr];
-                }
                 byte port = GetProcessorPortEffective();
                 int loHi = port & 0x03;            // LORAM | HIRAM
                 bool charen = (port & 0x04) != 0;
@@ -245,6 +240,9 @@ namespace _6502CPU
                 if (charen)
                 {
                     // I/O mapped (the usual KERNAL configuration).
+                    if (addr >= 0xD800 && addr < 0xDC00)
+                        return memory[addr];
+
                     byte v = memory[addr];
                     if (OnIORead is not null) v = OnIORead(addr, v);
                     if (OnIOPostRead is not null) OnIOPostRead(addr);

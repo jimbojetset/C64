@@ -39,10 +39,9 @@ namespace C64
         // timestamps and applied by the synth thread in time order.
         private readonly byte[] _regs = new byte[29];
         private readonly ConcurrentQueue<SidWrite> _writeQueue = new();
-        private static readonly long TicksPerCpuCycle =
-            Math.Max(1L, (long)Math.Round(Stopwatch.Frequency / CpuFreq));
-        private static readonly double TicksPerSample = Stopwatch.Frequency / (double)SampleRate;
-        private long _writeTickCursor;
+        private static readonly double CyclesPerAudioSample = CyclesPerSample;
+        private long _writeCycleCursor;
+        private double _synthCycleCursor;
 
         // ?? Per-voice synthesis state (owned by the synthesis thread) ?????????
         private readonly Voice[] _voices = { new(), new(), new() };
@@ -189,8 +188,9 @@ namespace C64
             if (_dev == 0)
                 throw new Exception($"SDL_OpenAudioDevice failed: {SDL_GetError()}");
 
-            _writeTickCursor = Stopwatch.GetTimestamp();
-            _lastDacTick = _writeTickCursor;
+            _writeCycleCursor = 0;
+            _synthCycleCursor = 0.0;
+            _lastDacTick = 0;
             _muteSamplesRemaining = (SampleRate * ResetMuteMs) / 1000;
         }
 
@@ -225,15 +225,14 @@ namespace C64
         }
 
         /// <summary>Write a SID register (0�28 maps to $D400�$D41C).</summary>
-        public void WriteRegister(int reg, byte value)
+        public void WriteRegister(int reg, byte value, long cpuCycle)
         {
             if ((uint)reg < 29)
             {
-                long now = Stopwatch.GetTimestamp();
-                long cursor = Interlocked.Read(ref _writeTickCursor);
-                long tick = Math.Max(now, cursor);
-                Interlocked.Exchange(ref _writeTickCursor, tick + TicksPerCpuCycle);
-                _writeQueue.Enqueue(new SidWrite(reg, value, tick));
+                long cursor = Interlocked.Read(ref _writeCycleCursor);
+                long cycle = Math.Max(cpuCycle, cursor);
+                Interlocked.Exchange(ref _writeCycleCursor, cycle + 1);
+                _writeQueue.Enqueue(new SidWrite(reg, value, cycle));
             }
         }
 
@@ -275,11 +274,12 @@ namespace C64
                 _volDacRaw = 0.0;
                 _volDacHp = 0.0;
                 _volDacShaped = 0.0;
-                _lastDacTick = Stopwatch.GetTimestamp();
+                _lastDacTick = 0;
                 _muteSamplesRemaining = (SampleRate * ResetMuteMs) / 1000;
                 _fadeInSamplesTotal = (SampleRate * ResetFadeInMs) / 1000;
                 _fadeInSamplesRemaining = _fadeInSamplesTotal;
-                _writeTickCursor = Stopwatch.GetTimestamp();
+                _writeCycleCursor = 0;
+                _synthCycleCursor = 0.0;
                 _v3Wave = 0;
                 _v3Env = 0;
                 _v3WaveSnapshot = 0;     // SEVERITY 5 FIX: Reset Voice 3 snapshots
@@ -374,8 +374,6 @@ namespace C64
         private void Synthesize(short[] buf, int count, long startTick, long endTick)
         {
             byte[] r = _regs;
-            long span = endTick - startTick;
-            if (span < 0) span = 0;
             byte modeVol = r[24];
             byte masterVol = (byte)(modeVol & 0x0F);
             bool lpOn = (modeVol & 0x10) != 0;
@@ -397,9 +395,10 @@ namespace C64
 
             for (int i = 0; i < count; i++)
             {
-                long sampleTick = startTick + ((long)(i + 1) * span) / count;
-                ApplyWritesUntil(sampleTick, r);
-                AdvanceDacToTick(sampleTick);
+                _synthCycleCursor += CyclesPerAudioSample;
+                long sampleCycle = (long)_synthCycleCursor;
+                ApplyWritesUntil(sampleCycle, r);
+                AdvanceDacToTick(sampleCycle);
                 _volDacShaped += (_volDacHp - _volDacShaped) * VolumeDacSmoothing;
 
                 // Re-read mode/filter state after any writes applied for this sample.
@@ -521,7 +520,7 @@ namespace C64
             if (tick <= _lastDacTick)
                 return;
 
-            double dtSamples = (tick - _lastDacTick) / TicksPerSample;
+            double dtSamples = (tick - _lastDacTick) / CyclesPerAudioSample;
             if (dtSamples > 0.0)
                 _volDacHp *= Math.Pow(VolumeDacHpA, dtSamples);
 

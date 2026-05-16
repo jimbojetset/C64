@@ -10,7 +10,8 @@ namespace C64
             21,21,21,21,21,21,21,21,21,21,21,21,21,21,21,21,21,
             19,19,19,19,19,19,19,
             18,18,18,18,18,18,
-            17,17,17,17,17
+            17,17,17,17,17,
+            17,17,17,17,17,17,17
         };
 
         private readonly byte[] raw;
@@ -98,7 +99,7 @@ namespace C64
 
                 if (nextTrack == 0)
                 {
-                    int used = nextSector;
+                    int used = nextSector - 1;
                     if (used <= 0 || used > 254) used = 254;
                     for (int i = 0; i < used; i++)
                         data.Add(raw[off + 2 + i]);
@@ -115,6 +116,31 @@ namespace C64
             prgBytes = data.ToArray();
             resolvedName = selected.Name;
             return prgBytes.Length >= 3;
+        }
+
+        public bool TryLoadDirectory(out byte[] prgBytes)
+        {
+            prgBytes = Array.Empty<byte>();
+
+            var body = new List<byte>(2048);
+            ushort nextLineAddress = 0x0801;
+            AppendDirectoryLine(body, ref nextLineAddress, 0, $"\"{GetDiskName()}\" 00 2A");
+
+            foreach (DirectoryEntry entry in ReadDirectoryEntries())
+            {
+                string type = FileTypeName(entry.FileType);
+                AppendDirectoryLine(body, ref nextLineAddress, entry.Blocks, $"\"{entry.Name}\" {type}");
+            }
+
+            AppendDirectoryLine(body, ref nextLineAddress, 0, "BLOCKS FREE.");
+            body.Add(0x00);
+            body.Add(0x00);
+
+            prgBytes = new byte[body.Count + 2];
+            prgBytes[0] = 0x01;
+            prgBytes[1] = 0x08;
+            body.CopyTo(prgBytes, 2);
+            return true;
         }
 
         private List<DirectoryEntry> ReadDirectoryEntries()
@@ -150,7 +176,8 @@ namespace C64
                     if (string.IsNullOrWhiteSpace(name))
                         continue;
 
-                    list.Add(new DirectoryEntry(name, fileType, st, ss));
+                    ushort blocks = (ushort)(raw[eoff + 30] | (raw[eoff + 31] << 8));
+                    list.Add(new DirectoryEntry(name, fileType, st, ss, blocks));
                 }
 
                 track = nextTrack;
@@ -158,6 +185,55 @@ namespace C64
             }
 
             return list;
+        }
+
+        private string GetDiskName()
+        {
+            int bam = Offset(18, 0);
+            if (bam < 0 || bam + 0xA0 > raw.Length)
+                return "DISK";
+
+            string name = DecodePetsciiName(raw, bam + 0x90, 16);
+            return string.IsNullOrWhiteSpace(name) ? "DISK" : name;
+        }
+
+        private static void AppendDirectoryLine(List<byte> body, ref ushort lineAddress, ushort lineNumber, string text)
+        {
+            int lineStart = body.Count;
+            body.Add(0x00);
+            body.Add(0x00);
+            body.Add((byte)(lineNumber & 0xFF));
+            body.Add((byte)(lineNumber >> 8));
+
+            foreach (char ch in text)
+                body.Add(CharToPetscii(ch));
+
+            body.Add(0x00);
+
+            ushort next = (ushort)(lineAddress + (body.Count - lineStart));
+            body[lineStart] = (byte)(next & 0xFF);
+            body[lineStart + 1] = (byte)(next >> 8);
+            lineAddress = next;
+        }
+
+        private static byte CharToPetscii(char ch)
+        {
+            if (ch >= 'a' && ch <= 'z')
+                ch = (char)(ch - 0x20);
+            return ch >= ' ' && ch <= '~' ? (byte)ch : (byte)'?';
+        }
+
+        private static string FileTypeName(byte fileType)
+        {
+            return (fileType & 0x07) switch
+            {
+                0 => "DEL",
+                1 => "SEQ",
+                2 => "PRG",
+                3 => "USR",
+                4 => "REL",
+                _ => "???",
+            };
         }
 
         private static string DecodePetsciiName(byte[] src, int offset, int len)
@@ -197,6 +273,6 @@ namespace C64
             return (sectorsBefore + sector) * 256;
         }
 
-        private sealed record DirectoryEntry(string Name, byte FileType, byte StartTrack, byte StartSector);
+        private sealed record DirectoryEntry(string Name, byte FileType, byte StartTrack, byte StartSector, ushort Blocks);
     }
 }

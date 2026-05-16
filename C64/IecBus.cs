@@ -85,8 +85,17 @@ namespace C64
 
         public void Talk(byte dev)
         {
-            currentTalker = dev;
+            currentTalker = NormalizeDevice(dev);
             currentListener = null;
+            devDataRelease = true;
+            devClockRelease = true;
+        }
+
+        public void Listen(byte dev)
+        {
+            currentListener = NormalizeDevice(dev);
+            currentTalker = null;
+            commandBytes.Clear();
             devDataRelease = true;
             devClockRelease = true;
         }
@@ -173,6 +182,11 @@ namespace C64
                     sb.Append((char)b);
             }
             return sb.ToString().Trim().Trim('"', '\'');
+        }
+
+        private static byte NormalizeDevice(byte dev)
+        {
+            return (byte)(dev & 0x1F);
         }
 
         private void StepLowLevelResponder()

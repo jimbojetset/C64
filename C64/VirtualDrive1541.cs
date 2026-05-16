@@ -37,11 +37,30 @@ namespace C64
             if (string.IsNullOrWhiteSpace(wanted))
                 wanted = lastLoadedName;
 
+            if (IsDirectoryRequest(wanted))
+            {
+                if (!image.TryLoadDirectory(out prg))
+                    return false;
+
+                resolvedName = "$";
+                lastLoadedName = resolvedName;
+                return true;
+            }
+
             if (!image.TryLoadPrg(wanted, out prg, out resolvedName))
                 return false;
 
             lastLoadedName = resolvedName;
             return true;
+        }
+
+        private static bool IsDirectoryRequest(string? requestedName)
+        {
+            if (string.IsNullOrWhiteSpace(requestedName))
+                return false;
+
+            string normalized = requestedName.Trim().Trim('"', '\'').ToUpperInvariant();
+            return normalized == "$" || normalized.StartsWith("$=", StringComparison.Ordinal);
         }
     }
 }

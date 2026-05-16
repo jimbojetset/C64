@@ -25,6 +25,7 @@ namespace _6502CPU
 
         private bool running = true;
         public bool Running { get { return running; } }
+        private bool jammed;
 
         private readonly int clockFreq = 2000000; //1MHz
         public int ClockFrequency => clockFreq;
@@ -95,6 +96,7 @@ namespace _6502CPU
             // Clear() now sets I=true, but be explicit since it's critical.
             registers.Flags.I = true;
             registers.PC = memory.ReadWord(0xFFFC);
+            jammed = false;
 
             while (IRQ_Buffer.TryDequeue(out _)) { }
             while (NMI_Buffer.TryDequeue(out _)) { }
@@ -126,6 +128,17 @@ namespace _6502CPU
                     {
                         DoReset();
                         nextDeadline = Stopwatch.GetTimestamp() + ticksPerSlice;
+                    }
+
+                    if (jammed)
+                    {
+                        WaitUntil(nextDeadline);
+                        nextDeadline += ticksPerSlice;
+
+                        long nowJammed = Stopwatch.GetTimestamp();
+                        if (nextDeadline < nowJammed - ticksPerSlice * 4)
+                            nextDeadline = nowJammed + ticksPerSlice;
+                        continue;
                     }
 
                     cyclesThisOperation = 0;
@@ -874,9 +887,8 @@ namespace _6502CPU
                 case 0x9E: SHX_AY(); cyclesThisOperation += 5; break;
                 case 0x9F: AHX_AY(); cyclesThisOperation += 5; break;
 
-                // ---- JAM / KIL: real CPU halts. We treat as NOP so a
-                // game that mis-branches into one doesn't freeze the
-                // emulator; advances PC by one and burns a couple cycles.
+                // ---- JAM / KIL: real CPU halts until reset. Keep the CPU
+                // thread alive so a later reset request can recover.
                 case 0x02:
                 case 0x12:
                 case 0x22:
@@ -889,7 +901,7 @@ namespace _6502CPU
                 case 0xB2:
                 case 0xD2:
                 case 0xF2:
-                    cyclesThisOperation += 2; break;
+                    jammed = true; cyclesThisOperation += 2; break;
                 #endregion
 
                 default:
@@ -1135,15 +1147,17 @@ namespace _6502CPU
         [MethodImpl(MethodImplOptions.AggressiveOptimization)]
         private ulong X_Indexed_Absolute(bool checkBoundary = true)
         {
-            ulong addr = (Absolute() + registers.X);
-            if (CrossBoundary(addr, registers.PC + 1) && checkBoundary) { cyclesThisOperation += 1; }
+            ulong baseAddr = Absolute();
+            ulong addr = baseAddr + registers.X;
+            if (CrossBoundary(addr, baseAddr) && checkBoundary) { cyclesThisOperation += 1; }
             return addr & 0xFFFF;
         }
         [MethodImpl(MethodImplOptions.AggressiveOptimization)]
         private ulong Y_Indexed_Absolute(bool checkBoundary = true)
         {
-            ulong addr = (Absolute() + registers.Y);
-            if (CrossBoundary(addr, registers.PC + 1) && checkBoundary) { cyclesThisOperation += 1; }
+            ulong baseAddr = Absolute();
+            ulong addr = baseAddr + registers.Y;
+            if (CrossBoundary(addr, baseAddr) && checkBoundary) { cyclesThisOperation += 1; }
             return addr & 0xFFFF;
         }
         [MethodImpl(MethodImplOptions.AggressiveOptimization)]
@@ -1181,7 +1195,7 @@ namespace _6502CPU
             byte value2 = (byte)(ReadByteFromMemory(value += 1) & 0xFF);
             ulong value3 = (ulong)((value2 << 8) | value1);
             ulong addr = value3 + registers.Y;
-            if (CrossBoundary(addr, registers.PC + 1) && checkBoundary) { cyclesThisOperation += 1; }
+            if (CrossBoundary(addr, value3) && checkBoundary) { cyclesThisOperation += 1; }
             return addr & 0xFFFF;
         }
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
