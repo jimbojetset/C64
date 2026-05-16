@@ -47,10 +47,14 @@ namespace C64
         private readonly Voice[] _voices = { new(), new(), new() };
 
         // Overall gain trim for the synthesized SID voice path.
-        // A modest preamp helps low-sustain game SFX remain audible.
-        private const double VoicePreamp = 5.0;
-        private const double VoiceLaneGain = 1.0;
-        private const double MasterOutputGain = 2.2;
+        // Keep this conservative. Heavy clipping makes the simple waveforms
+        // sound gritty compared with a band-limited SID emulator.
+        private const double VoicePreamp = 2.2;
+        private const double VoiceLaneGain = 0.85;
+        private const double MasterOutputGain = 0.95;
+        private const double OutputLowPassCutoff = 15_500.0;
+        private static readonly double OutputLowPassA =
+            Math.Exp(-2.0 * Math.PI * OutputLowPassCutoff / SampleRate);
 
         // D418 volume-DAC approximation for sample-style SFX.
         // Use sample-and-hold with AC coupling (one-pole high-pass).
@@ -58,8 +62,8 @@ namespace C64
         private const double VolumeDacStepResponse = 0.40;
         private const double VolumeDacSmoothing = 0.18;
         private const double VolumeDacQuietLiftPower = 0.62;
-        private const double VolumeDacSaturationDrive = 2.6;
-        private const double VolumeDacOutputGain = 0.70;
+        private const double VolumeDacSaturationDrive = 1.6;
+        private const double VolumeDacOutputGain = 0.45;
         private const int ResetMuteMs = 40;
         private const int StartupPrimeMs = 20;
         private const int ResetFadeInMs = 80;
@@ -77,6 +81,7 @@ namespace C64
         private double _volDacRaw;
         private double _volDacHp;
         private double _volDacShaped;
+        private double _outputLowPass;
         private long _lastDacTick;
         private int _muteSamplesRemaining;
         private int _fadeInSamplesRemaining;
@@ -270,6 +275,7 @@ namespace C64
                 _volDacRaw = 0.0;
                 _volDacHp = 0.0;
                 _volDacShaped = 0.0;
+                _outputLowPass = 0.0;
                 _lastDacTick = 0;
                 _muteSamplesRemaining = (SampleRate * ResetMuteMs) / 1000;
                 _fadeInSamplesTotal = (SampleRate * ResetFadeInMs) / 1000;
@@ -445,14 +451,14 @@ namespace C64
                 // Voice path scales with master volume and is soft-clipped.
                 // Keep D418 digi on its own lane so it is not masked by
                 // voice compression during busy gameplay scenes.
-                double voiceMixed = Math.Tanh(((filtOut + bypass) * (masterVol / 15.0) * VoicePreamp) * 1.6) * VoiceLaneGain;
+                double voiceMixed = (filtOut + bypass) * (masterVol / 15.0) * VoicePreamp * VoiceLaneGain;
                 // Soften DAC spikes (walking clicks) so they do not mask
                 // quieter tonal effects (egg/seed pickup chirps).
                 double dacAbs = Math.Abs(_volDacShaped);
                 double dacLift = Math.Sign(_volDacShaped) * Math.Pow(dacAbs, VolumeDacQuietLiftPower);
                 double dacMixed = Math.Tanh(dacLift * VolumeDacSaturationDrive) * VolumeDacOutputGain;
                 double mixed = (voiceMixed + dacMixed) * MasterOutputGain;
-                mixed = Math.Tanh(mixed);
+                mixed = SmoothOutput(SoftLimit(mixed));
 
                 if (_fadeInSamplesRemaining > 0 && _fadeInSamplesTotal > 0)
                 {
@@ -565,6 +571,26 @@ namespace C64
             double delta = newRaw - _volDacRaw;
             _volDacRaw = newRaw;
             _volDacHp += delta * VolumeDacStepResponse;
+        }
+
+        private double SmoothOutput(double sample)
+        {
+            _outputLowPass = sample + OutputLowPassA * (_outputLowPass - sample);
+            return _outputLowPass;
+        }
+
+        private static double SoftLimit(double sample)
+        {
+            const double threshold = 0.90;
+            const double ceiling = 0.995;
+
+            double abs = Math.Abs(sample);
+            if (abs <= threshold)
+                return sample;
+
+            double over = abs - threshold;
+            double shaped = threshold + (ceiling - threshold) * (1.0 - Math.Exp(-over / (ceiling - threshold)));
+            return Math.CopySign(Math.Min(ceiling, shaped), sample);
         }
 
         // Synthesize one sample from one voice.  Returns value in [-0.5, 0.5].
