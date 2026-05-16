@@ -1,4 +1,4 @@
-﻿using _6502CPU;
+﻿using C64.CPU;
 using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Runtime.InteropServices;
@@ -82,7 +82,7 @@ namespace C64
         // --- Non-trace fields restored ---
         private bool lastDatasetteReadHigh;
         private readonly System.Threading.CancellationTokenSource cts;
-        private readonly _6502_CPU cpu;
+        private readonly CPU_6510 cpu;
         private readonly Display display;
         private readonly Keyboard keyboard;
         private readonly Sound sound;
@@ -177,7 +177,7 @@ namespace C64
         public C64Emulator()
         {
             cts = new System.Threading.CancellationTokenSource();
-            cpu = new _6502_CPU(Clock_PAL);
+            cpu = new CPU_6510(Clock_PAL);
             cpu.OnCyclesExecuted = OnCpuCyclesExecuted;
             cpu.memory.LoadBankedROM(Path.Combine("ROMS", "basic.901226-01.bin"), Memory.BankSlot.Basic);
             cpu.memory.LoadBankedROM(Path.Combine("ROMS", "kernal.901227-03.bin"), Memory.BankSlot.Kernal);

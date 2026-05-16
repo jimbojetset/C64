@@ -10,7 +10,7 @@ namespace C64
     /// returns the user's choice.  Used once at start-up before the main
     /// emulator window is created.
     /// </summary>
-    internal static class SoundDevicePicker
+    internal static class SoundDeviceWindow
     {
         public static string? Prompt(List<string> devices)
         {

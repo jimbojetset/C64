@@ -4,9 +4,9 @@ using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Runtime.Versioning;
 
-namespace _6502CPU
+namespace C64.CPU
 {
-    public class _6502_CPU
+    public class CPU_6510
     {
         [DllImport("winmm.dll", EntryPoint = "timeBeginPeriod")]
         [SupportedOSPlatform("windows")]
@@ -55,7 +55,7 @@ namespace _6502CPU
             Interlocked.Add(ref externalStallCycles, cycles);
         }
 
-        public _6502_CPU(int freq = 1000000)
+        public CPU_6510(int freq = 1000000)
         {
             Initialise();
             clockFreq = freq;

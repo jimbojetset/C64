@@ -169,7 +169,7 @@ namespace C64
         public static string? PromptForDevice()
         {
             List<string> devices = EnumerateDevices();
-            return SoundDevicePicker.Prompt(devices);
+            return SoundDeviceWindow.Prompt(devices);
         }
 
         public void Init(string? deviceName = null)

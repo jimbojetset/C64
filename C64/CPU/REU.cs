@@ -144,7 +144,7 @@ namespace C64
         /// Step DMA transfer by a cycle count. Called from the main CPU cycle callback.
         /// Approximate rate: 1 byte per 2 CPU cycles (realistic for C64 REU).
         /// </summary>
-        public void StepDma(int cycles, _6502CPU.Memory memory)
+        public void StepDma(int cycles, CPU.Memory memory)
         {
             if (!_dmaActive) return;
 

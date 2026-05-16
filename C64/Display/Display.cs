@@ -1,4 +1,4 @@
-﻿using _6502CPU;
+﻿using C64.CPU;
 using System.Diagnostics;
 using System.Threading;
 using static SDL2.SDL;
@@ -43,7 +43,7 @@ namespace C64
             unchecked((int)0xFF959595), // 15 LIGHT GREY
         };
 
-        private readonly _6502_CPU cpu;
+        private readonly CPU_6510 cpu;
 
         private byte[] charRom = Array.Empty<byte>();
 
@@ -92,7 +92,7 @@ namespace C64
             public byte NewValue { get; }
         }
 
-        public Display(_6502_CPU cpu)
+        public Display(CPU_6510 cpu)
         {
             this.cpu = cpu;
             for (int i = 0; i < rasterWriteEvents.Length; i++)

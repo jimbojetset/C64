@@ -1,19 +1,10 @@
-# 6502 CPU Emulator
+# C64 Emulator
 
 A cycle-accurate MOS 6502 CPU emulator written in C# (.NET 8.0) with comprehensive instruction set support including all documented and undocumented opcodes.
 
 This repository now contains a full C64 emulator stack built on top of the CPU core, including VIC-II video, SID audio, CIA timers/IO, keyboard/joystick input, IEC/disk support, and datasette support.
 
 ## Projects
-
-### 6502CPU
-The core emulator library implementing the complete 6502 processor. Features include:
-- Cycle-accurate instruction execution
-- 64KB addressable memory space
-- Full register set (A, X, Y, S, PC) and status flags (N, V, B, D, I, Z, C)
-- IRQ and NMI interrupt handling
-- 151 documented opcodes
-- 151 undocumented opcodes (including unstable variants)
 
 ### C64
 Commodore 64 emulator application using SDL2 for display/input/audio. Key features include:
@@ -98,7 +89,7 @@ NuGet packages restored by the project files:
 ## Building
 
 ```bash
-dotnet build 6502CPU.sln
+dotnet build C64.sln
 ```
 
 ## Running C64 Emulator

@@ -1,5 +1,5 @@
 using System.Collections.Concurrent;
-using _6502CPU;
+using C64.CPU;
 using static SDL2.SDL;
 
 namespace C64
@@ -12,7 +12,7 @@ namespace C64
     /// </summary>
     internal sealed class Keyboard : IDisposable
     {
-        private readonly _6502_CPU cpu;
+        private readonly CPU_6510 cpu;
 
         private readonly ConcurrentQueue<byte> keyQueue = new ConcurrentQueue<byte>();
 
@@ -63,7 +63,7 @@ namespace C64
             0x85, 0x89, 0x86, 0x8A, 0x87, 0x8B, 0x88, 0x8C,
         };
 
-        public Keyboard(_6502_CPU cpu)
+        public Keyboard(CPU_6510 cpu)
         {
             this.cpu = cpu;
         }

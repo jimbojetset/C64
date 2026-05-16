@@ -1,4 +1,4 @@
-﻿namespace _6502CPU
+﻿namespace C64.CPU
 {
     public class Registers
     {
