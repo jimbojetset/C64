@@ -72,7 +72,6 @@ namespace C64
         private int _lastResReg = -1;
         // SEVERITY 4 FIX: SID Advanced Filter Behavior
         // Capacitor state modeling for smoother filter transients and improved stability
-        private double _filterHpState = 0.0;  // high-pass state (capacitor voltage)
         private double _filterCapacitorLeakage = 0.9999;  // capacitor discharge modeling
         private double _resonancePeakDamping = 1.0;  // dynamic damping for high Q stability
         private double _volDacRaw;
@@ -91,8 +90,6 @@ namespace C64
         // SEVERITY 5 FIX: Voice 3 OSC/ENV Readback Stability
         // Double-buffer mechanism to ensure cycle-consistent snapshots
         // (prevents torn reads when synthesis updates values mid-read)
-        private volatile byte _v3Wave;
-        private volatile byte _v3Env;
         private byte _v3WaveSnapshot;     // Buffered oscillator value
         private byte _v3EnvSnapshot;      // Buffered envelope value
 
@@ -267,7 +264,6 @@ namespace C64
                 while (_writeQueue.TryDequeue(out _)) { }
                 foreach (var v in _voices) v.Reset();
                 _flp = _fbp = 0.0;
-                _filterHpState = 0.0;
                 _resonancePeakDamping = 1.0;
                 _lastFcReg = -1;
                 _lastResReg = -1;
@@ -280,8 +276,6 @@ namespace C64
                 _fadeInSamplesRemaining = _fadeInSamplesTotal;
                 _writeCycleCursor = 0;
                 _synthCycleCursor = 0.0;
-                _v3Wave = 0;
-                _v3Env = 0;
                 _v3WaveSnapshot = 0;     // SEVERITY 5 FIX: Reset Voice 3 snapshots
                 _v3EnvSnapshot = 0;
 
@@ -429,8 +423,6 @@ namespace C64
                 // so reads see consistent values throughout sample duration
                 _v3WaveSnapshot = (byte)(_voices[2].LastWaveform >> 4); // 12-bit → 8-bit
                 _v3EnvSnapshot = (byte)_voices[2].EnvelopeLevel;
-                _v3Wave = _v3WaveSnapshot;
-                _v3Env = _v3EnvSnapshot;
 
                 // Split into "through filter" and "bypass filter" paths
                 double filtered = 0.0, bypass = 0.0;
@@ -876,9 +868,6 @@ namespace C64
             // Update band-pass and low-pass accumulators
             _fbp += _filterF * hp;
             _flp += _filterF * _fbp;
-
-            // Capacitor state tracking for smoother transients
-            _filterHpState = hp;
 
             // Mix the requested filter outputs. If no mode bit is set, filtered
             // voices produce silence – matching real SID behaviour.

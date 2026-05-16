@@ -111,7 +111,6 @@ namespace C64
         {
             _selectedDeviceName = _devices[index];
             _completed = true;
-            Console.WriteLine($"User selected audio device [{index}] {_selectedDeviceName}");
         }
     }
 }

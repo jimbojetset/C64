@@ -20,8 +20,6 @@ namespace C64
 
         private const int VisibleTop = 51;
         private const int VisibleBottom = 250;
-        private static readonly bool TraceSpriteCollisions =
-            string.Equals(Environment.GetEnvironmentVariable("C64_TRACE_SPRCOL"), "1", StringComparison.Ordinal);
 
         private static readonly int[] C64Palette =
         {
@@ -550,12 +548,6 @@ namespace C64
             return (3 - sel) * 0x4000;
         }
 
-        private int VicBankBase()
-        {
-            int sel = cpu.memory.memory[0xDD00] & 0x03;
-            return (3 - sel) * 0x4000;
-        }
-
         private void ResolveCharSource(int charAddr, int bank, out byte[] src, out int baseIdx)
         {
             int withinBank = charAddr - bank;
@@ -582,21 +574,6 @@ namespace C64
             int c = C64Palette[colorIdx & 0x0F];
             int p = (y * FrameW + FramePlayfieldX) * 4;
             int end = p + ScreenW * 4;
-            while (p < end)
-            {
-                renderBuf[p] = (byte)c;
-                renderBuf[p + 1] = (byte)(c >> 8);
-                renderBuf[p + 2] = (byte)(c >> 16);
-                renderBuf[p + 3] = 0xFF;
-                p += 4;
-            }
-        }
-
-        private void FillFrameLineSolid(int y, byte colorIdx)
-        {
-            int c = C64Palette[colorIdx & 0x0F];
-            int p = y * FrameW * 4;
-            int end = p + FrameW * 4;
             while (p < end)
             {
                 renderBuf[p] = (byte)c;
@@ -699,24 +676,6 @@ namespace C64
                 FramePlayfieldX + xStart,
                 FramePlayfieldX + xEnd,
                 fallbackBorderIdx);
-        }
-
-        private void FillLineRange(int y, int xStart, int xEnd, int argb)
-        {
-            if (xStart < 0) xStart = 0;
-            if (xEnd >= ScreenW) xEnd = ScreenW - 1;
-            if (xStart > xEnd) return;
-
-            int p = (y * FrameW + FramePlayfieldX + xStart) * 4;
-            int count = xEnd - xStart + 1;
-            for (int i = 0; i < count; i++)
-            {
-                renderBuf[p] = (byte)argb;
-                renderBuf[p + 1] = (byte)(argb >> 8);
-                renderBuf[p + 2] = (byte)(argb >> 16);
-                renderBuf[p + 3] = 0xFF;
-                p += 4;
-            }
         }
 
         private void ApplyInnerBorders(int frameY, int playY, byte d011, byte d016)
@@ -1042,8 +1001,6 @@ namespace C64
                 {
                     mem[0xD019] |= 0x84;
                     cpu.InitiateIRQ(0xFFFE);
-                    if (TraceSpriteCollisions)
-                        Console.Error.WriteLine($"[VIC-SPRCOL] x={frameX} y={frameY} self={spriteIdx} priorMask=${priorOtherSprites:X2} d01e=${mem[0xD01E]:X2}");
                 }
             }
 

@@ -18,7 +18,6 @@ namespace C64
 
         private byte? currentListener;
         private byte? currentTalker;
-        private byte secondary;
         private readonly List<byte> commandBytes = new List<byte>();
         private Queue<byte> talkQueue = new Queue<byte>();
 
@@ -31,7 +30,6 @@ namespace C64
         private int lowLevelClockHoldTicks;
         private int lowLevelBytePhase;  // 0=handshake, 1-8=bit0-7, cycles for next byte
         private byte lowLevelCurrentByte;
-        private int lowLevelResponderFrames;  // Diagnostic counter
 
         public IecBus(VirtualDrive1541 drive)
         {
@@ -58,11 +56,6 @@ namespace C64
             hostLooseProgramPresent = present;
         }
 
-        public int GetLowLevelResponderFrames()
-        {
-            return lowLevelResponderFrames;
-        }
-
         public byte BuildExternalCia2PortA(byte baseExternal)
         {
             bool dataHigh = hostDataRelease && devDataRelease;
@@ -73,12 +66,6 @@ namespace C64
             ext = dataHigh ? (byte)(ext | 0x20) : (byte)(ext & ~0x20);
             ext = clockHigh ? (byte)(ext | 0x10) : (byte)(ext & ~0x10);
             ext = atnHigh ? (byte)(ext | 0x08) : (byte)(ext & ~0x08);
-
-            // Diagnostic: log when device is actively pulling DATA low
-            if (!devDataRelease && Environment.GetEnvironmentVariable("C64_TRACE_LOWLEVEL_DETAIL") == "1")
-            {
-                System.Console.Error.WriteLine($"[LOW-DETAIL] DATA pulled: devDataRelease={devDataRelease}, hostDataRelease={hostDataRelease}, lowLevelDataHoldTicks={lowLevelDataHoldTicks}");
-            }
 
             return ext;
         }
@@ -102,13 +89,11 @@ namespace C64
 
         public void Second(byte sa)
         {
-            secondary = sa;
             commandBytes.Clear();
         }
 
         public void Tksa(byte sa)
         {
-            secondary = sa;
             PrepareTalkBuffer();
         }
 
@@ -191,7 +176,6 @@ namespace C64
 
         private void StepLowLevelResponder()
         {
-            lowLevelResponderFrames++;  // Count calls to verify responder is active
             if (currentListener == 8 || currentTalker == 8)
             {
                 prevHostClockRelease = hostClockRelease;
@@ -228,10 +212,6 @@ namespace C64
             {
                 // Device keeps DATA pulled low continuously (ready signal while ATN held)
                 lowLevelDataHoldTicks = 10;
-                if (Environment.GetEnvironmentVariable("C64_TRACE_LOWLEVEL_DETAIL") == "1")
-                {
-                    System.Console.Error.WriteLine($"[LOW-DETAIL] Tick {lowLevelResponderFrames}: ATN held, set lowLevelDataHoldTicks=10");
-                }
 
                 // Activate byte-phase immediately on ATN assert
                 if (lowLevelBytePhase == 0)
@@ -264,10 +244,6 @@ namespace C64
             {
                 devDataRelease = false;
                 lowLevelDataHoldTicks--;
-                if (Environment.GetEnvironmentVariable("C64_TRACE_LOWLEVEL_DETAIL") == "1")
-                {
-                    System.Console.Error.WriteLine($"[LOW-DETAIL] Tick {lowLevelResponderFrames}: devDataRelease=false, ticks={lowLevelDataHoldTicks}");
-                }
             }
             else
             {

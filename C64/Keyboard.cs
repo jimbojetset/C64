@@ -38,9 +38,6 @@ namespace C64
         /// <summary>Invoked when RESTORE key equivalent is pressed.</summary>
         public Action? OnRestoreNmi { get; set; }
 
-        /// <summary>Invoked when F11 is pressed (debug dump).</summary>
-        public Action? OnDump { get; set; }
-
         /// <summary>Invoked when Shift+S is pressed (screenshot).</summary>
         public Action? OnScreenshot { get; set; }
 
@@ -151,12 +148,6 @@ namespace C64
             bool shift = (mod & SDL_Keymod.KMOD_SHIFT) != 0;
             bool alt = (mod & SDL_Keymod.KMOD_ALT) != 0;
 
-            if (sym == SDL_Keycode.SDLK_F11)
-            {
-                OnDump?.Invoke();
-                return false;
-            }
-
             if (sym == SDL_Keycode.SDLK_F12)
             {
                 OnHardReset?.Invoke();
@@ -194,7 +185,6 @@ namespace C64
 
             if (sym == SDL_Keycode.SDLK_q && (shift || alt) && !ctrl)
             {
-                OnDump?.Invoke();
                 return true;
             }
 
@@ -212,9 +202,7 @@ namespace C64
                     case SDL_Keycode.SDLK_s: OnSave?.Invoke(); return false;
                     case SDL_Keycode.SDLK_r:
                     case SDL_Keycode.SDLK_F12: OnHardReset?.Invoke(); return false;
-                    case SDL_Keycode.SDLK_q:
-                        OnDump?.Invoke();
-                        return true;
+                    case SDL_Keycode.SDLK_q: return true;
                     case SDL_Keycode.SDLK_w: return true;
                 }
             }

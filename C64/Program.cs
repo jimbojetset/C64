@@ -94,14 +94,6 @@ namespace C64
         private readonly object cia2Lock = new object();
         private readonly ConcurrentQueue<(string Path, bool AutoRun)> pendingLoads = new();
         private string? lastHostLoadedFile;
-        private readonly ushort[] recentPcHistory = new ushort[64];
-        private int recentPcWriteIndex;
-        private int recentPcCount;
-        private int kernalLoadTrapCount;
-        private int kernalIecTrapCount;
-        private byte lastFastloadDd00Read = 0xFF;
-        private int fastloadDd00ActivityCount;
-        private bool fastloadNoDriveWarningEmitted;
         private byte cia1PortA = 0xFF;
         private byte cia1PortB = 0xFF;
         private byte cia1Ddra = 0x00;
@@ -202,10 +194,6 @@ namespace C64
             keyboard.OnLoad = LoadProgram;
             keyboard.OnSave = SaveProgram;
             keyboard.OnRestoreNmi = TriggerRestoreNmi;
-            keyboard.OnDump = () =>
-            {
-                DumpGraphicsStateToFile();
-            };
             keyboard.OnScreenshot = () =>
             {
                 display.TakeScreenshot();
@@ -224,7 +212,6 @@ namespace C64
 
             cpu.memory.OnIOWrite = OnIOWrite;
             cpu.memory.OnIORead = OnIORead;
-            cpu.memory.OnIOPostRead = OnIOPostRead;
         }
 
         private void InitHardware()
@@ -394,8 +381,6 @@ namespace C64
 
         private bool OnIOWrite(ulong addr, byte value)
         {
-            // ...existing code...
-
             switch (addr)
             {
                 case 0xD012:
@@ -410,7 +395,6 @@ namespace C64
                         cpu.memory.memory[0xD011] = newVal;
                         display.RecordRasterWrite(addr, oldD011, newVal);
                         display.RefreshCurrentRasterLine();
-                        // ...existing code...
                         return true;
                     }
                 case 0xD016:
@@ -583,8 +567,6 @@ namespace C64
                     cia2PortA = value;
                     cpu.memory.memory[addr] = value;
                     iecBus.UpdateHostCia2PortA(cia2PortA, cia2Ddra);
-                    fastloadDd00ActivityCount++;
-                    MaybeWarnFastloaderWithoutDrive();
                     return true;
                 case 0xDD02:
                     cia2Ddra = (byte)(value & 0x3F);
@@ -789,14 +771,7 @@ namespace C64
                     {
                         byte external = iecBus.BuildExternalCia2PortA(0xFF);
                         byte v = MergeCiaPortRead(cia2PortA, cia2Ddra, external);
-                        byte result = (byte)(v | 0xC0);
-                        fastloadDd00ActivityCount++;
-                        MaybeWarnFastloaderWithoutDrive();
-                        if (result != lastFastloadDd00Read)
-                        {
-                            lastFastloadDd00Read = result;
-                        }
-                        return result;
+                        return (byte)(v | 0xC0);
                     }
                 case 0xDD02:
                     return cia2Ddra;
@@ -1519,50 +1494,12 @@ namespace C64
                 cpu.InitiateNMI(0xFFFA);
         }
 
-        private string BuildDebugStateLine(string prefix)
-        {
-            ulong pc = cpu.registers.PC;
-            byte[] m = cpu.memory.memory;
-            byte a = cpu.registers.A;
-            byte x = cpu.registers.X;
-            byte y = cpu.registers.Y;
-            byte s = cpu.registers.S;
-            byte p = cpu.registers.P;
-
-            ushort ta;
-            ushort tb;
-            byte cra;
-            byte crb;
-            byte icrMask;
-            byte icrStatus;
-            lock (cia1Lock)
-            {
-                ta = cia1TimerACounter;
-                tb = cia1TimerBCounter;
-                cra = cia1Cra;
-                crb = cia1Crb;
-                icrMask = cia1IcrMask;
-                icrStatus = cia1IcrStatus;
-            }
-
-            return
-                $"{prefix} PC=${pc:X4} A=${a:X2} X=${x:X2} Y=${y:X2} S=${s:X2} P=${p:X2} " +
-                $"RAST={display.CurrentRasterLine:D3}/{display.RasterCompare:D3} DD00=${m[0xDD00]:X2} DD02=${m[0xDD02]:X2} D011=${m[0xD011]:X2} D012=${m[0xD012]:X2} D016=${m[0xD016]:X2} D018=${m[0xD018]:X2} D019=${m[0xD019]:X2} D01A=${m[0xD01A]:X2} " +
-                $"CIA TA=${ta:X4} TB=${tb:X4} CRA=${cra:X2} CRB=${crb:X2} ICRM=${icrMask:X2} ICRS=${icrStatus:X2} DC0D=${m[0xDC0D]:X2}";
-        }
-
-        private void OnIOPostRead(ulong addr)
-        {
-        }
-
         // Drive CIA state directly from executed CPU cycles so timer and IRQ/NMI
         // behavior follows CPU progression instead of coarse host wall-clock ticks.
         private void OnCpuCyclesExecuted(int cycles)
         {
             if (cycles <= 0 || display.IsResetting)
                 return;
-
-            RecordRecentPc();
 
             TryHandleKernalIecTrap();
             TryHandleKernalLoadTrap();
@@ -1618,49 +1555,41 @@ namespace C64
             switch (pc)
             {
                 case 0xFFB1: // LISTEN
-                    kernalIecTrapCount++;
                     iecBus.Listen(cpu.registers.A);
                     cpu.registers.Flags.C = false;
                     ReturnFromKernelTrap();
                     break;
                 case 0xFFB4: // TALK
-                    kernalIecTrapCount++;
                     iecBus.Talk(cpu.registers.A);
                     cpu.registers.Flags.C = false;
                     ReturnFromKernelTrap();
                     break;
                 case 0xFF93: // SECOND
-                    kernalIecTrapCount++;
                     iecBus.Second(cpu.registers.A);
                     cpu.registers.Flags.C = false;
                     ReturnFromKernelTrap();
                     break;
                 case 0xFF96: // TKSA
-                    kernalIecTrapCount++;
                     iecBus.Tksa(cpu.registers.A);
                     cpu.registers.Flags.C = false;
                     ReturnFromKernelTrap();
                     break;
                 case 0xFFA8: // CIOUT
-                    kernalIecTrapCount++;
                     iecBus.Ciout(cpu.registers.A);
                     cpu.registers.Flags.C = false;
                     ReturnFromKernelTrap();
                     break;
                 case 0xFFA5: // ACPTR
-                    kernalIecTrapCount++;
                     cpu.registers.A = iecBus.Acptr();
                     cpu.registers.Flags.C = false;
                     ReturnFromKernelTrap();
                     break;
                 case 0xFFAE: // UNLSN
-                    kernalIecTrapCount++;
                     iecBus.Unlisten();
                     cpu.registers.Flags.C = false;
                     ReturnFromKernelTrap();
                     break;
                 case 0xFFAB: // UNTLK
-                    kernalIecTrapCount++;
                     iecBus.Untalk();
                     cpu.registers.Flags.C = false;
                     ReturnFromKernelTrap();
@@ -1673,8 +1602,6 @@ namespace C64
             // KERNAL LOAD entry. Trap after JSR has transferred PC to $FFD5.
             if (cpu.registers.PC != 0xFFD5)
                 return;
-
-            kernalLoadTrapCount++;
 
             byte[] mem = cpu.memory.memory;
 
@@ -1906,7 +1833,6 @@ namespace C64
                 if ((int)(now - nextDraw) >= 0)
                 {
                     display.RedrawScreen();
-                    MaybeTraceUnexpectedReadyReturn();
                     nextDraw = now + drawIntervalMs;
                 }
                 else
@@ -1934,14 +1860,6 @@ namespace C64
             keyboard.Reset();
             reu.Reset();
             iecBus.SetHostLooseProgramPresent(!string.IsNullOrWhiteSpace(lastHostLoadedFile));
-
-            kernalLoadTrapCount = 0;
-            kernalIecTrapCount = 0;
-            recentPcWriteIndex = 0;
-            recentPcCount = 0;
-            lastFastloadDd00Read = 0xFF;
-            fastloadDd00ActivityCount = 0;
-            fastloadNoDriveWarningEmitted = false;
 
             cpu.RequestReset();
         }
@@ -2072,78 +1990,6 @@ namespace C64
 
         public void QueueLoad(string path) => pendingLoads.Enqueue((path, false));
 
-        private async Task TraceVicStatesAsync(CancellationToken token)
-        {
-            string? lastState = null;
-
-            while (!token.IsCancellationRequested)
-            {
-                byte[] m = cpu.memory.memory;
-                string mode = ((m[0xD011] & 0x20) != 0, (m[0xD016] & 0x10) != 0, (m[0xD011] & 0x40) != 0) switch
-                {
-                    (true, true, _) => "mc-bitmap",
-                    (true, false, _) => "hires-bitmap",
-                    (false, true, false) => "mc-text",
-                    (false, false, true) => "ecm-text",
-                    _ => "std-text",
-                };
-
-                string state =
-                    $"mode={mode} DD00=${m[0xDD00]:X2} DD02=${m[0xDD02]:X2} D011=${m[0xD011]:X2} D016=${m[0xD016]:X2} D018=${m[0xD018]:X2} RAST={display.CurrentRasterLine:D3}";
-
-                if (!string.Equals(state, lastState, StringComparison.Ordinal))
-                {
-                    Console.Error.WriteLine($"[VIC] {state}");
-                    lastState = state;
-                }
-
-                try
-                {
-                    await Task.Delay(50, token).ConfigureAwait(false);
-                }
-                catch (OperationCanceledException)
-                {
-                    break;
-                }
-            }
-        }
-
-        private async Task TracePcAsync(CancellationToken token)
-        {
-            // Periodic dump of CPU + key VIC state so we can diagnose "frozen" games.
-            // Enable with C64_TRACE_PC=1. Prints once every 500 ms.
-            while (!token.IsCancellationRequested)
-            {
-                try { await Task.Delay(500, token).ConfigureAwait(false); }
-                catch (OperationCanceledException) { break; }
-
-                try
-                {
-                    byte[] m = cpu.memory.memory;
-                    ushort pc = (ushort)cpu.registers.PC;
-                    byte a = cpu.registers.A;
-                    byte x = cpu.registers.X;
-                    byte y = cpu.registers.Y;
-                    byte s = cpu.registers.S;
-                    byte p01 = m[0x0001];
-                    byte d011 = m[0xD011];
-                    byte d012 = (byte)(display.CurrentRasterLine & 0xFF);
-                    byte d019 = m[0xD019];
-                    byte d01a = m[0xD01A];
-                    byte fffe_lo = cpu.memory.ReadByte(0xFFFE);
-                    byte fffe_hi = cpu.memory.ReadByte(0xFFFF);
-                    Console.Error.WriteLine(
-                        $"[PC] PC=${pc:X4} A=${a:X2} X=${x:X2} Y=${y:X2} S=${s:X2} I={(cpu.registers.Flags.I ? 1 : 0)} " +
-                        $"$01=${p01:X2} D011=${d011:X2} D012=${d012:X2}(line={display.CurrentRasterLine}) D019=${d019:X2} D01A=${d01a:X2} " +
-                        $"IRQvec=${fffe_hi:X2}{fffe_lo:X2}");
-                }
-                catch (Exception ex)
-                {
-                    Console.Error.WriteLine($"[PC] trace error: {ex.Message}");
-                }
-            }
-        }
-
         private void LoadProgram()
         {
             Task.Run(() =>
@@ -2235,53 +2081,6 @@ namespace C64
             iecBus.SetHostLooseProgramPresent(false);
         }
 
-        private void RecordRecentPc()
-        {
-            recentPcHistory[recentPcWriteIndex] = (ushort)(cpu.registers.PC & 0xFFFF);
-            recentPcWriteIndex = (recentPcWriteIndex + 1) % recentPcHistory.Length;
-            if (recentPcCount < recentPcHistory.Length)
-                recentPcCount++;
-        }
-
-        private string BuildRecentPcTrace()
-        {
-            if (recentPcCount == 0)
-                return "";
-
-            int start = (recentPcWriteIndex - recentPcCount + recentPcHistory.Length) % recentPcHistory.Length;
-            var sb = new System.Text.StringBuilder(recentPcCount * 6);
-            for (int i = 0; i < recentPcCount; i++)
-            {
-                int idx = (start + i) % recentPcHistory.Length;
-                if (i > 0)
-                    sb.Append(' ');
-                sb.Append('$');
-                sb.Append(recentPcHistory[idx].ToString("X4"));
-            }
-            return sb.ToString();
-        }
-
-        private void MaybeTraceUnexpectedReadyReturn()
-        {
-            // Diagnostic trace removed
-        }
-
-        private void MaybeWarnFastloaderWithoutDrive()
-        {
-            if (fastloadNoDriveWarningEmitted)
-                return;
-            if (drive.HasMedia)
-                return;
-            if (string.IsNullOrWhiteSpace(lastHostLoadedFile))
-                return;
-            if (fastloadDd00ActivityCount < 200)
-                return;
-
-            fastloadNoDriveWarningEmitted = true;
-            // Diagnostic trace removed
-        }
-
-
         private (ushort LoadAddress, ushort EndAddress) LoadPrgFromBytes(byte[] data, ushort? loadAddressOverride = null)
         {
             if (data.Length < 3)
@@ -2309,85 +2108,6 @@ namespace C64
             }
 
             return (loadAddr, (ushort)endAddr);
-        }
-
-        private void DumpGraphicsStateToFile()
-        {
-            try
-            {
-                byte[] mem = cpu.memory.memory;
-                byte d011 = mem[0xD011];
-                byte d016 = mem[0xD016];
-                byte d018 = mem[0xD018];
-                byte d020 = mem[0xD020];
-                byte d021 = mem[0xD021];
-                byte dd00 = mem[0xDD00];
-                byte d015 = mem[0xD015];
-                byte p1 = mem[0x0001];
-
-                bool screenOn = (d011 & 0x10) != 0;
-                bool bmm = (d011 & 0x20) != 0;
-                bool ecm = (d011 & 0x40) != 0;
-                bool mcm = (d016 & 0x10) != 0;
-                int bank = (3 - (dd00 & 0x03)) * 0x4000;
-                int screenAddr = bank + ((d018 >> 4) & 0x0F) * 0x400;
-                int charAddr = bank + ((d018 >> 1) & 0x07) * 0x800;
-
-                Console.Error.WriteLine("=== GRAPHICS STATE ===");
-                Console.Error.WriteLine($"CPU PC: ${cpu.registers.PC:X4}, SP: ${cpu.registers.S:X2}");
-                Console.Error.WriteLine($"Processor Port ($0001): ${p1:X2}");
-                Console.Error.WriteLine($"Screen ON (DEN): {screenOn}");
-                Console.Error.WriteLine($"BMM (Bitmap): {bmm}, ECM (ExtBg): {ecm}, MCM (Multicolor): {mcm}");
-                if (bmm && mcm) Console.Error.WriteLine("  → Multicolor Bitmap Mode");
-                else if (bmm) Console.Error.WriteLine("  → Hires Bitmap Mode");
-                else if (ecm) Console.Error.WriteLine("  → Extended Bg Text Mode");
-                else if (mcm) Console.Error.WriteLine("  → Multicolor Text Mode");
-                else Console.Error.WriteLine("  → Standard Text Mode");
-                Console.Error.WriteLine($"D011: ${d011:X2}, D016: ${d016:X2}, D018: ${d018:X2}");
-                Console.Error.WriteLine($"Screen RAM: ${screenAddr:X4}, Char/Bitmap: ${charAddr:X4}");
-                Console.Error.WriteLine($"VIC Bank (CIA2 $DD00): ${bank:X4}");
-                Console.Error.WriteLine($"Border (D020): ${d020:X2}, BG0 (D021): ${d021:X2}");
-                Console.Error.WriteLine($"Sprites Enabled (D015): ${d015:X2}");
-
-                // Check memory at potential VIC-II addresses
-                Console.Error.WriteLine($"\nVIC-II registers (raw memory):");
-                Console.Error.WriteLine($"  D011 ($D011): ${mem[0xD011]:X2}");
-                Console.Error.WriteLine($"  D016 ($D016): ${mem[0xD016]:X2}");
-                Console.Error.WriteLine($"  D018 ($D018): ${mem[0xD018]:X2}");
-                Console.Error.WriteLine($"  DD00 ($DD00): ${mem[0xDD00]:X2}");
-
-                // Check if there's any data at screen RAM
-                Console.Error.WriteLine($"\nScreen RAM analysis:");
-                Console.Error.WriteLine($"  First 10 bytes at ${screenAddr:X4}: {string.Join(" ", Enumerable.Range(0, 10).Select(i => mem[screenAddr + i].ToString("X2")))}");
-                Console.Error.WriteLine($"  Color RAM at $D800: {string.Join(" ", Enumerable.Range(0, 10).Select(i => mem[0xD800 + i].ToString("X2")))}");
-
-                // Compare active charset bytes as seen by VIC vs raw CPU memory.
-                // This helps spot RAM-under-I/O mismatches when char base is in $D000-$D7FF.
-                byte firstCode = mem[screenAddr];
-                int glyphAddr = charAddr + firstCode * 8;
-                string vicGlyph = string.Join(" ", Enumerable.Range(0, 8).Select(i => cpu.memory.ReadVicByte((ulong)(glyphAddr + i)).ToString("X2")));
-                string rawGlyph = string.Join(" ", Enumerable.Range(0, 8).Select(i => mem[(glyphAddr + i) & 0xFFFF].ToString("X2")));
-                Console.Error.WriteLine($"  First screen code: ${firstCode:X2} -> glyph @ ${glyphAddr:X4}");
-                Console.Error.WriteLine($"  Glyph bytes (VIC view): {vicGlyph}");
-                Console.Error.WriteLine($"  Glyph bytes (CPU raw): {rawGlyph}");
-
-                Console.Error.WriteLine("======================");
-
-                // Also write to file for debugging when console is hidden
-                try
-                {
-                    System.IO.File.WriteAllLines("/tmp/c64_graphics_state.txt", new[] {
-                        $"CPU PC: ${cpu.registers.PC:X4}, SP: ${cpu.registers.S:X2}",
-                        $"Screen ON: {screenOn}, D011: ${d011:X2}, D016: ${d016:X2}, D018: ${d018:X2}",
-                        $"Screen RAM: ${screenAddr:X4}, First 10: {string.Join(" ", Enumerable.Range(0, 10).Select(i => mem[screenAddr + i].ToString("X2")))}"
-                    });
-                }
-                catch { }
-            }
-            catch (Exception ex)
-            {
-                Console.Error.WriteLine($"Error dumping graphics state: {ex}");
-            }
         }
 
         private void LoadTapeEntries(List<TapeEntry> entries, string archiveName)
