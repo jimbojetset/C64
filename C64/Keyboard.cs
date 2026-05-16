@@ -10,7 +10,7 @@ namespace C64
     /// joystick port 2 byte.  The SDL main loop hands every key event
     /// to <see cref="HandleSdlEvent"/> and calls nothing else.
     /// </summary>
-    internal sealed class Keyboard
+    internal sealed class Keyboard : IDisposable
     {
         private readonly _6502_CPU cpu;
 
@@ -19,10 +19,16 @@ namespace C64
         // C64 keyboard matrix: 8 rows, each column bit is active-low.
         private readonly byte[] keyboardMatrix = { 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF };
 
-        private volatile byte joystick2 = 0xFF;
+        private volatile byte keyboardJoystick2 = 0xFF;
+        private volatile byte controllerJoystick2 = 0xFF;
+        private IntPtr gameController;
+        private int gameControllerInstanceId = -1;
+        private byte controllerButtonMask;
+        private byte controllerAxisMask;
 
         private bool caseModeUpper = true;
         private bool shiftLockActive;
+        private const short ControllerDeadZone = 12000;
 
         // ?? Callbacks wired by C64Emulator after construction ?????????????????
 
@@ -62,7 +68,13 @@ namespace C64
         // ?? Public API ????????????????????????????????????????????????????????
 
         /// <summary>CIA-1 port A ($DC00) joystick port 2 byte (active-low).</summary>
-        public byte Joystick2 => joystick2;
+        public byte Joystick2 => (byte)(keyboardJoystick2 & controllerJoystick2);
+
+        public void InitGameControllers()
+        {
+            SDL_GameControllerEventState(SDL_ENABLE);
+            OpenFirstAvailableController();
+        }
 
         /// <summary>
         /// Scans the keyboard matrix against the supplied CIA-1 row latch and DDR
@@ -107,7 +119,10 @@ namespace C64
         /// </summary>
         public void Reset()
         {
-            joystick2 = 0xFF;
+            keyboardJoystick2 = 0xFF;
+            controllerJoystick2 = 0xFF;
+            controllerButtonMask = 0;
+            controllerAxisMask = 0;
             for (int i = 0; i < keyboardMatrix.Length; i++)
                 keyboardMatrix[i] = 0xFF;
             while (keyQueue.TryDequeue(out _)) { }
@@ -131,9 +146,27 @@ namespace C64
                 case SDL_EventType.SDL_KEYUP:
                     HandleKeyUp(ev.key);
                     return false;
+                case SDL_EventType.SDL_CONTROLLERDEVICEADDED:
+                    HandleControllerAdded(ev.cdevice);
+                    return false;
+                case SDL_EventType.SDL_CONTROLLERDEVICEREMOVED:
+                    HandleControllerRemoved(ev.cdevice);
+                    return false;
+                case SDL_EventType.SDL_CONTROLLERBUTTONDOWN:
+                case SDL_EventType.SDL_CONTROLLERBUTTONUP:
+                    HandleControllerButton(ev.cbutton);
+                    return false;
+                case SDL_EventType.SDL_CONTROLLERAXISMOTION:
+                    HandleControllerAxis(ev.caxis);
+                    return false;
                 default:
                     return false;
             }
+        }
+
+        public void Dispose()
+        {
+            CloseController();
         }
 
         // ?? Private implementation ????????????????????????????????????????????
@@ -209,7 +242,7 @@ namespace C64
 
             byte jmask = JoystickMaskFromKey(sym);
             if (jmask != 0)
-                joystick2 = (byte)(joystick2 & ~jmask);
+                keyboardJoystick2 = (byte)(keyboardJoystick2 & ~jmask);
 
             UpdateKeyboardState(sym, true);
             return false;
@@ -219,7 +252,7 @@ namespace C64
         {
             byte jmask = JoystickMaskFromKey(ke.keysym.sym);
             if (jmask != 0)
-                joystick2 = (byte)(joystick2 | jmask);
+                keyboardJoystick2 = (byte)(keyboardJoystick2 | jmask);
 
             UpdateKeyboardState(ke.keysym.sym, false);
         }
@@ -438,6 +471,143 @@ namespace C64
             else
                 keyboardMatrix[row] = (byte)(keyboardMatrix[row] | mask);
         }
+
+        private void OpenFirstAvailableController()
+        {
+            if (gameController != IntPtr.Zero)
+                return;
+
+            int count = SDL_NumJoysticks();
+            for (int i = 0; i < count; i++)
+            {
+                if (SDL_IsGameController(i) == SDL_bool.SDL_FALSE)
+                    continue;
+
+                OpenController(i);
+                if (gameController != IntPtr.Zero)
+                    return;
+            }
+        }
+
+        private void OpenController(int deviceIndex)
+        {
+            CloseController();
+
+            gameController = SDL_GameControllerOpen(deviceIndex);
+            if (gameController == IntPtr.Zero)
+            {
+                gameControllerInstanceId = -1;
+                return;
+            }
+
+            IntPtr joystick = SDL_GameControllerGetJoystick(gameController);
+            gameControllerInstanceId = joystick == IntPtr.Zero ? -1 : SDL_JoystickInstanceID(joystick);
+            controllerButtonMask = 0;
+            controllerAxisMask = 0;
+            UpdateControllerJoystick();
+        }
+
+        private void CloseController()
+        {
+            if (gameController != IntPtr.Zero)
+            {
+                SDL_GameControllerClose(gameController);
+                gameController = IntPtr.Zero;
+            }
+
+            gameControllerInstanceId = -1;
+            controllerButtonMask = 0;
+            controllerAxisMask = 0;
+            UpdateControllerJoystick();
+        }
+
+        private void HandleControllerAdded(SDL_ControllerDeviceEvent ev)
+        {
+            if (gameController == IntPtr.Zero && SDL_IsGameController(ev.which) != SDL_bool.SDL_FALSE)
+                OpenController(ev.which);
+        }
+
+        private void HandleControllerRemoved(SDL_ControllerDeviceEvent ev)
+        {
+            if (ev.which != gameControllerInstanceId)
+                return;
+
+            CloseController();
+            OpenFirstAvailableController();
+        }
+
+        private void HandleControllerButton(SDL_ControllerButtonEvent ev)
+        {
+            if (ev.which != gameControllerInstanceId)
+                return;
+
+            byte mask = ControllerButtonMask((SDL_GameControllerButton)ev.button);
+            if (mask == 0)
+                return;
+
+            if (ev.state == SDL_PRESSED)
+                controllerButtonMask = (byte)(controllerButtonMask | mask);
+            else
+                controllerButtonMask = (byte)(controllerButtonMask & ~mask);
+
+            UpdateControllerJoystick();
+        }
+
+        private void HandleControllerAxis(SDL_ControllerAxisEvent ev)
+        {
+            if (ev.which != gameControllerInstanceId)
+                return;
+
+            SDL_GameControllerAxis axis = (SDL_GameControllerAxis)ev.axis;
+            byte clearMask = axis switch
+            {
+                SDL_GameControllerAxis.SDL_CONTROLLER_AXIS_LEFTX => 0x0C,
+                SDL_GameControllerAxis.SDL_CONTROLLER_AXIS_LEFTY => 0x03,
+                _ => 0
+            };
+
+            if (clearMask == 0)
+                return;
+
+            byte nextMask = 0;
+            if (axis == SDL_GameControllerAxis.SDL_CONTROLLER_AXIS_LEFTX)
+            {
+                if (ev.axisValue <= -ControllerDeadZone)
+                    nextMask = 0x04;
+                else if (ev.axisValue >= ControllerDeadZone)
+                    nextMask = 0x08;
+            }
+            else if (axis == SDL_GameControllerAxis.SDL_CONTROLLER_AXIS_LEFTY)
+            {
+                if (ev.axisValue <= -ControllerDeadZone)
+                    nextMask = 0x01;
+                else if (ev.axisValue >= ControllerDeadZone)
+                    nextMask = 0x02;
+            }
+
+            controllerAxisMask = (byte)((controllerAxisMask & ~clearMask) | nextMask);
+            UpdateControllerJoystick();
+        }
+
+        private void UpdateControllerJoystick()
+        {
+            controllerJoystick2 = (byte)~(controllerButtonMask | controllerAxisMask);
+        }
+
+        private static byte ControllerButtonMask(SDL_GameControllerButton button) => button switch
+        {
+            SDL_GameControllerButton.SDL_CONTROLLER_BUTTON_DPAD_UP => 0x01,
+            SDL_GameControllerButton.SDL_CONTROLLER_BUTTON_DPAD_DOWN => 0x02,
+            SDL_GameControllerButton.SDL_CONTROLLER_BUTTON_DPAD_LEFT => 0x04,
+            SDL_GameControllerButton.SDL_CONTROLLER_BUTTON_DPAD_RIGHT => 0x08,
+            SDL_GameControllerButton.SDL_CONTROLLER_BUTTON_A => 0x10,
+            SDL_GameControllerButton.SDL_CONTROLLER_BUTTON_B => 0x10,
+            SDL_GameControllerButton.SDL_CONTROLLER_BUTTON_X => 0x10,
+            SDL_GameControllerButton.SDL_CONTROLLER_BUTTON_Y => 0x10,
+            SDL_GameControllerButton.SDL_CONTROLLER_BUTTON_LEFTSHOULDER => 0x10,
+            SDL_GameControllerButton.SDL_CONTROLLER_BUTTON_RIGHTSHOULDER => 0x10,
+            _ => 0
+        };
 
         private static byte JoystickMaskFromKey(SDL_Keycode k) => k switch
         {

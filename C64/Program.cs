@@ -1747,6 +1747,7 @@ namespace C64
 
             string? audioDevice = Sound.PromptForDevice();
             display.Init();
+            keyboard.InitGameControllers();
             sound.Init(audioDevice);
 
             var token = cts.Token;
@@ -1804,6 +1805,11 @@ namespace C64
                             break;
                         case SDL_EventType.SDL_KEYDOWN:
                         case SDL_EventType.SDL_KEYUP:
+                        case SDL_EventType.SDL_CONTROLLERDEVICEADDED:
+                        case SDL_EventType.SDL_CONTROLLERDEVICEREMOVED:
+                        case SDL_EventType.SDL_CONTROLLERBUTTONDOWN:
+                        case SDL_EventType.SDL_CONTROLLERBUTTONUP:
+                        case SDL_EventType.SDL_CONTROLLERAXISMOTION:
                             if (keyboard.HandleSdlEvent(ev)) quit = true;
                             break;
                         case SDL_EventType.SDL_DROPFILE:
@@ -1843,6 +1849,7 @@ namespace C64
         public void Dispose()
         {
             try { cts?.Cancel(); } catch { }
+            keyboard.Dispose();
             sound.Dispose();
             display.Dispose();
             reu.Dispose();
@@ -1898,8 +1905,16 @@ namespace C64
             if (ext == ".d64")
             {
                 await TypePetsciiLikeHumanAsync(
-                    //new byte[] { (byte)'L', (byte)'O', (byte)'A', (byte)'D', (byte)' ', (byte)'"', (byte)'*', (byte)'"', (byte)',', (byte)'8', 0x0D },
                     new byte[] { (byte)'L', (byte)'O', (byte)'A', (byte)'D', (byte)' ', (byte)'"', (byte)'*', (byte)'"', (byte)',', (byte)'8', (byte)',', (byte)'1', 0x0D },
+                    minInterKeyMs: 110,
+                    maxInterKeyMs: 220,
+                    enterExtraMs: 120).ConfigureAwait(false);
+                return;
+            } 
+            else if (ext == ".prg")
+            {
+                await TypePetsciiLikeHumanAsync(
+                    new byte[] { (byte)'R', (byte)'U', (byte)'N', 0x0D },
                     minInterKeyMs: 110,
                     maxInterKeyMs: 220,
                     enterExtraMs: 120).ConfigureAwait(false);

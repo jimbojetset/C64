@@ -161,7 +161,7 @@ namespace C64
 
         public void Init()
         {
-            if (SDL_Init(SDL_INIT_VIDEO) != 0)
+            if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_GAMECONTROLLER) != 0)
                 throw new Exception($"SDL_Init failed: {SDL_GetError()}");
 
             const int initialScale = 3;
