@@ -100,6 +100,8 @@ StyleCopReport.xml
 *.cache
 *.lscache
 *.DS_Store
+
+# Game Specific Files
 *.png
 *.bmp
 *.jpg
