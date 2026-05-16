@@ -18,11 +18,19 @@ namespace C64
 
         private byte? currentListener;
         private byte? currentTalker;
+        private byte? listenSecondary;
+        private byte? talkSecondary;
         private readonly List<byte> commandBytes = new List<byte>();
         private Queue<byte> talkQueue = new Queue<byte>();
+        private Queue<byte> statusQueue = new Queue<byte>();
+        private readonly Dictionary<byte, DirectChannel> directChannels = new Dictionary<byte, DirectChannel>();
+        private readonly Dictionary<byte, byte> logicalChannels = new Dictionary<byte, byte>();
+        private byte? currentInputChannel;
+        private byte? currentOutputChannel;
 
         private string? pendingFilename;
         private bool hostLooseProgramPresent;
+        private string driveStatus = "00, OK,00,00";
 
         private bool prevHostClockRelease = true;
         private bool prevHostAtnRelease = true;
@@ -58,6 +66,116 @@ namespace C64
             hostLooseProgramPresent = present;
         }
 
+        public bool Open(byte logicalFile, byte device, byte secondaryAddress, string? name)
+        {
+            if (NormalizeDevice(device) != 8)
+                return false;
+
+            byte channel = (byte)(secondaryAddress & 0x0F);
+            logicalChannels[logicalFile] = channel;
+
+            string text = name?.Trim().Trim('"', '\'') ?? string.Empty;
+            if (channel == 15)
+            {
+                if (text.Length != 0)
+                    ExecuteDriveCommand(text);
+                else
+                    SetDriveOk();
+                return true;
+            }
+
+            if (text.StartsWith("#", StringComparison.Ordinal))
+            {
+                directChannels[channel] = new DirectChannel(new byte[256]);
+                SetDriveOk();
+                return true;
+            }
+
+            if (text.Length != 0)
+                pendingFilename = text;
+
+            SetDriveOk();
+            return true;
+        }
+
+        public bool Close(byte logicalFile)
+        {
+            if (!logicalChannels.TryGetValue(logicalFile, out byte channel))
+                return false;
+
+            if (currentOutputChannel == channel)
+                FlushOutput();
+
+            logicalChannels.Remove(logicalFile);
+            if (currentInputChannel == channel)
+                currentInputChannel = null;
+            if (currentOutputChannel == channel)
+                currentOutputChannel = null;
+            if (channel != 15)
+                directChannels.Remove(channel);
+            SetDriveOk();
+            return true;
+        }
+
+        public bool Chkin(byte logicalFile)
+        {
+            if (!logicalChannels.TryGetValue(logicalFile, out byte channel))
+                return false;
+
+            currentInputChannel = channel;
+            if (channel == 15)
+                PrepareStatusBuffer();
+            return true;
+        }
+
+        public bool Chkout(byte logicalFile)
+        {
+            if (!logicalChannels.TryGetValue(logicalFile, out byte channel))
+                return false;
+
+            currentOutputChannel = channel;
+            commandBytes.Clear();
+            return true;
+        }
+
+        public void Clrchn()
+        {
+            currentInputChannel = null;
+            currentOutputChannel = null;
+            commandBytes.Clear();
+        }
+
+        public bool HasActiveChannel => currentInputChannel.HasValue || currentOutputChannel.HasValue;
+
+        public bool HasInputChannel => currentInputChannel.HasValue;
+
+        public byte Chrin()
+        {
+            if (!currentInputChannel.HasValue)
+                return 0;
+
+            return ReadChannelByte(currentInputChannel.Value);
+        }
+
+        public bool Chrout(byte value)
+        {
+            if (!currentOutputChannel.HasValue)
+                return false;
+
+            if (currentOutputChannel == 15)
+                commandBytes.Add(value);
+            return true;
+        }
+
+        public void FlushOutput()
+        {
+            if (currentOutputChannel == 15 && commandBytes.Count > 0)
+            {
+                ExecuteDriveCommand(DecodePetscii(commandBytes));
+                commandBytes.Clear();
+            }
+        }
+
         public byte BuildExternalCia2PortA(byte baseExternal)
         {
             bool dataHigh = hostDataRelease && devDataRelease;
@@ -76,6 +194,7 @@ namespace C64
         {
             currentTalker = NormalizeDevice(dev);
             currentListener = null;
+            talkSecondary = null;
             devDataRelease = true;
             devClockRelease = true;
         }
@@ -84,6 +203,7 @@ namespace C64
         {
             currentListener = NormalizeDevice(dev);
             currentTalker = null;
+            listenSecondary = null;
             commandBytes.Clear();
             devDataRelease = true;
             devClockRelease = true;
@@ -91,12 +211,14 @@ namespace C64
 
         public void Second(byte sa)
         {
+            listenSecondary = (byte)(sa & 0x0F);
             commandBytes.Clear();
         }
 
         public void Tksa(byte sa)
         {
-            PrepareTalkBuffer();
+            talkSecondary = (byte)(sa & 0x0F);
+            PrepareTalkBuffer(talkSecondary.Value);
         }
 
         public void Ciout(byte value)
@@ -108,7 +230,13 @@ namespace C64
 
         public byte Acptr()
         {
-            if (currentTalker != 8 || talkQueue.Count == 0)
+            if (currentTalker != 8)
+                return 0;
+
+            if (talkSecondary.HasValue)
+                return ReadChannelByte(talkSecondary.Value);
+
+            if (talkQueue.Count == 0)
                 return 0;
             OnDriveActivity?.Invoke();
             return talkQueue.Dequeue();
@@ -118,18 +246,47 @@ namespace C64
         {
             if (currentListener == 8 && commandBytes.Count > 0)
             {
-                pendingFilename = DecodePetscii(commandBytes);
+                string text = DecodePetscii(commandBytes);
+                if (listenSecondary == 15)
+                    ExecuteDriveCommand(text);
+                else
+                    pendingFilename = text;
             }
             currentListener = null;
+            listenSecondary = null;
             commandBytes.Clear();
         }
 
         public void Untalk()
         {
             currentTalker = null;
+            talkSecondary = null;
             talkQueue.Clear();
+            statusQueue.Clear();
             devDataRelease = true;
             devClockRelease = true;
+        }
+
+        private byte ReadChannelByte(byte channel)
+        {
+            if (channel == 15)
+            {
+                if (statusQueue.Count == 0)
+                    PrepareStatusBuffer();
+                return statusQueue.Count == 0 ? (byte)0 : statusQueue.Dequeue();
+            }
+
+            if (directChannels.TryGetValue(channel, out DirectChannel? directChannel))
+            {
+                OnDriveActivity?.Invoke();
+                return directChannel.ReadByte();
+            }
+
+            if (talkQueue.Count == 0)
+                return 0;
+
+            OnDriveActivity?.Invoke();
+            return talkQueue.Dequeue();
         }
 
         public bool TryLoadFromDrive(out byte[] prg, out string resolvedName)
@@ -150,10 +307,19 @@ namespace C64
             return ok;
         }
 
-        private void PrepareTalkBuffer()
+        private void PrepareTalkBuffer(byte channel)
         {
             talkQueue.Clear();
             if (currentTalker != 8)
+                return;
+
+            if (channel == 15)
+            {
+                PrepareStatusBuffer();
+                return;
+            }
+
+            if (directChannels.ContainsKey(channel))
                 return;
 
             // Secondary addr for LOAD/TALK data channels typically includes low nibble channel.
@@ -164,6 +330,96 @@ namespace C64
             talkQueue = new Queue<byte>(prg);
             devDataRelease = true;
             devClockRelease = true;
+        }
+
+        private void PrepareStatusBuffer()
+        {
+            statusQueue = new Queue<byte>(Encoding.ASCII.GetBytes(driveStatus + "\r"));
+            driveStatus = "00, OK,00,00";
+        }
+
+        private void ExecuteDriveCommand(string command)
+        {
+            string normalized = command.Trim().Trim('"', '\'').ToUpperInvariant();
+            if (normalized.Length == 0 || normalized == "I" || normalized == "UI")
+            {
+                SetDriveOk();
+                return;
+            }
+
+            if (normalized.StartsWith("U1:", StringComparison.Ordinal) ||
+                normalized.StartsWith("UA:", StringComparison.Ordinal))
+            {
+                ExecuteBlockRead(normalized.Substring(3));
+                return;
+            }
+
+            if (normalized.StartsWith("B-P:", StringComparison.Ordinal))
+            {
+                ExecuteBufferPointer(normalized.Substring(4));
+                return;
+            }
+
+            SetDriveStatus(30, "SYNTAX ERROR", 0, 0);
+        }
+
+        private void ExecuteBlockRead(string args)
+        {
+            int[] values = ParseDriveCommandNumbers(args);
+            if (values.Length < 4)
+            {
+                SetDriveStatus(30, "SYNTAX ERROR", 0, 0);
+                return;
+            }
+
+            byte channel = (byte)(values[0] & 0x0F);
+            int track = values[2];
+            int sector = values[3];
+            if (!drive.TryReadSector(track, sector, out byte[] sectorBytes))
+            {
+                SetDriveStatus(66, "ILLEGAL TRACK OR SECTOR", track, sector);
+                return;
+            }
+
+            directChannels[channel] = new DirectChannel(sectorBytes);
+            OnDriveActivity?.Invoke();
+            SetDriveOk(track, sector);
+        }
+
+        private void ExecuteBufferPointer(string args)
+        {
+            int[] values = ParseDriveCommandNumbers(args);
+            if (values.Length < 2 || !directChannels.TryGetValue((byte)(values[0] & 0x0F), out DirectChannel? channel))
+            {
+                SetDriveStatus(70, "NO CHANNEL", 0, 0);
+                return;
+            }
+
+            channel.Position = Math.Clamp(values[1], 0, 255);
+            SetDriveOk();
+        }
+
+        private static int[] ParseDriveCommandNumbers(string args)
+        {
+            string[] parts = args.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+            var values = new List<int>(parts.Length);
+            foreach (string part in parts)
+            {
+                if (int.TryParse(part, out int value))
+                    values.Add(value);
+            }
+            return values.ToArray();
+        }
+
+        private void SetDriveOk(int track = 0, int sector = 0)
+        {
+            SetDriveStatus(0, "OK", track, sector);
+        }
+
+        private void SetDriveStatus(int code, string message, int track, int sector)
+        {
+            driveStatus = $"{code:00}, {message},{track:00},{sector:00}";
+            statusQueue.Clear();
         }
 
         private static string DecodePetscii(List<byte> bytes)
@@ -182,6 +438,25 @@ namespace C64
         private static byte NormalizeDevice(byte dev)
         {
             return (byte)(dev & 0x1F);
+        }
+
+        private sealed class DirectChannel
+        {
+            private readonly byte[] data;
+
+            public DirectChannel(byte[] data)
+            {
+                this.data = data;
+            }
+
+            public int Position { get; set; }
+
+            public byte ReadByte()
+            {
+                if (Position < 0 || Position >= data.Length)
+                    return 0;
+                return data[Position++];
+            }
         }
 
         private void StepLowLevelResponder()

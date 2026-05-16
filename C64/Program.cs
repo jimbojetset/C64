@@ -1552,6 +1552,54 @@ namespace C64
             ulong pc = cpu.registers.PC;
             switch (pc)
             {
+                case 0xFFC0: // OPEN
+                    HandleKernalOpenTrap();
+                    break;
+                case 0xFFC3: // CLOSE
+                    if (iecBus.Close(cpu.registers.A))
+                    {
+                        cpu.registers.Flags.C = false;
+                        ReturnFromKernelTrap();
+                    }
+                    break;
+                case 0xFFC6: // CHKIN
+                    if (iecBus.Chkin(cpu.registers.X))
+                    {
+                        cpu.registers.Flags.C = false;
+                        ReturnFromKernelTrap();
+                    }
+                    break;
+                case 0xFFC9: // CHKOUT
+                    if (iecBus.Chkout(cpu.registers.X))
+                    {
+                        cpu.registers.Flags.C = false;
+                        ReturnFromKernelTrap();
+                    }
+                    break;
+                case 0xFFCC: // CLRCHN
+                    if (iecBus.HasActiveChannel)
+                    {
+                        iecBus.FlushOutput();
+                        iecBus.Clrchn();
+                        cpu.registers.Flags.C = false;
+                        ReturnFromKernelTrap();
+                    }
+                    break;
+                case 0xFFCF: // CHRIN
+                    if (iecBus.HasInputChannel)
+                    {
+                        cpu.registers.A = iecBus.Chrin();
+                        cpu.registers.Flags.C = false;
+                        ReturnFromKernelTrap();
+                    }
+                    break;
+                case 0xFFD2: // CHROUT
+                    if (iecBus.Chrout(cpu.registers.A))
+                    {
+                        cpu.registers.Flags.C = false;
+                        ReturnFromKernelTrap();
+                    }
+                    break;
                 case 0xFFB1: // LISTEN
                     iecBus.Listen(cpu.registers.A);
                     cpu.registers.Flags.C = false;
@@ -1592,6 +1640,31 @@ namespace C64
                     cpu.registers.Flags.C = false;
                     ReturnFromKernelTrap();
                     break;
+            }
+        }
+
+        private void HandleKernalOpenTrap()
+        {
+            byte[] mem = cpu.memory.memory;
+            byte nameLen = mem[0x00B7];
+            ushort namePtr = (ushort)(mem[0x00BB] | (mem[0x00BC] << 8));
+            string? name = null;
+
+            if (nameLen != 0)
+            {
+                var chars = new char[nameLen];
+                for (int i = 0; i < nameLen; i++)
+                {
+                    byte b = cpu.memory.ReadByte((ulong)(namePtr + i));
+                    chars[i] = b >= 0x20 && b <= 0x7E ? (char)b : '?';
+                }
+                name = new string(chars).Trim();
+            }
+
+            if (iecBus.Open(mem[0x00B8], mem[0x00BA], mem[0x00B9], name))
+            {
+                cpu.registers.Flags.C = false;
+                ReturnFromKernelTrap();
             }
         }
 

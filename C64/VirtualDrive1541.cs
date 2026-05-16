@@ -54,6 +54,12 @@ namespace C64
             return true;
         }
 
+        public bool TryReadSector(int track, int sector, out byte[] sectorBytes)
+        {
+            sectorBytes = Array.Empty<byte>();
+            return image?.TryReadSector(track, sector, out sectorBytes) == true;
+        }
+
         private static bool IsDirectoryRequest(string? requestedName)
         {
             if (string.IsNullOrWhiteSpace(requestedName))

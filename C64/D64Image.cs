@@ -143,6 +143,18 @@ namespace C64
             return true;
         }
 
+        public bool TryReadSector(int track, int sector, out byte[] sectorBytes)
+        {
+            sectorBytes = Array.Empty<byte>();
+            int off = Offset(track, sector);
+            if (off < 0 || off + 256 > raw.Length)
+                return false;
+
+            sectorBytes = new byte[256];
+            Array.Copy(raw, off, sectorBytes, 0, sectorBytes.Length);
+            return true;
+        }
+
         private List<DirectoryEntry> ReadDirectoryEntries()
         {
             var list = new List<DirectoryEntry>();

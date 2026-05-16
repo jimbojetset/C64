@@ -15,9 +15,6 @@ The core emulator library implementing the complete 6502 processor. Features inc
 - 151 documented opcodes
 - 151 undocumented opcodes (including unstable variants)
 
-### CPU_TESTS
-Comprehensive test suite validating emulator accuracy against the [SingleStepTests/65x02](https://github.com/SingleStepTests/65x02) reference test data. Tests all opcodes with thousands of test cases per instruction.
-
 ### C64
 Commodore 64 emulator application using SDL2 for display/input/audio. Key features include:
 - Cycle-driven CPU/VIC/CIA integration
@@ -25,7 +22,7 @@ Commodore 64 emulator application using SDL2 for display/input/audio. Key featur
 - SID synthesis with MODE/VOL semantics
 - CIA timer/ICR/TOD handling, serial shift behavior, and NMI/IRQ paths
 - Keyboard and SDL-compatible game controller joystick input
-- IEC + virtual 1541 D64 file loading support
+- IEC + virtual 1541 D64 file loading support, including selected command/status and direct block-access operations
 - TAP datasette pulse playback with motor/sense/read behavior
 - Host file loading for PRG/T64/TAP/D64
 
@@ -75,30 +72,34 @@ The following opcodes exhibit hardware-dependent behavior and may produce varyin
 - **SHX (0x9E)**: Store X AND H with unstable high-byte addressing
 - **TAS (0x9B)**: Transfer A AND X to stack pointer, then store with unstable addressing
 
-These opcodes are implemented but are disabled in the test suite by default, as they reflect authentic hardware variability rather than emulation bugs.
+These opcodes are implemented with behaviour that reflects authentic hardware variability.
 
 ## Requirements
 
 - .NET 8.0 SDK
 - C# 12.0
 
+For the C64 emulator application:
+- Native SDL2 runtime library available to the OS dynamic loader
+- OpenGL-capable graphics environment
+- C64 ROM files in `C64/ROMS`:
+  - `basic.901226-01.bin`
+  - `kernal.901227-03.bin`
+  - `characters.901225-01.bin`
+
+NuGet packages restored by the project files:
+
+| Project | Package | Version | Purpose |
+|---|---|---|---|
+| `C64` | `Sayers.SDL2.Core` | `1.0.11` | SDL2 bindings for video, input, and audio |
+| `C64` | `Silk.NET.OpenGL` | `2.21.0` | OpenGL bindings used by the audio-device picker UI |
+| `C64` | `ImGui.NET` | `1.91.6.1` | ImGui UI used by the audio-device picker |
+
 ## Building
 
 ```bash
 dotnet build 6502CPU.sln
 ```
-
-## Running Tests
-
-```bash
-cd CPU_TESTS
-dotnet run
-```
-
-Tests automatically fetch test data from the [SingleStepTests repository](https://raw.githubusercontent.com/SingleStepTests/65x02/main/6502/v1/) and validate opcode behavior.
-
-Important note:
-- The current CPU test harness uses a Windows-style local path in `CPU_TESTS/Program.cs` for some runs. On macOS/Linux this may need adjusting to a local/relative dataset path if you want full offline runs.
 
 ## Running C64 Emulator
 
@@ -119,6 +120,27 @@ dotnet run -c Release
 | `Shift+Q` or `Alt+Q` or `Ctrl+W` | Quit emulator |
 | `Caps Lock` | Toggle C64 SHIFT LOCK |
 | `Page Up` or `Pause` | Trigger RESTORE NMI |
+
+### Display Overlays
+
+The emulator keeps small transparent status glyphs in the lower-left corner:
+
+| Glyph | Meaning |
+|---|---|
+| Muted speaker | Audio is muted via `Ctrl+Q` |
+| Green activity LED | Virtual drive activity on device 8 |
+
+### Disk / 1541 Notes
+
+`.d64` images are attached as virtual device 8. Simple program loads are supported, and the virtual drive also implements enough 1541-style command/channel behaviour for some direct-access disk software:
+
+- command/status channel `15`
+- status strings such as `00, OK,00,00`
+- direct sector reads using `U1:` / `UA:`
+- buffer pointer positioning using `B-P:`
+- logical file channels through KERNAL `OPEN`, `CLOSE`, `CHKIN`, `CHKOUT`, `CHRIN`, `CHROUT`, and `CLRCHN`
+
+This is not a cycle-exact 1541 emulator. Disk operations currently return data through a fast virtual path instead of modelling the 1541 CPU, DOS ROM, mechanical latency, IEC serial timing, or busy delays. Games such as Zork may therefore skip real-world waiting periods while still loading and accessing their disk data successfully.
 
 ## Keyboard Mapping (C64 vs UK 101)
 
@@ -160,10 +182,6 @@ Joystick input is currently mapped to C64 joystick port 2, which is the port use
 | SDL game controller A/B/X/Y or shoulder buttons | Fire |
 
 SDL-compatible controllers are detected at startup, and the emulator will open the first available controller. If that controller is disconnected, it will try to reopen another available one.
-
-## References
-
-- [SingleStepTests/65x02](https://github.com/SingleStepTests/65x02) - Test data used for validation
 
 ## License
 
