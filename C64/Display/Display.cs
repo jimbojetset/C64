@@ -70,6 +70,7 @@ namespace C64
         private volatile bool isResetting;
         private volatile bool resyncPending;
         private volatile bool muteOverlayVisible;
+        private volatile bool pausedOverlayVisible;
         private long driveActivityTicks;
         private int rasterCycleInLine;
         private readonly bool[] busStealMask = new bool[CyclesPerRasterLine];
@@ -115,6 +116,12 @@ namespace C64
         {
             get => muteOverlayVisible;
             set => muteOverlayVisible = value;
+        }
+
+        public bool PausedOverlayVisible
+        {
+            get => pausedOverlayVisible;
+            set => pausedOverlayVisible = value;
         }
 
         public void PulseDriveActivity()
@@ -260,10 +267,77 @@ namespace C64
                 h = FrameH,
             };
             SDL_RenderCopy(renderer, texture, IntPtr.Zero, ref dst);
+            if (pausedOverlayVisible)
+                DrawPausedOverlay();
             if (muteOverlayVisible)
                 DrawMuteOverlay();
             DrawDriveActivityOverlay();
             SDL_RenderPresent(renderer);
+        }
+
+        private void DrawPausedOverlay()
+        {
+            SDL_SetRenderDrawBlendMode(renderer, SDL_BlendMode.SDL_BLENDMODE_BLEND);
+
+            SDL_SetRenderDrawColor(renderer, 0, 0, 0, 90);
+            SDL_Rect dim = new SDL_Rect { x = 0, y = 0, w = FrameW, h = FrameH };
+            SDL_RenderFillRect(renderer, ref dim);
+
+            DrawBlockTextCentered("PAUSED", 1);
+
+            SDL_SetRenderDrawBlendMode(renderer, SDL_BlendMode.SDL_BLENDMODE_NONE);
+        }
+
+        private void DrawBlockTextCentered(string text, int scale)
+        {
+            const int glyphW = 5;
+            const int glyphH = 7;
+            const int spacing = 1;
+
+            int textW = text.Length * glyphW + Math.Max(0, text.Length - 1) * spacing;
+            int originX = (FrameW - textW * scale) / 2;
+            int originY = (FrameH - glyphH * scale) / 2;
+
+            SDL_SetRenderDrawColor(renderer, 235, 235, 235, 175);
+
+            for (int i = 0; i < text.Length; i++)
+            {
+                byte[] glyph = GetBlockGlyph(text[i]);
+                int glyphX = originX + i * (glyphW + spacing) * scale;
+
+                for (int y = 0; y < glyphH; y++)
+                {
+                    byte row = glyph[y];
+                    for (int x = 0; x < glyphW; x++)
+                    {
+                        if ((row & (1 << (glyphW - 1 - x))) == 0)
+                            continue;
+
+                        SDL_Rect pixel = new SDL_Rect
+                        {
+                            x = glyphX + x * scale,
+                            y = originY + y * scale,
+                            w = scale,
+                            h = scale,
+                        };
+                        SDL_RenderFillRect(renderer, ref pixel);
+                    }
+                }
+            }
+        }
+
+        private static byte[] GetBlockGlyph(char ch)
+        {
+            return ch switch
+            {
+                'A' => new byte[] { 0x0E, 0x11, 0x11, 0x1F, 0x11, 0x11, 0x11 },
+                'D' => new byte[] { 0x1E, 0x11, 0x11, 0x11, 0x11, 0x11, 0x1E },
+                'E' => new byte[] { 0x1F, 0x10, 0x10, 0x1E, 0x10, 0x10, 0x1F },
+                'P' => new byte[] { 0x1E, 0x11, 0x11, 0x1E, 0x10, 0x10, 0x10 },
+                'S' => new byte[] { 0x0F, 0x10, 0x10, 0x0E, 0x01, 0x01, 0x1E },
+                'U' => new byte[] { 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x0E },
+                _ => new byte[] { 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 },
+            };
         }
 
         private void DrawMuteOverlay()

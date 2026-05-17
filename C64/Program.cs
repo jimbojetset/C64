@@ -2239,6 +2239,7 @@ namespace C64
         {
             cpu.SetPaused(paused);
             sound.SetPaused(paused);
+            display.PausedOverlayVisible = paused;
         }
 
         /// <summary>
@@ -2396,6 +2397,7 @@ namespace C64
         {
             bool wasPaused = IsPaused;
             SetPaused(true);
+            display.RedrawScreen();
 
             try
             {
@@ -2608,6 +2610,7 @@ namespace C64
 
             bool wasPaused = IsPaused;
             SetPaused(true);
+            display.RedrawScreen();
 
             try
             {
