@@ -87,7 +87,7 @@ NuGet packages restored by the project files:
 | Project | Package | Version | Purpose |
 |---|---|---|---|
 | `C64` | `Sayers.SDL2.Core` | `1.0.11` | SDL2 bindings for video, input, and audio |
-| `C64` | `Silk.NET.OpenGL` | `2.21.0` | OpenGL bindings used by the ImGui picker windows |
+| `C64` | `Silk.NET.OpenGL` | `2.21.0` | OpenGL bindings used by the main display presenter and ImGui picker windows |
 | `C64` | `ImGui.NET` | `1.91.6.1` | ImGui UI used by the audio-device, software picker, and save windows |
 
 ## Building

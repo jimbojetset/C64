@@ -1,5 +1,7 @@
 ﻿using C64.CPU;
+using Silk.NET.OpenGL;
 using System.Diagnostics;
+using System.IO.Compression;
 using System.Threading;
 using static SDL2.SDL;
 
@@ -12,6 +14,13 @@ namespace C64
 
         public const int FrameW = 384;
         public const int FrameH = 272;
+        private const int MonitorImageW = 688;
+        private const int MonitorImageH = 701;
+        private const int MonitorScreenX = 90;
+        private const int MonitorScreenY = 83;
+        private const int MonitorScreenW = 508;
+        private const int MonitorScreenH = 423;
+        private const double MonitorScreenOverscan = 1.08;
         private const int FramePlayfieldX = (FrameW - ScreenW) / 2;
         private const int FramePlayfieldY = (FrameH - ScreenH) / 2;
         private const int FrameFirstRasterLine = VisibleTop - FramePlayfieldY;
@@ -49,6 +58,7 @@ namespace C64
 
         private byte[] renderBuf = new byte[FrameW * FrameH * 4];
         private byte[] displayBuf = new byte[FrameW * FrameH * 4];
+        private byte[] presentationBuf = new byte[FrameW * FrameH * 4];
         private readonly object swapLock = new object();
 
         private readonly bool[] fgLine = new bool[ScreenW];
@@ -59,8 +69,16 @@ namespace C64
         private int[] cachedBitmapRowNum = new int[8];  // Track which row number each cache came from
 
         private IntPtr window;
-        private IntPtr renderer;
-        private IntPtr texture;
+        private IntPtr glContext;
+        private GL? gl;
+        private uint frameTexture;
+        private uint monitorTexture;
+        private uint presentVao;
+        private uint presentVbo;
+        private uint presentShader;
+        private int presentTextureUniform;
+        private int presentOutputSizeUniform;
+        private int presentEffectModeUniform;
         private const string BaseWindowTitle = "C64 Emulator";
         private string? loadedFileDisplayName;
         private bool windowTitleDirty;
@@ -186,34 +204,35 @@ namespace C64
             if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_GAMECONTROLLER) != 0)
                 throw new Exception($"SDL_Init failed: {SDL_GetError()}");
 
-            const int initialScale = 3;
-            int initialW = FrameW * initialScale * 3 / 4;
-            int initialH = FrameH * initialScale * 3 / 4;
+            SDL_GL_SetAttribute(SDL_GLattr.SDL_GL_CONTEXT_MAJOR_VERSION, 3);
+            SDL_GL_SetAttribute(SDL_GLattr.SDL_GL_CONTEXT_MINOR_VERSION, 3);
+            SDL_GL_SetAttribute(SDL_GLattr.SDL_GL_CONTEXT_PROFILE_MASK,
+                (int)SDL_GLprofile.SDL_GL_CONTEXT_PROFILE_CORE);
+            SDL_GL_SetAttribute(SDL_GLattr.SDL_GL_DOUBLEBUFFER, 1);
+
+            int initialW = MonitorImageW;
+            int initialH = MonitorImageH;
             window = SDL_CreateWindow(
                 BaseWindowTitle,
                 SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
                 initialW, initialH,
-                SDL_WindowFlags.SDL_WINDOW_SHOWN | SDL_WindowFlags.SDL_WINDOW_RESIZABLE);
+                SDL_WindowFlags.SDL_WINDOW_OPENGL |
+                SDL_WindowFlags.SDL_WINDOW_SHOWN |
+                SDL_WindowFlags.SDL_WINDOW_RESIZABLE);
             if (window == IntPtr.Zero)
                 throw new Exception($"SDL_CreateWindow failed: {SDL_GetError()}");
 
             SDL_EventState(SDL_EventType.SDL_DROPFILE, SDL_ENABLE);
 
-            renderer = SDL_CreateRenderer(window, -1,
-                SDL_RendererFlags.SDL_RENDERER_ACCELERATED |
-                SDL_RendererFlags.SDL_RENDERER_PRESENTVSYNC);
-            if (renderer == IntPtr.Zero)
-                throw new Exception($"SDL_CreateRenderer failed: {SDL_GetError()}");
+            glContext = SDL_GL_CreateContext(window);
+            if (glContext == IntPtr.Zero)
+                throw new Exception($"SDL_GL_CreateContext failed: {SDL_GetError()}");
 
-            SDL_SetHint(SDL_HINT_RENDER_SCALE_QUALITY, "0");
-            SDL_RenderSetLogicalSize(renderer, FrameW, FrameH);
+            SDL_GL_MakeCurrent(window, glContext);
+            SDL_GL_SetSwapInterval(1);
 
-            texture = SDL_CreateTexture(renderer,
-                SDL_PIXELFORMAT_ARGB8888,
-                (int)SDL_TextureAccess.SDL_TEXTUREACCESS_STREAMING,
-                FrameW, FrameH);
-            if (texture == IntPtr.Zero)
-                throw new Exception($"SDL_CreateTexture failed: {SDL_GetError()}");
+            gl = GL.GetApi(name => SDL_GL_GetProcAddress(name));
+            CreatePresentationObjects();
 
             charRom = File.ReadAllBytes(Path.Combine("ROMS", "characters.901225-01.bin"));
             windowTitleDirty = true;
@@ -250,42 +269,375 @@ namespace C64
 
             lock (swapLock)
             {
-                unsafe
-                {
-                    fixed (byte* p = displayBuf)
-                    {
-                        SDL_UpdateTexture(texture, IntPtr.Zero, (IntPtr)p, FrameW * 4);
-                    }
-                }
+                System.Buffer.BlockCopy(displayBuf, 0, presentationBuf, 0, displayBuf.Length);
             }
 
-            SDL_Rect dst = new SDL_Rect
-            {
-                x = 0,
-                y = 0,
-                w = FrameW,
-                h = FrameH,
-            };
-            SDL_RenderCopy(renderer, texture, IntPtr.Zero, ref dst);
             if (pausedOverlayVisible)
                 DrawPausedOverlay();
             if (muteOverlayVisible)
                 DrawMuteOverlay();
             DrawDriveActivityOverlay();
-            SDL_RenderPresent(renderer);
+            PresentFrame();
+        }
+
+        private unsafe void CreatePresentationObjects()
+        {
+            GL glApi = gl ?? throw new InvalidOperationException("OpenGL API is not initialized.");
+
+            string vertexShaderSource = @"
+                #version 330 core
+                layout (location = 0) in vec2 Position;
+                layout (location = 1) in vec2 UV;
+                out vec2 Frag_UV;
+                void main()
+                {
+                    Frag_UV = UV;
+                    gl_Position = vec4(Position, 0.0, 1.0);
+                }
+            ";
+
+            string fragmentShaderSource = @"
+                #version 330 core
+                in vec2 Frag_UV;
+                uniform sampler2D Texture;
+                uniform vec2 OutputSize;
+                uniform int EffectMode;
+                layout (location = 0) out vec4 Out_Color;
+
+                void main()
+                {
+                    if (EffectMode == 0)
+                    {
+                        Out_Color = texture(Texture, Frag_UV);
+                        return;
+                    }
+
+                    vec2 centered = Frag_UV * 2.0 - 1.0;
+                    float r2 = dot(centered, centered);
+                    vec2 sampleUv = centered * (1.0 + 0.0825 * r2);
+                    sampleUv.x = centered.x * (1.0 + 0.04125 * r2);
+
+                    if (abs(sampleUv.x) > 1.0 || abs(sampleUv.y) > 1.0)
+                    {
+                        Out_Color = vec4(0.0, 0.0, 0.0, 0.0);
+                        return;
+                    }
+
+                    sampleUv = sampleUv * 0.5 + 0.5;
+                    vec4 color = texture(Texture, sampleUv);
+
+                    float vignette = 1.0 - clamp(r2 * 0.12, 0.0, 0.22);
+                    float scanline = 1.0 - 0.045 * step(0.5, fract(gl_FragCoord.y * 0.5));
+                    color.rgb *= vignette * scanline;
+
+                    Out_Color = vec4(color.rgb, 1.0);
+                }
+            ";
+
+            uint vertexShader = CompilePresentationShader(ShaderType.VertexShader, vertexShaderSource);
+            uint fragmentShader = CompilePresentationShader(ShaderType.FragmentShader, fragmentShaderSource);
+
+            presentShader = glApi.CreateProgram();
+            glApi.AttachShader(presentShader, vertexShader);
+            glApi.AttachShader(presentShader, fragmentShader);
+            glApi.LinkProgram(presentShader);
+            glApi.GetProgram(presentShader, ProgramPropertyARB.LinkStatus, out int linked);
+            if (linked == 0)
+                throw new Exception($"Presentation shader link failed: {glApi.GetProgramInfoLog(presentShader)}");
+
+            glApi.DeleteShader(vertexShader);
+            glApi.DeleteShader(fragmentShader);
+
+            presentTextureUniform = glApi.GetUniformLocation(presentShader, "Texture");
+            presentOutputSizeUniform = glApi.GetUniformLocation(presentShader, "OutputSize");
+            presentEffectModeUniform = glApi.GetUniformLocation(presentShader, "EffectMode");
+
+            frameTexture = glApi.GenTexture();
+            glApi.BindTexture(TextureTarget.Texture2D, frameTexture);
+            glApi.TexImage2D(TextureTarget.Texture2D, 0, InternalFormat.Rgba, FrameW, FrameH, 0, PixelFormat.Bgra, PixelType.UnsignedByte, null);
+            glApi.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMinFilter, (int)TextureMinFilter.Linear);
+            glApi.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMagFilter, (int)TextureMagFilter.Linear);
+            glApi.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureWrapS, (int)TextureWrapMode.ClampToEdge);
+            glApi.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureWrapT, (int)TextureWrapMode.ClampToEdge);
+
+            monitorTexture = CreateMonitorTexture();
+
+            float[] vertices =
+            {
+                -1f, -1f, 0f, 1f,
+                 1f, -1f, 1f, 1f,
+                -1f,  1f, 0f, 0f,
+                 1f,  1f, 1f, 0f,
+            };
+
+            presentVao = glApi.GenVertexArray();
+            presentVbo = glApi.GenBuffer();
+            glApi.BindVertexArray(presentVao);
+            glApi.BindBuffer(BufferTargetARB.ArrayBuffer, presentVbo);
+            fixed (float* p = vertices)
+            {
+                glApi.BufferData(BufferTargetARB.ArrayBuffer, (nuint)(vertices.Length * sizeof(float)), p, BufferUsageARB.StaticDraw);
+            }
+
+            const uint stride = 4 * sizeof(float);
+            glApi.EnableVertexAttribArray(0);
+            glApi.VertexAttribPointer(0, 2, VertexAttribPointerType.Float, false, stride, (void*)0);
+            glApi.EnableVertexAttribArray(1);
+            glApi.VertexAttribPointer(1, 2, VertexAttribPointerType.Float, false, stride, (void*)(2 * sizeof(float)));
+
+            glApi.BindVertexArray(0);
+        }
+
+        private uint CompilePresentationShader(ShaderType type, string source)
+        {
+            GL glApi = gl ?? throw new InvalidOperationException("OpenGL API is not initialized.");
+            uint shader = glApi.CreateShader(type);
+            glApi.ShaderSource(shader, source);
+            glApi.CompileShader(shader);
+            glApi.GetShader(shader, ShaderParameterName.CompileStatus, out int compiled);
+            if (compiled == 0)
+                throw new Exception($"Presentation shader compilation failed: {glApi.GetShaderInfoLog(shader)}");
+
+            return shader;
+        }
+
+        private unsafe uint CreateMonitorTexture()
+        {
+            GL glApi = gl ?? throw new InvalidOperationException("OpenGL API is not initialized.");
+            byte[] pixels = LoadPngBgra(FindDisplayAsset("monitor.png"), out int width, out int height);
+
+            uint texture = glApi.GenTexture();
+            glApi.BindTexture(TextureTarget.Texture2D, texture);
+            fixed (byte* p = pixels)
+            {
+                glApi.TexImage2D(TextureTarget.Texture2D, 0, InternalFormat.Rgba, (uint)width, (uint)height, 0, PixelFormat.Bgra, PixelType.UnsignedByte, p);
+            }
+
+            glApi.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMinFilter, (int)TextureMinFilter.Linear);
+            glApi.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMagFilter, (int)TextureMagFilter.Linear);
+            glApi.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureWrapS, (int)TextureWrapMode.ClampToEdge);
+            glApi.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureWrapT, (int)TextureWrapMode.ClampToEdge);
+            return texture;
+        }
+
+        private static string FindDisplayAsset(string fileName)
+        {
+            string[] candidates =
+            {
+                Path.Combine(Environment.CurrentDirectory, "Display", fileName),
+                Path.Combine(AppContext.BaseDirectory, "Display", fileName),
+                Path.Combine(Environment.CurrentDirectory, "C64", "Display", fileName),
+            };
+
+            return candidates.FirstOrDefault(File.Exists)
+                ?? throw new FileNotFoundException($"Display asset not found: {fileName}");
+        }
+
+        private static byte[] LoadPngBgra(string path, out int width, out int height)
+        {
+            byte[] file = File.ReadAllBytes(path);
+            ReadOnlySpan<byte> signature = stackalloc byte[] { 137, 80, 78, 71, 13, 10, 26, 10 };
+            if (file.Length < signature.Length || !file.AsSpan(0, signature.Length).SequenceEqual(signature))
+                throw new InvalidDataException("Monitor background must be a PNG file.");
+
+            width = 0;
+            height = 0;
+            int bitDepth = 0;
+            int colorType = 0;
+            using var idat = new MemoryStream();
+
+            int offset = 8;
+            while (offset + 12 <= file.Length)
+            {
+                int length = (int)ReadUInt32BigEndian(file, offset);
+                offset += 4;
+                string type = System.Text.Encoding.ASCII.GetString(file, offset, 4);
+                offset += 4;
+
+                if (offset + length + 4 > file.Length)
+                    throw new InvalidDataException("PNG chunk extends past end of file.");
+
+                if (type == "IHDR")
+                {
+                    width = (int)ReadUInt32BigEndian(file, offset);
+                    height = (int)ReadUInt32BigEndian(file, offset + 4);
+                    bitDepth = file[offset + 8];
+                    colorType = file[offset + 9];
+                    if (file[offset + 10] != 0 || file[offset + 11] != 0 || file[offset + 12] != 0)
+                        throw new InvalidDataException("Unsupported PNG compression, filter, or interlace method.");
+                }
+                else if (type == "IDAT")
+                {
+                    idat.Write(file, offset, length);
+                }
+                else if (type == "IEND")
+                {
+                    break;
+                }
+
+                offset += length + 4; // data + CRC
+            }
+
+            if (width <= 0 || height <= 0 || bitDepth != 8 || colorType != 6)
+                throw new InvalidDataException("Monitor background PNG must be 8-bit RGBA.");
+
+            idat.Position = 0;
+            byte[] inflated;
+            using (var raw = new MemoryStream())
+            {
+                using (var zlib = new ZLibStream(idat, CompressionMode.Decompress, leaveOpen: true))
+                    zlib.CopyTo(raw);
+                inflated = raw.ToArray();
+            }
+
+            int stride = width * 4;
+            int rowWithFilter = stride + 1;
+            if (inflated.Length < height * rowWithFilter)
+                throw new InvalidDataException("PNG image data is shorter than expected.");
+
+            byte[] rgba = new byte[height * stride];
+            byte[] previous = new byte[stride];
+            byte[] current = new byte[stride];
+            int source = 0;
+
+            for (int y = 0; y < height; y++)
+            {
+                int filter = inflated[source++];
+                Array.Copy(inflated, source, current, 0, stride);
+                source += stride;
+                UnfilterPngRow(current, previous, filter, bytesPerPixel: 4);
+                Array.Copy(current, 0, rgba, y * stride, stride);
+                (previous, current) = (current, previous);
+            }
+
+            byte[] bgra = new byte[rgba.Length];
+            for (int i = 0; i < rgba.Length; i += 4)
+            {
+                bgra[i] = rgba[i + 2];
+                bgra[i + 1] = rgba[i + 1];
+                bgra[i + 2] = rgba[i];
+                bgra[i + 3] = rgba[i + 3];
+            }
+
+            return bgra;
+        }
+
+        private static void UnfilterPngRow(byte[] row, byte[] previous, int filter, int bytesPerPixel)
+        {
+            for (int i = 0; i < row.Length; i++)
+            {
+                int left = i >= bytesPerPixel ? row[i - bytesPerPixel] : 0;
+                int up = previous[i];
+                int upLeft = i >= bytesPerPixel ? previous[i - bytesPerPixel] : 0;
+
+                int add = filter switch
+                {
+                    0 => 0,
+                    1 => left,
+                    2 => up,
+                    3 => (left + up) / 2,
+                    4 => PaethPredictor(left, up, upLeft),
+                    _ => throw new InvalidDataException($"Unsupported PNG filter type {filter}."),
+                };
+
+                row[i] = (byte)(row[i] + add);
+            }
+        }
+
+        private static int PaethPredictor(int left, int up, int upLeft)
+        {
+            int p = left + up - upLeft;
+            int pa = Math.Abs(p - left);
+            int pb = Math.Abs(p - up);
+            int pc = Math.Abs(p - upLeft);
+
+            if (pa <= pb && pa <= pc) return left;
+            return pb <= pc ? up : upLeft;
+        }
+
+        private unsafe void PresentFrame()
+        {
+            GL glApi = gl ?? throw new InvalidOperationException("OpenGL API is not initialized.");
+
+            SDL_GL_MakeCurrent(window, glContext);
+            SDL_GetWindowSize(window, out int windowW, out int windowH);
+
+            fixed (byte* p = presentationBuf)
+            {
+                glApi.BindTexture(TextureTarget.Texture2D, frameTexture);
+                glApi.TexSubImage2D(TextureTarget.Texture2D, 0, 0, 0, FrameW, FrameH, PixelFormat.Bgra, PixelType.UnsignedByte, p);
+            }
+
+            glApi.Viewport(0, 0, (uint)Math.Max(1, windowW), (uint)Math.Max(1, windowH));
+            glApi.ClearColor(0f, 0f, 0f, 1f);
+            glApi.Clear((uint)ClearBufferMask.ColorBufferBit);
+
+            (int mx, int my, int mw, int mh) = CalculateMonitorViewport(windowW, windowH);
+
+            double scaleX = mw / (double)MonitorImageW;
+            double scaleY = mh / (double)MonitorImageH;
+            double screenW = MonitorScreenW * scaleX * MonitorScreenOverscan;
+            double screenH = MonitorScreenH * scaleY * MonitorScreenOverscan;
+            double screenCenterX = mx + (MonitorScreenX + MonitorScreenW * 0.5) * scaleX;
+            double screenCenterY = my + (MonitorImageH - MonitorScreenY - MonitorScreenH * 0.5) * scaleY;
+            int sx = (int)Math.Round(screenCenterX - screenW * 0.5);
+            int sy = (int)Math.Round(screenCenterY - screenH * 0.5);
+            int sw = (int)Math.Round(screenW);
+            int sh = (int)Math.Round(screenH);
+            DrawPresentationQuad(frameTexture, sx, sy, sw, sh, effectMode: 1);
+            DrawPresentationQuad(monitorTexture, mx, my, mw, mh, effectMode: 0);
+
+            SDL_GL_SwapWindow(window);
+        }
+
+        private void DrawPresentationQuad(uint texture, int x, int y, int w, int h, int effectMode)
+        {
+            GL glApi = gl ?? throw new InvalidOperationException("OpenGL API is not initialized.");
+
+            glApi.Viewport(x, y, (uint)Math.Max(1, w), (uint)Math.Max(1, h));
+            if (effectMode == 1 || effectMode == 0)
+            {
+                glApi.Enable(EnableCap.Blend);
+                glApi.BlendFunc(BlendingFactor.SrcAlpha, BlendingFactor.OneMinusSrcAlpha);
+            }
+            else
+            {
+                glApi.Disable(EnableCap.Blend);
+            }
+
+            glApi.UseProgram(presentShader);
+            glApi.Uniform1(presentTextureUniform, 0);
+            glApi.Uniform2(presentOutputSizeUniform, (float)w, (float)h);
+            glApi.Uniform1(presentEffectModeUniform, effectMode);
+            glApi.ActiveTexture(TextureUnit.Texture0);
+            glApi.BindTexture(TextureTarget.Texture2D, texture);
+            glApi.BindVertexArray(presentVao);
+            glApi.DrawArrays(PrimitiveType.TriangleStrip, 0, 4);
+            glApi.BindVertexArray(0);
+        }
+
+        private static (int X, int Y, int W, int H) CalculateMonitorViewport(int windowW, int windowH)
+        {
+            if (windowW <= 0 || windowH <= 0)
+                return (0, 0, 1, 1);
+
+            double frameAspect = MonitorImageW / (double)MonitorImageH;
+            int w = windowW;
+            int h = (int)Math.Round(w / frameAspect);
+            if (h > windowH)
+            {
+                h = windowH;
+                w = (int)Math.Round(h * frameAspect);
+            }
+
+            return ((windowW - w) / 2, (windowH - h) / 2, Math.Max(1, w), Math.Max(1, h));
         }
 
         private void DrawPausedOverlay()
         {
-            SDL_SetRenderDrawBlendMode(renderer, SDL_BlendMode.SDL_BLENDMODE_BLEND);
-
-            SDL_SetRenderDrawColor(renderer, 0, 0, 0, 90);
-            SDL_Rect dim = new SDL_Rect { x = 0, y = 0, w = FrameW, h = FrameH };
-            SDL_RenderFillRect(renderer, ref dim);
+            BlendRect(0, 0, FrameW, FrameH, 0, 0, 0, 90);
 
             DrawBlockTextCentered("PAUSED", 1);
-
-            SDL_SetRenderDrawBlendMode(renderer, SDL_BlendMode.SDL_BLENDMODE_NONE);
         }
 
         private void DrawBlockTextCentered(string text, int scale)
@@ -297,8 +649,6 @@ namespace C64
             int textW = text.Length * glyphW + Math.Max(0, text.Length - 1) * spacing;
             int originX = (FrameW - textW * scale) / 2;
             int originY = (FrameH - glyphH * scale) / 2;
-
-            SDL_SetRenderDrawColor(renderer, 235, 235, 235, 175);
 
             for (int i = 0; i < text.Length; i++)
             {
@@ -313,14 +663,7 @@ namespace C64
                         if ((row & (1 << (glyphW - 1 - x))) == 0)
                             continue;
 
-                        SDL_Rect pixel = new SDL_Rect
-                        {
-                            x = glyphX + x * scale,
-                            y = originY + y * scale,
-                            w = scale,
-                            h = scale,
-                        };
-                        SDL_RenderFillRect(renderer, ref pixel);
+                        BlendRect(glyphX + x * scale, originY + y * scale, scale, scale, 235, 235, 235, 175);
                     }
                 }
             }
@@ -345,21 +688,14 @@ namespace C64
             const int x = 5;
             const int y = FrameH - 12;
 
-            SDL_SetRenderDrawBlendMode(renderer, SDL_BlendMode.SDL_BLENDMODE_BLEND);
+            BlendRect(x, y + 4, 2, 3, 230, 230, 230, 150);
 
-            SDL_SetRenderDrawColor(renderer, 230, 230, 230, 150);
-            SDL_Rect body = new SDL_Rect { x = x, y = y + 4, w = 2, h = 3 };
-            SDL_RenderFillRect(renderer, ref body);
+            BlendLine(x + 2, y + 4, x + 5, y + 1, 230, 230, 230, 150);
+            BlendLine(x + 2, y + 6, x + 5, y + 9, 230, 230, 230, 150);
+            BlendLine(x + 5, y + 1, x + 5, y + 9, 230, 230, 230, 150);
 
-            SDL_RenderDrawLine(renderer, x + 2, y + 4, x + 5, y + 1);
-            SDL_RenderDrawLine(renderer, x + 2, y + 6, x + 5, y + 9);
-            SDL_RenderDrawLine(renderer, x + 5, y + 1, x + 5, y + 9);
-
-            SDL_SetRenderDrawColor(renderer, 255, 80, 80, 165);
-            SDL_RenderDrawLine(renderer, x + 1, y + 2, x + 7, y + 8);
-            SDL_RenderDrawLine(renderer, x + 7, y + 2, x + 1, y + 8);
-
-            SDL_SetRenderDrawBlendMode(renderer, SDL_BlendMode.SDL_BLENDMODE_NONE);
+            BlendLine(x + 1, y + 2, x + 7, y + 8, 255, 80, 80, 165);
+            BlendLine(x + 7, y + 2, x + 1, y + 8, 255, 80, 80, 165);
         }
 
         private void DrawDriveActivityOverlay()
@@ -376,23 +712,78 @@ namespace C64
             const int x = 16;
             const int y = FrameH - 8;
 
-            SDL_SetRenderDrawBlendMode(renderer, SDL_BlendMode.SDL_BLENDMODE_BLEND);
-            SDL_SetRenderDrawColor(renderer, 95, 255, 125, alpha);
+            BlendRect(x, y, 4, 4, 95, 255, 125, alpha);
+            BlendPixel(x - 1, y + 1, 95, 255, 125, alpha);
+            BlendPixel(x + 4, y + 1, 95, 255, 125, alpha);
+            BlendPixel(x - 1, y + 2, 95, 255, 125, alpha);
+            BlendPixel(x + 4, y + 2, 95, 255, 125, alpha);
+        }
 
-            SDL_Rect led = new SDL_Rect { x = x, y = y, w = 4, h = 4 };
-            SDL_RenderFillRect(renderer, ref led);
-            SDL_RenderDrawPoint(renderer, x - 1, y + 1);
-            SDL_RenderDrawPoint(renderer, x + 4, y + 1);
-            SDL_RenderDrawPoint(renderer, x - 1, y + 2);
-            SDL_RenderDrawPoint(renderer, x + 4, y + 2);
+        private void BlendRect(int x, int y, int w, int h, byte r, byte g, byte b, byte a)
+        {
+            int x0 = Math.Clamp(x, 0, FrameW);
+            int y0 = Math.Clamp(y, 0, FrameH);
+            int x1 = Math.Clamp(x + w, 0, FrameW);
+            int y1 = Math.Clamp(y + h, 0, FrameH);
 
-            SDL_SetRenderDrawBlendMode(renderer, SDL_BlendMode.SDL_BLENDMODE_NONE);
+            for (int py = y0; py < y1; py++)
+                for (int px = x0; px < x1; px++)
+                    BlendPixel(px, py, r, g, b, a);
+        }
+
+        private void BlendLine(int x0, int y0, int x1, int y1, byte r, byte g, byte b, byte a)
+        {
+            int dx = Math.Abs(x1 - x0);
+            int sx = x0 < x1 ? 1 : -1;
+            int dy = -Math.Abs(y1 - y0);
+            int sy = y0 < y1 ? 1 : -1;
+            int err = dx + dy;
+
+            while (true)
+            {
+                BlendPixel(x0, y0, r, g, b, a);
+                if (x0 == x1 && y0 == y1)
+                    break;
+
+                int e2 = 2 * err;
+                if (e2 >= dy)
+                {
+                    err += dy;
+                    x0 += sx;
+                }
+                if (e2 <= dx)
+                {
+                    err += dx;
+                    y0 += sy;
+                }
+            }
+        }
+
+        private void BlendPixel(int x, int y, byte r, byte g, byte b, byte a)
+        {
+            if (x < 0 || x >= FrameW || y < 0 || y >= FrameH)
+                return;
+
+            int p = (y * FrameW + x) * 4;
+            int invA = 255 - a;
+            presentationBuf[p] = (byte)((b * a + presentationBuf[p] * invA) / 255);
+            presentationBuf[p + 1] = (byte)((g * a + presentationBuf[p + 1] * invA) / 255);
+            presentationBuf[p + 2] = (byte)((r * a + presentationBuf[p + 2] * invA) / 255);
+            presentationBuf[p + 3] = 0xFF;
         }
 
         public void Dispose()
         {
-            if (texture != IntPtr.Zero) { SDL_DestroyTexture(texture); texture = IntPtr.Zero; }
-            if (renderer != IntPtr.Zero) { SDL_DestroyRenderer(renderer); renderer = IntPtr.Zero; }
+            if (gl is not null)
+            {
+                if (presentVao != 0) { gl.DeleteVertexArray(presentVao); presentVao = 0; }
+                if (presentVbo != 0) { gl.DeleteBuffer(presentVbo); presentVbo = 0; }
+                if (frameTexture != 0) { gl.DeleteTexture(frameTexture); frameTexture = 0; }
+                if (monitorTexture != 0) { gl.DeleteTexture(monitorTexture); monitorTexture = 0; }
+                if (presentShader != 0) { gl.DeleteProgram(presentShader); presentShader = 0; }
+            }
+
+            if (glContext != IntPtr.Zero) { SDL_GL_DeleteContext(glContext); glContext = IntPtr.Zero; }
             if (window != IntPtr.Zero) { SDL_DestroyWindow(window); window = IntPtr.Zero; }
         }
 
@@ -1291,6 +1682,14 @@ namespace C64
             buffer[offset + 1] = (byte)(value >> 16);
             buffer[offset + 2] = (byte)(value >> 8);
             buffer[offset + 3] = (byte)value;
+        }
+
+        private static uint ReadUInt32BigEndian(byte[] buffer, int offset)
+        {
+            return ((uint)buffer[offset] << 24) |
+                   ((uint)buffer[offset + 1] << 16) |
+                   ((uint)buffer[offset + 2] << 8) |
+                   buffer[offset + 3];
         }
 
         private static void WriteUInt32BigEndian(Stream output, uint value)
