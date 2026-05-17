@@ -260,6 +260,19 @@ namespace C64
             set => muted = value;
         }
 
+        public void SetPaused(bool paused)
+        {
+            lock (_audioStateLock)
+            {
+                if (_dev == 0)
+                    return;
+
+                SDL_PauseAudioDevice(_dev, paused ? 1 : 0);
+                if (paused)
+                    SDL_ClearQueuedAudio(_dev);
+            }
+        }
+
         /// <summary>Reset all SID registers and per-voice state.</summary>
         public void Reset()
         {
@@ -334,6 +347,14 @@ namespace C64
 
             while (!_ct.IsCancellationRequested)
             {
+                if (_dev != 0 && SDL_GetAudioDeviceStatus(_dev) == SDL_AudioStatus.SDL_AUDIO_PAUSED)
+                {
+                    last = Stopwatch.GetTimestamp();
+                    fracCyc = 0.0;
+                    Thread.Sleep(10);
+                    continue;
+                }
+
                 // Convert real time elapsed since last wakeup into CPU cycles,
                 // then into a sample count.  The fractional remainder carries
                 // over so we don't drift over time.

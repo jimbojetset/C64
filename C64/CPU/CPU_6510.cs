@@ -25,6 +25,8 @@ namespace C64.CPU
 
         private bool running = true;
         public bool Running { get { return running; } }
+        private bool paused;
+        public bool Paused => Volatile.Read(ref paused);
         private bool jammed;
 
         private readonly int clockFreq = 2000000; //1MHz
@@ -84,6 +86,8 @@ namespace C64.CPU
         // by the .NET runtime at process exit (which can take seconds).
         public void Stop() => running = false;
 
+        public void SetPaused(bool value) => Volatile.Write(ref paused, value);
+
         // Performed on the CPU thread inside the Run loop. Doing it here
         // means OnReset, register clears and queue drains all happen
         // serially with instruction execution - no concurrent reader of
@@ -122,6 +126,13 @@ namespace C64.CPU
             {
                 while (running)
                 {
+                    if (Volatile.Read(ref paused))
+                    {
+                        Thread.Sleep(2);
+                        nextDeadline = Stopwatch.GetTimestamp() + ticksPerSlice;
+                        continue;
+                    }
+
                     // Service a pending reset request at a safe point
                     // before fetching the next instruction.
                     if (Interlocked.Exchange(ref resetPending, 0) == 1)

@@ -200,6 +200,7 @@ namespace C64
                 display.TakeScreenshot();
             };
             keyboard.OnToggleMute = ToggleMute;
+            keyboard.OnTogglePause = TogglePause;
 
             byte[] kernal = cpu.memory.GetBankedROM(Memory.BankSlot.Kernal)!;
             kernal[0xFCF5 - 0xE000] = 0xEA;
@@ -2146,6 +2147,19 @@ namespace C64
             display.MuteOverlayVisible = muted;
         }
 
+        private bool IsPaused => cpu.Paused;
+
+        private void TogglePause()
+        {
+            SetPaused(!IsPaused);
+        }
+
+        private void SetPaused(bool paused)
+        {
+            cpu.SetPaused(paused);
+            sound.SetPaused(paused);
+        }
+
         /// <summary>
         /// Drag-and-drop flow: reset the emulator (Ctrl+R equivalent), wait
         /// for the KERNAL to reach the READY prompt, load the file, then
@@ -2299,21 +2313,27 @@ namespace C64
 
         private void LoadProgram()
         {
-            Task.Run(() =>
+            bool wasPaused = IsPaused;
+            SetPaused(true);
+
+            try
             {
-                try
+                string? path = SoftwareFileWindow.Prompt();
+                if (!string.IsNullOrWhiteSpace(path))
                 {
-                    Console.Write("Load file (.prg, .d64, .t64, .tap, .bas, .txt) - path: ");
-                    string? path = Console.ReadLine();
-                    if (string.IsNullOrWhiteSpace(path)) return;
-                    path = path.Trim().Trim('"', '\'');
-                    pendingLoads.Enqueue((path, false));
+                    SetPaused(false);
+                    pendingLoads.Enqueue((path, true));
                 }
-                catch (Exception ex)
+                else
                 {
-                    Console.Error.WriteLine($"Load prompt failed: {ex.Message}");
+                    SetPaused(wasPaused);
                 }
-            });
+            }
+            catch (Exception ex)
+            {
+                SetPaused(wasPaused);
+                Console.Error.WriteLine($"Load picker failed: {ex.Message}");
+            }
         }
 
         private void DoLoad(string path)

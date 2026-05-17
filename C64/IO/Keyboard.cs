@@ -50,6 +50,9 @@ namespace C64
         /// <summary>Invoked when Ctrl+Q is pressed.</summary>
         public Action? OnToggleMute { get; set; }
 
+        /// <summary>Invoked when Ctrl+P is pressed.</summary>
+        public Action? OnTogglePause { get; set; }
+
         private static readonly byte[] CtrlColours =
         {
             0x90, 0x05, 0x1C, 0x9F, 0x9C, 0x1E, 0x1F, 0x9E,
@@ -235,6 +238,7 @@ namespace C64
                 switch (sym)
                 {
                     case SDL_Keycode.SDLK_o: OnLoad?.Invoke(); return false;
+                    case SDL_Keycode.SDLK_p: OnTogglePause?.Invoke(); return false;
                     case SDL_Keycode.SDLK_s: OnSave?.Invoke(); return false;
                     case SDL_Keycode.SDLK_r:
                     case SDL_Keycode.SDLK_F12: OnHardReset?.Invoke(); return false;

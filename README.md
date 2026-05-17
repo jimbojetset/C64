@@ -104,8 +104,9 @@ dotnet run -c Release
 | Keyboard Shortcut | Action |
 |---|---|
 | `F12` or `Ctrl+R` | Hard reset CPU and peripherals |
+| `Ctrl+P` | Pause/unpause emulator |
 | `Ctrl+Q` | Toggle audio mute; shows a small mute icon in the bottom-left corner while muted |
-| `Ctrl+O` | Open file dialog (load PRG/D64/T64/TAP) |
+| `Ctrl+O` | Open software picker (load and run from `Software`) |
 | `Ctrl+S` | Save memory range prompt |
 | `Shift+S` | Screenshot (saved as `c64_screenshot_*.bmp`) |
 | `Shift+Q` or `Alt+Q` or `Ctrl+W` | Quit emulator |
