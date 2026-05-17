@@ -15,7 +15,7 @@ Commodore 64 emulator application using SDL2 for display/input/audio. Key featur
 - Keyboard and SDL-compatible game controller joystick input
 - IEC + virtual 1541 D64 file loading support, including selected command/status and direct block-access operations
 - TAP datasette pulse playback with motor/sense/read behavior
-- Host file loading for PRG/T64/TAP/D64, including an ImGui software picker for bundled files
+- Host PRG/T64/TAP/D64 loading and PRG saving, including ImGui picker windows for bundled software
 
 ## Quick Keymap
 
@@ -30,6 +30,7 @@ Most-used non-standard key mappings:
 | CLR/HOME | `Home` |
 | INST/DEL | `Insert` or `Backspace/Delete` |
 | Load bundled software | `Ctrl+O` |
+| Save BASIC program | `Ctrl+S` |
 | Pause/unpause emulator | `Ctrl+P` |
 | Mute/unmute audio | `Ctrl+Q` |
 
@@ -86,7 +87,7 @@ NuGet packages restored by the project files:
 |---|---|---|---|
 | `C64` | `Sayers.SDL2.Core` | `1.0.11` | SDL2 bindings for video, input, and audio |
 | `C64` | `Silk.NET.OpenGL` | `2.21.0` | OpenGL bindings used by the ImGui picker windows |
-| `C64` | `ImGui.NET` | `1.91.6.1` | ImGui UI used by the audio-device and software picker windows |
+| `C64` | `ImGui.NET` | `1.91.6.1` | ImGui UI used by the audio-device, software picker, and save windows |
 
 ## Building
 
@@ -101,9 +102,13 @@ cd C64
 dotnet run -c Release
 ```
 
+### Software Loading And Saving
+
 Bundled software lives under `C64/Software`. Press `Ctrl+O` while the emulator is running to open the ImGui software picker. The emulator pauses while the picker is open; selecting a file closes the picker, unpauses the emulator, and uses the existing extension-based loader to reset, load, and run the selected software. Closing or cancelling the picker restores the previous pause state.
 
-Native C64 `SAVE` commands also write standard `.prg` files into `C64/Software`. For example, `SAVE "HELLO",8` creates `HELLO.prg` with the normal two-byte PRG load address followed by the saved memory range.
+Press `Ctrl+S` to open the ImGui save dialog for the current BASIC program. The emulator pauses while the save dialog is active, then restores the previous pause state after saving or cancelling. Files are saved into `C64/Software` as standard `.prg` files with a two-byte little-endian load address followed by the saved program bytes.
+
+Native C64 `SAVE` commands also write standard `.prg` files into `C64/Software`. For example, `SAVE "HELLO",8` creates `HELLO.prg`. Disk-style prefixes and options such as `SAVE "0:HELLO,P",8` are normalized to a host filename like `HELLO.prg`.
 
 ### Runtime Hotkeys (Emulator Controls)
 
