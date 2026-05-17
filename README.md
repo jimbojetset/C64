@@ -197,3 +197,4 @@ SDL-compatible controllers are detected at startup, and the emulator will open t
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
 Copyright (c) 2025 James Booth
+
