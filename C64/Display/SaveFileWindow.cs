@@ -5,15 +5,13 @@ using static SDL2.SDL;
 namespace C64
 {
     /// <summary>
-    /// Hosts an SDL2 + OpenGL window long enough to run an ImGui software
-    /// selection modal, then returns the selected file path.
+    /// Hosts an SDL2 + OpenGL window long enough to run an ImGui save filename
+    /// modal, then returns the chosen filename.
     /// </summary>
-    internal static class SoftwareFileWindow
+    internal static class SaveFileWindow
     {
-        public static string? Prompt()
+        public static string? Prompt(string defaultFilename)
         {
-            IReadOnlyList<SoftwareFileEntry> files = DiscoverSoftwareFiles();
-
             if (SDL_InitSubSystem(SDL_INIT_VIDEO) != 0)
             {
                 Console.Error.WriteLine($"SDL video init failed: {SDL_GetError()}");
@@ -27,11 +25,11 @@ namespace C64
             SDL_GL_SetAttribute(SDL_GLattr.SDL_GL_DOUBLEBUFFER, 1);
             SDL_GL_SetAttribute(SDL_GLattr.SDL_GL_DEPTH_SIZE, 24);
 
-            const int Width = 600;
-            const int Height = 420;
+            const int Width = 520;
+            const int Height = 260;
 
             IntPtr win = SDL_CreateWindow(
-                "C64 Emulator - load software",
+                "C64 Emulator - save program",
                 SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
                 Width, Height,
                 SDL_WindowFlags.SDL_WINDOW_OPENGL |
@@ -63,7 +61,7 @@ namespace C64
             try
             {
                 controller = new ImGuiController(gl, win, Width, Height);
-                var selector = new SoftwareFileSelector(files);
+                var selector = new SaveFileSelector(defaultFilename);
 
                 var sw = Stopwatch.StartNew();
                 double last = sw.Elapsed.TotalSeconds;
@@ -115,11 +113,11 @@ namespace C64
                 }
 
                 if (!quit)
-                    selected = selector.SelectedPath;
+                    selected = selector.SelectedFilename;
             }
             catch (Exception ex)
             {
-                Console.Error.WriteLine($"Software picker failed: {ex.Message}");
+                Console.Error.WriteLine($"Save picker failed: {ex.Message}");
             }
             finally
             {
@@ -131,26 +129,6 @@ namespace C64
             }
 
             return selected;
-        }
-
-        private static IReadOnlyList<SoftwareFileEntry> DiscoverSoftwareFiles()
-        {
-            string? softwareDir = SoftwareDirectory.Find();
-            if (softwareDir is null)
-                return Array.Empty<SoftwareFileEntry>();
-
-            return Directory.EnumerateFiles(softwareDir, "*", SearchOption.AllDirectories)
-                .OrderBy(path => Path.GetRelativePath(softwareDir, path), StringComparer.OrdinalIgnoreCase)
-                .Select(path =>
-                {
-                    string relative = Path.GetRelativePath(softwareDir, path);
-                    string display = Path.ChangeExtension(relative, null) ?? relative;
-                    string extension = Path.GetExtension(path).TrimStart('.').ToUpperInvariant();
-                    if (string.IsNullOrWhiteSpace(extension))
-                        extension = "FILE";
-                    return new SoftwareFileEntry(path, display, extension);
-                })
-                .ToArray();
         }
     }
 }

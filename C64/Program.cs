@@ -1518,6 +1518,7 @@ namespace C64
 
             TryHandleKernalIecTrap();
             TryHandleKernalLoadTrap();
+            TryHandleKernalSaveTrap();
 
             byte p1 = cpu.memory.memory[0x0001];
             bool motorOn = (p1 & 0x20) == 0;
@@ -1792,6 +1793,59 @@ namespace C64
             ReturnFromKernelTrap();
         }
 
+        private void TryHandleKernalSaveTrap()
+        {
+            // KERNAL SAVE entry. A points to a zero-page word containing the
+            // start address; X/Y contain the exclusive end address.
+            if (cpu.registers.PC != 0xFFD8)
+                return;
+
+            byte[] mem = cpu.memory.memory;
+            string? requestedName = ReadKernalFilename();
+            if (string.IsNullOrWhiteSpace(requestedName))
+            {
+                cpu.registers.A = 0x08; // missing file name
+                cpu.registers.Flags.C = true;
+                ReturnFromKernelTrap();
+                return;
+            }
+
+            byte startPointer = cpu.registers.A;
+            ushort start = (ushort)(mem[startPointer] | (mem[(byte)(startPointer + 1)] << 8));
+            ushort end = (ushort)(cpu.registers.X | (cpu.registers.Y << 8));
+
+            if (end <= start)
+            {
+                cpu.registers.A = 0x1F;
+                cpu.registers.Flags.C = true;
+                ReturnFromKernelTrap();
+                return;
+            }
+
+            try
+            {
+                string softwareDir = SoftwareDirectory.Ensure();
+                string filename = NormalizePrgFilename(requestedName);
+                string path = Path.Combine(softwareDir, filename);
+
+                PrintKernalSaveMessages(requestedName);
+                SaveMemoryRangeAsPrg(path, mem, start, end);
+
+                cpu.registers.A = 0x00;
+                cpu.registers.Flags.C = false;
+                cpu.memory.WriteByte(0x0090, 0x00);
+                SetLastHostLoadedFile(path);
+            }
+            catch (Exception ex)
+            {
+                Console.Error.WriteLine($"SAVE failed: {ex.Message}");
+                cpu.registers.A = 0x1F;
+                cpu.registers.Flags.C = true;
+            }
+
+            ReturnFromKernelTrap();
+        }
+
         private (ushort Start, ushort End) LoadPrgFromLoadCommand(string path, string? requestedName, ushort? loadOverride)
         {
             PrintKernalLoadMessages(requestedName);
@@ -1859,6 +1913,33 @@ namespace C64
             NewScreenLine();
             WriteScreenText("LOADING");
             NewScreenLine();
+        }
+
+        private void PrintKernalSaveMessages(string requestedName)
+        {
+            string name = requestedName.Trim().Trim('"', '\'');
+            EnsureScreenLineStart();
+            WriteScreenText($"SAVING {name.ToUpperInvariant()}");
+            NewScreenLine();
+        }
+
+        private string? ReadKernalFilename()
+        {
+            byte[] mem = cpu.memory.memory;
+            byte nameLen = mem[0x00B7];
+            ushort namePtr = (ushort)(mem[0x00BB] | (mem[0x00BC] << 8));
+
+            if (nameLen == 0)
+                return null;
+
+            var chars = new char[nameLen];
+            for (int i = 0; i < nameLen; i++)
+            {
+                byte b = cpu.memory.ReadByte((ulong)(namePtr + i));
+                chars[i] = b >= 0x20 && b <= 0x7E ? (char)b : '?';
+            }
+
+            return new string(chars).Trim();
         }
 
         private string? ResolveKernelLoadPath(string? requestedName)
@@ -2525,24 +2606,81 @@ namespace C64
                 return;
             }
 
-            Console.Write("Save .prg - path: ");
-            string? path = Console.ReadLine();
-            if (string.IsNullOrWhiteSpace(path)) return;
-            path = path.Trim().Trim('"', '\'');
-            if (!path.EndsWith(".prg", StringComparison.OrdinalIgnoreCase))
-                path += ".prg";
+            bool wasPaused = IsPaused;
+            SetPaused(true);
 
             try
             {
-                using var fs = File.Create(path);
-                fs.WriteByte(0x01); // load address lo
-                fs.WriteByte(0x08); // load address hi -> $0801
-                fs.Write(mem, 0x0801, progLen);
+                string? filename = SaveFileWindow.Prompt(DefaultSaveFilename());
+                if (string.IsNullOrWhiteSpace(filename))
+                    return;
+
+                string softwareDir = SoftwareDirectory.Ensure();
+                string path = Path.Combine(softwareDir, NormalizePrgFilename(filename));
+                SaveMemoryRangeAsPrg(path, mem, 0x0801, (ushort)(0x0801 + progLen));
+                Console.WriteLine($"Saved {Path.GetFileName(path)}");
             }
             catch (Exception ex)
             {
                 Console.Error.WriteLine($"Save failed: {ex.Message}");
             }
+            finally
+            {
+                SetPaused(wasPaused);
+            }
+        }
+
+        private static void SaveMemoryRangeAsPrg(string path, byte[] mem, ushort start, ushort end)
+        {
+            int length = end - start;
+            if (length <= 0)
+                throw new InvalidDataException("empty save range.");
+
+            using var fs = File.Create(path);
+            fs.WriteByte((byte)(start & 0xFF));
+            fs.WriteByte((byte)(start >> 8));
+            fs.Write(mem, start, length);
+        }
+
+        private static string NormalizePrgFilename(string raw)
+        {
+            string name = raw.Trim().Trim('"', '\'');
+
+            if (name.StartsWith("@", StringComparison.Ordinal))
+                name = name.Substring(1);
+
+            int commaIndex = name.IndexOf(',');
+            if (commaIndex >= 0)
+                name = name.Substring(0, commaIndex);
+
+            int colonIndex = name.LastIndexOf(':');
+            if (colonIndex >= 0 && colonIndex < name.Length - 1)
+                name = name.Substring(colonIndex + 1);
+
+            name = Path.GetFileName(name);
+
+            foreach (char invalid in Path.GetInvalidFileNameChars())
+                name = name.Replace(invalid, '_');
+
+            if (string.IsNullOrWhiteSpace(name))
+                name = "program";
+
+            if (!name.EndsWith(".prg", StringComparison.OrdinalIgnoreCase))
+                name += ".prg";
+
+            return name;
+        }
+
+        private string DefaultSaveFilename()
+        {
+            if (!string.IsNullOrWhiteSpace(lastHostLoadedFile))
+            {
+                string? name = Path.GetFileNameWithoutExtension(lastHostLoadedFile);
+                if (!string.IsNullOrWhiteSpace(name))
+                    return name + ".prg";
+            }
+
+            return "program.prg";
         }
     }
 }

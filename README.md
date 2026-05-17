@@ -15,7 +15,7 @@ Commodore 64 emulator application using SDL2 for display/input/audio. Key featur
 - Keyboard and SDL-compatible game controller joystick input
 - IEC + virtual 1541 D64 file loading support, including selected command/status and direct block-access operations
 - TAP datasette pulse playback with motor/sense/read behavior
-- Host file loading for PRG/T64/TAP/D64
+- Host file loading for PRG/T64/TAP/D64, including an ImGui software picker for bundled files
 
 ## Quick Keymap
 
@@ -29,6 +29,8 @@ Most-used non-standard key mappings:
 | SHIFT LOCK | `Caps Lock` (toggle) |
 | CLR/HOME | `Home` |
 | INST/DEL | `Insert` or `Backspace/Delete` |
+| Load bundled software | `Ctrl+O` |
+| Pause/unpause emulator | `Ctrl+P` |
 | Mute/unmute audio | `Ctrl+Q` |
 
 For the complete mapping and notes, see the full table in the keyboard section below.
@@ -83,8 +85,8 @@ NuGet packages restored by the project files:
 | Project | Package | Version | Purpose |
 |---|---|---|---|
 | `C64` | `Sayers.SDL2.Core` | `1.0.11` | SDL2 bindings for video, input, and audio |
-| `C64` | `Silk.NET.OpenGL` | `2.21.0` | OpenGL bindings used by the audio-device picker UI |
-| `C64` | `ImGui.NET` | `1.91.6.1` | ImGui UI used by the audio-device picker |
+| `C64` | `Silk.NET.OpenGL` | `2.21.0` | OpenGL bindings used by the ImGui picker windows |
+| `C64` | `ImGui.NET` | `1.91.6.1` | ImGui UI used by the audio-device and software picker windows |
 
 ## Building
 
@@ -99,6 +101,10 @@ cd C64
 dotnet run -c Release
 ```
 
+Bundled software lives under `C64/Software`. Press `Ctrl+O` while the emulator is running to open the ImGui software picker. The emulator pauses while the picker is open; selecting a file closes the picker, unpauses the emulator, and uses the existing extension-based loader to reset, load, and run the selected software. Closing or cancelling the picker restores the previous pause state.
+
+Native C64 `SAVE` commands also write standard `.prg` files into `C64/Software`. For example, `SAVE "HELLO",8` creates `HELLO.prg` with the normal two-byte PRG load address followed by the saved memory range.
+
 ### Runtime Hotkeys (Emulator Controls)
 
 | Keyboard Shortcut | Action |
@@ -107,7 +113,7 @@ dotnet run -c Release
 | `Ctrl+P` | Pause/unpause emulator |
 | `Ctrl+Q` | Toggle audio mute; shows a small mute icon in the bottom-left corner while muted |
 | `Ctrl+O` | Open software picker (load and run from `Software`) |
-| `Ctrl+S` | Save memory range prompt |
+| `Ctrl+S` | Open save dialog for current BASIC program; saves a `.prg` into `Software` |
 | `Shift+S` | Screenshot (saved as `c64_screenshot_*.bmp`) |
 | `Shift+Q` or `Alt+Q` or `Ctrl+W` | Quit emulator |
 | `Caps Lock` | Toggle C64 SHIFT LOCK |
