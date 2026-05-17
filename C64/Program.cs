@@ -201,6 +201,7 @@ namespace C64
             };
             keyboard.OnToggleMute = ToggleMute;
             keyboard.OnTogglePause = TogglePause;
+            keyboard.OnSelectAudioDevice = SelectAudioDevice;
 
             byte[] kernal = cpu.memory.GetBankedROM(Memory.BankSlot.Kernal)!;
             kernal[0xFCF5 - 0xE000] = 0xEA;
@@ -2088,7 +2089,7 @@ namespace C64
         public void Run()
         {
 
-            string? audioDevice = Sound.PromptForDevice();
+            string? audioDevice = Sound.GetDefaultDeviceName();
             display.Init();
             keyboard.InitGameControllers();
             sound.Init(audioDevice);
@@ -2233,6 +2234,28 @@ namespace C64
         private void TogglePause()
         {
             SetPaused(!IsPaused);
+        }
+
+        private void SelectAudioDevice()
+        {
+            bool wasPaused = IsPaused;
+            SetPaused(true);
+            display.RedrawScreen();
+
+            try
+            {
+                string? audioDevice = Sound.PromptForDevice();
+                if (audioDevice is not null)
+                    sound.SwitchDevice(audioDevice, wasPaused);
+            }
+            catch (Exception ex)
+            {
+                Console.Error.WriteLine($"Audio device change failed: {ex.Message}");
+            }
+            finally
+            {
+                SetPaused(wasPaused);
+            }
         }
 
         private void SetPaused(bool paused)

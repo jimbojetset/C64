@@ -32,6 +32,7 @@ Most-used non-standard key mappings:
 | Load bundled software | `Ctrl+O` |
 | Save BASIC program | `Ctrl+S` |
 | Pause/unpause emulator | `Ctrl+P` |
+| Select audio device | `Ctrl+A` |
 | Mute/unmute audio | `Ctrl+Q` |
 
 For the complete mapping and notes, see the full table in the keyboard section below.
@@ -110,11 +111,16 @@ Press `Ctrl+S` to open the ImGui save dialog for the current BASIC program. The 
 
 Native C64 `SAVE` commands also write standard `.prg` files into `C64/Software`. For example, `SAVE "HELLO",8` creates `HELLO.prg`. Disk-style prefixes and options such as `SAVE "0:HELLO,P",8` are normalized to a host filename like `HELLO.prg`.
 
+### Audio Device Selection
+
+At startup, the emulator automatically opens playback device `[0]` from SDL's audio device list. Press `Ctrl+A` while the emulator is running to open the ImGui audio-device selector and switch output devices. The emulator pauses while the selector is active and restores the previous pause state after selecting or cancelling.
+
 ### Runtime Hotkeys (Emulator Controls)
 
 | Keyboard Shortcut | Action |
 |---|---|
 | `F12` or `Ctrl+R` | Hard reset CPU and peripherals |
+| `Ctrl+A` | Open audio-device selector |
 | `Ctrl+P` | Pause/unpause emulator |
 | `Ctrl+Q` | Toggle audio mute; shows a small mute icon in the bottom-left corner while muted |
 | `Ctrl+O` | Open software picker (load and run from `Software`) |

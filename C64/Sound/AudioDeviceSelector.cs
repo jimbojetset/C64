@@ -5,9 +5,8 @@ namespace C64
 {
     /// <summary>
     /// Modal ImGui popup that prompts the user to choose an audio output device.
-    /// Selection is made by clicking an entry or pressing the matching number key
-    /// (0-9 for the first ten devices). The popup only opens when more than one
-    /// device is available; otherwise it completes immediately with the default.
+    /// Selection is made by clicking an entry, using arrow keys plus Enter, or
+    /// pressing the matching number key (0-9 for the first ten devices).
     /// </summary>
     internal sealed class AudioDeviceSelector
     {
@@ -23,17 +22,8 @@ namespace C64
         public AudioDeviceSelector(List<string> devices)
         {
             _devices = devices;
-
-            if (_devices.Count > 1)
-            {
-                _needsOpen = true;
-            }
-            else
-            {
-                // 0 or 1 devices: nothing to choose - use the system default.
-                _selectedDeviceName = null;
-                _completed = true;
-            }
+            _needsOpen = _devices.Count > 0;
+            _completed = _devices.Count == 0;
         }
 
         /// <summary>True once the user has made a selection (or no prompt was needed).</summary>
@@ -59,7 +49,7 @@ namespace C64
 
             if (ImGui.BeginPopupModal(PopupId, ImGuiWindowFlags.AlwaysAutoResize | ImGuiWindowFlags.NoSavedSettings | ImGuiWindowFlags.NoMove))
             {
-                ImGui.Text("Multiple audio devices detected. Select one:");
+                ImGui.Text("Select audio output device:");
                 ImGui.Separator();
 
                 for (int i = 0; i < _devices.Count; i++)

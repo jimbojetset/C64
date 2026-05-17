@@ -7,14 +7,13 @@ namespace C64
     /// <summary>
     /// Hosts an SDL2 + OpenGL window long enough to run an ImGui
     /// <see cref="AudioDeviceSelector"/> modal, then disposes everything and
-    /// returns the user's choice.  Used once at start-up before the main
-    /// emulator window is created.
+    /// returns the user's choice.
     /// </summary>
     internal static class SoundDeviceWindow
     {
         public static string? Prompt(List<string> devices)
         {
-            if (devices.Count <= 1) return null;
+            if (devices.Count == 0) return null;
 
             if (SDL_InitSubSystem(SDL_INIT_VIDEO) != 0)
             {
@@ -44,6 +43,8 @@ namespace C64
                 Console.Error.WriteLine($"SDL_CreateWindow failed: {SDL_GetError()}");
                 return null;
             }
+
+            uint windowId = SDL_GetWindowID(win);
 
             IntPtr glCtx = SDL_GL_CreateContext(win);
             if (glCtx == IntPtr.Zero)
@@ -87,8 +88,15 @@ namespace C64
                                 break;
 
                             case SDL_EventType.SDL_WINDOWEVENT:
-                                if (ev.window.windowEvent ==
-                                    SDL_WindowEventID.SDL_WINDOWEVENT_SIZE_CHANGED)
+                                if (ev.window.windowID != windowId)
+                                    break;
+
+                                if (ev.window.windowEvent == SDL_WindowEventID.SDL_WINDOWEVENT_CLOSE)
+                                {
+                                    quit = true;
+                                }
+                                else if (ev.window.windowEvent ==
+                                         SDL_WindowEventID.SDL_WINDOWEVENT_SIZE_CHANGED)
                                 {
                                     controller.WindowResized(ev.window.data1, ev.window.data2);
                                 }

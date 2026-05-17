@@ -161,11 +161,12 @@ namespace C64
             return names;
         }
 
-        /// <summary>
-        /// Show an ImGui modal listing every available playback device and
-        /// return the user's choice.  Returns <c>null</c> for the system
-        /// default (also used when there is 0 or 1 device available).
-        /// </summary>
+        public static string? GetDefaultDeviceName()
+        {
+            List<string> devices = EnumerateDevices();
+            return devices.Count > 0 ? devices[0] : null;
+        }
+
         public static string? PromptForDevice()
         {
             List<string> devices = EnumerateDevices();
@@ -177,6 +178,15 @@ namespace C64
             if (SDL_InitSubSystem(SDL_INIT_AUDIO) != 0)
                 throw new Exception($"SDL audio init failed: {SDL_GetError()}");
 
+            lock (_audioStateLock)
+            {
+                _dev = OpenDevice(deviceName);
+                ResetAudioCursors();
+            }
+        }
+
+        private static uint OpenDevice(string? deviceName)
+        {
             var desired = new SDL_AudioSpec
             {
                 freq = SampleRate,
@@ -186,15 +196,45 @@ namespace C64
                 // callback left null = SDL queue-audio mode (no callback thread)
             };
 
-            _dev = SDL_OpenAudioDevice(deviceName is null ? null! : deviceName, 0, ref desired, out _, 0);
-            if (_dev == 0)
+            uint device = SDL_OpenAudioDevice(deviceName is null ? null! : deviceName, 0, ref desired, out _, 0);
+            if (device == 0)
                 throw new Exception($"SDL_OpenAudioDevice failed: {SDL_GetError()}");
 
+            return device;
+        }
+
+        private void ResetAudioCursors()
+        {
             _writeCycleCursor = 0;
             _publishedSynthCycle = 0;
             _synthCycleCursor = 0.0;
             _lastDacTick = 0;
             _muteSamplesRemaining = (SampleRate * ResetMuteMs) / 1000;
+        }
+
+        public void SwitchDevice(string? deviceName, bool paused)
+        {
+            if (SDL_InitSubSystem(SDL_INIT_AUDIO) != 0)
+                throw new Exception($"SDL audio init failed: {SDL_GetError()}");
+
+            lock (_audioStateLock)
+            {
+                uint oldDevice = _dev;
+                uint newDevice = OpenDevice(deviceName);
+
+                _dev = newDevice;
+                if (oldDevice != 0)
+                {
+                    SDL_PauseAudioDevice(oldDevice, 1);
+                    SDL_ClearQueuedAudio(oldDevice);
+                    SDL_CloseAudioDevice(oldDevice);
+                }
+
+                while (_writeQueue.TryDequeue(out _)) { }
+                ResetAudioCursors();
+                PrimeSilence();
+                SDL_PauseAudioDevice(_dev, paused ? 1 : 0);
+            }
         }
 
         public void Start(CancellationToken token)
@@ -203,6 +243,24 @@ namespace C64
 
             // Prime the output queue with known silence before unpausing to
             // avoid startup pops/buzz from backend/device transition.
+            lock (_audioStateLock)
+            {
+                PrimeSilence();
+            }
+
+            SDL_PauseAudioDevice(_dev, 0); // 0 = unpause ? start playing
+
+            _thread = new Thread(SynthesisLoop)
+            {
+                IsBackground = true,
+                Name = "SID synth",
+                Priority = ThreadPriority.AboveNormal,
+            };
+            _thread.Start();
+        }
+
+        private void PrimeSilence()
+        {
             int primeSamples = (SampleRate * StartupPrimeMs) / 1000;
             if (primeSamples > 0)
             {
@@ -215,16 +273,6 @@ namespace C64
                         SDL_QueueAudio(_dev, (IntPtr)p, (uint)(primeSamples * sizeof(short)));
                 }
             }
-
-            SDL_PauseAudioDevice(_dev, 0); // 0 = unpause ? start playing
-
-            _thread = new Thread(SynthesisLoop)
-            {
-                IsBackground = true,
-                Name = "SID synth",
-                Priority = ThreadPriority.AboveNormal,
-            };
-            _thread.Start();
         }
 
         /// <summary>Write a SID register (0�28 maps to $D400�$D41C).</summary>
@@ -347,7 +395,13 @@ namespace C64
 
             while (!_ct.IsCancellationRequested)
             {
-                if (_dev != 0 && SDL_GetAudioDeviceStatus(_dev) == SDL_AudioStatus.SDL_AUDIO_PAUSED)
+                bool audioPaused;
+                lock (_audioStateLock)
+                {
+                    audioPaused = _dev != 0 && SDL_GetAudioDeviceStatus(_dev) == SDL_AudioStatus.SDL_AUDIO_PAUSED;
+                }
+
+                if (audioPaused)
                 {
                     last = Stopwatch.GetTimestamp();
                     fracCyc = 0.0;
@@ -389,7 +443,11 @@ namespace C64
                 }
 
                 // Pace ourselves against the device's queue depth.
-                uint qBytes = SDL_GetQueuedAudioSize(_dev);
+                uint qBytes;
+                lock (_audioStateLock)
+                {
+                    qBytes = _dev == 0 ? 0 : SDL_GetQueuedAudioSize(_dev);
+                }
                 int qMs = (int)(qBytes / 2 * 1000 / SampleRate);
 
                 if (qMs >= MaxLatencyMs) Thread.Sleep(10);
