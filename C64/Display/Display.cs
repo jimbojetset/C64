@@ -569,6 +569,7 @@ namespace C64
             }
 
             glApi.Viewport(0, 0, (uint)Math.Max(1, windowW), (uint)Math.Max(1, windowH));
+            glApi.Disable(EnableCap.Blend);
             glApi.ClearColor(0f, 0f, 0f, 1f);
             glApi.Clear((uint)ClearBufferMask.ColorBufferBit);
 
@@ -1595,14 +1596,41 @@ namespace C64
         {
             try
             {
-                lock (swapLock)
+                RedrawScreen();
+
+                GL glApi = gl ?? throw new InvalidOperationException("OpenGL API is not initialized.");
+                SDL_GL_MakeCurrent(window, glContext);
+                SDL_GetWindowSize(window, out int width, out int height);
+
+                byte[] rgbaBottomUp = new byte[width * height * 4];
+                unsafe
                 {
-                    // Capture current display buffer and save as PNG
-                    string timestamp = DateTime.Now.ToString("yyyyMMdd_HHmmss_fff");
-                    string filename = $"c64_screenshot_{timestamp}.png";
-                    WritePng(filename, displayBuf, FrameW, FrameH);
-                    Console.Error.WriteLine($"[SCREENSHOT] Saved to {filename}");
+                    fixed (byte* p = rgbaBottomUp)
+                    {
+                        glApi.ReadPixels(0, 0, (uint)width, (uint)height, PixelFormat.Rgba, PixelType.UnsignedByte, p);
+                    }
                 }
+
+                byte[] bgraTopDown = new byte[rgbaBottomUp.Length];
+                int stride = width * 4;
+                for (int y = 0; y < height; y++)
+                {
+                    int src = (height - 1 - y) * stride;
+                    int dst = y * stride;
+                    for (int x = 0; x < width; x++)
+                    {
+                        bgraTopDown[dst++] = rgbaBottomUp[src + 2];
+                        bgraTopDown[dst++] = rgbaBottomUp[src + 1];
+                        bgraTopDown[dst++] = rgbaBottomUp[src];
+                        bgraTopDown[dst++] = rgbaBottomUp[src + 3];
+                        src += 4;
+                    }
+                }
+
+                string timestamp = DateTime.Now.ToString("yyyyMMdd_HHmmss_fff");
+                string filename = $"c64_screenshot_{timestamp}.png";
+                WritePng(filename, bgraTopDown, width, height);
+                Console.Error.WriteLine($"[SCREENSHOT] Saved to {filename}");
             }
             catch (Exception ex)
             {
