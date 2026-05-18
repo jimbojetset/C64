@@ -1954,9 +1954,21 @@ namespace C64
                 if (Path.IsPathRooted(name) && File.Exists(name))
                     return name;
 
+                string? softwareDir = SoftwareDirectory.Find();
+                if (!string.IsNullOrWhiteSpace(softwareDir))
+                {
+                    string softwareCandidate = Path.Combine(softwareDir, name);
+                    if (File.Exists(softwareCandidate))
+                        return softwareCandidate;
+                }
+
                 string cwdCandidate = Path.Combine(Environment.CurrentDirectory, name);
                 if (File.Exists(cwdCandidate))
                     return cwdCandidate;
+
+                string projectCandidate = Path.Combine(Environment.CurrentDirectory, "C64", name);
+                if (File.Exists(projectCandidate))
+                    return projectCandidate;
 
                 if (!string.IsNullOrWhiteSpace(lastHostLoadedFile))
                 {

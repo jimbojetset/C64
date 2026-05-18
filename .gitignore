@@ -102,7 +102,6 @@ StyleCopReport.xml
 *.DS_Store
 
 # Game Specific Files
-*.png
 *.bmp
 *.jpg
 *.prg
