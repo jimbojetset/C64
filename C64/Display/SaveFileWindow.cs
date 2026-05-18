@@ -4,12 +4,15 @@ using static SDL2.SDL;
 
 namespace C64
 {
+
     /// <summary>
     /// Hosts an SDL2 + OpenGL window long enough to run an ImGui save filename
     /// modal, then returns the chosen filename.
     /// </summary>
     internal static class SaveFileWindow
     {
+
+        /// <summary>Shows the picker window and returns the selected value.</summary>
         public static string? Prompt(string defaultFilename)
         {
             if (SDL_InitSubSystem(SDL_INIT_VIDEO) != 0)
@@ -60,7 +63,7 @@ namespace C64
             ImGuiController? controller = null;
             try
             {
-                controller = new ImGuiController(gl, win, Width, Height);
+                controller = new ImGuiController(gl, Width, Height);
                 var selector = new SaveFileSelector(defaultFilename);
 
                 var sw = Stopwatch.StartNew();

@@ -1,5 +1,9 @@
 namespace C64
 {
+
+    /// <summary>
+    /// Emulates datasette TAP pulse playback, including motor spin-up, sense state, read-line transitions, and pulse stepping.
+    /// </summary>
     internal sealed class DatasetteDevice
     {
         private const int PalCpuHz = 985_248;
@@ -11,11 +15,19 @@ namespace C64
         private int pulseRemaining;
         private int motorSpinupRemaining;
 
+        /// <summary>Gets whether a tape is attached.</summary>
         public bool HasTape => pulseCycles.Count > 0;
+
+        /// <summary>Gets whether the datasette motor is running.</summary>
         public bool MotorOn { get; private set; }
+
+        /// <summary>Gets the datasette sense line state.</summary>
         public bool SenseHigh => HasTape;
+
+        /// <summary>Gets the datasette read line state.</summary>
         public bool ReadHigh { get; private set; } = true;
 
+        /// <summary>Attaches a TAP pulse stream to the datasette.</summary>
         public void AttachTap(byte[] raw)
         {
             pulseCycles.Clear();
@@ -65,6 +77,7 @@ namespace C64
                 pulseRemaining = pulseCycles[0];
         }
 
+        /// <summary>Ejects the attached media.</summary>
         public void Eject()
         {
             pulseCycles.Clear();
@@ -74,6 +87,7 @@ namespace C64
             ReadHigh = true;
         }
 
+        /// <summary>Sets motor.</summary>
         public void SetMotor(bool on)
         {
             if (on && !MotorOn)
@@ -82,6 +96,8 @@ namespace C64
         }
 
         // Returns true when READ line toggled during this step.
+
+        /// <summary>Advances the device by the specified CPU cycles.</summary>
         public bool Step(uint cycles)
         {
             if (!MotorOn || !HasTape || cycles == 0)

@@ -3,6 +3,7 @@ using ImGuiNET;
 
 namespace C64
 {
+
     /// <summary>
     /// Modal ImGui popup that lets the user choose a loadable file from the
     /// bundled Software directory.
@@ -18,15 +19,19 @@ namespace C64
         private int _currentIndex;
         private string? _selectedPath;
 
+        /// <summary>Initializes a new SoftwareFileSelector instance.</summary>
         public SoftwareFileSelector(IReadOnlyList<SoftwareFileEntry> files)
         {
             _files = files;
         }
 
+        /// <summary>Gets whether the selector has completed.</summary>
         public bool IsCompleted => _completed;
 
+        /// <summary>Gets the selected file path.</summary>
         public string? SelectedPath => _selectedPath;
 
+        /// <summary>Draws this selector window.</summary>
         public void Draw()
         {
             if (_completed)
@@ -60,6 +65,7 @@ namespace C64
             }
         }
 
+        /// <summary>Draws the scrollable bundled-software file list.</summary>
         private void DrawFileList()
         {
             Vector2 listSize = new Vector2(500, 280);
@@ -93,6 +99,7 @@ namespace C64
             ImGui.EndChild();
         }
 
+        /// <summary>Handles keyboard navigation and activation for the selector.</summary>
         private void HandleKeyboard()
         {
             if (ImGui.IsKeyPressed(ImGuiKey.UpArrow, false) && _currentIndex > 0)
@@ -138,6 +145,7 @@ namespace C64
             }
         }
 
+        /// <summary>Accepts the item at the selected index.</summary>
         private void Select(int index)
         {
             _selectedPath = _files[index].Path;
@@ -145,5 +153,6 @@ namespace C64
         }
     }
 
+    /// <summary>Represents one bundled software file shown in the picker.</summary>
     internal sealed record SoftwareFileEntry(string Path, string DisplayName, string Extension);
 }

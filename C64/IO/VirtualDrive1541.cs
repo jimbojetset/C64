@@ -1,30 +1,41 @@
 namespace C64
 {
+
+    /// <summary>
+    /// Wraps an attached D64 image and exposes the file and sector operations used by the IEC bus and load traps.
+    /// </summary>
     internal sealed class VirtualDrive1541
     {
         private D64Image? image;
         private string? lastLoadedName;
 
+        /// <summary>Gets whether drive media is attached.</summary>
         public bool HasMedia => image is not null;
+
+        /// <summary>Gets the path of the attached disk image.</summary>
         public string? AttachedPath => image?.SourcePath;
 
+        /// <summary>Attaches a D64 disk image.</summary>
         public void AttachD64(string path)
         {
             image = D64Image.Load(path);
             lastLoadedName = null;
         }
 
+        /// <summary>Ejects the attached media.</summary>
         public void Eject()
         {
             image = null;
             lastLoadedName = null;
         }
 
+        /// <summary>Lists PRG files on the attached media.</summary>
         public IReadOnlyList<string> ListFiles()
         {
             return image?.ListPrgFiles() ?? Array.Empty<string>();
         }
 
+        /// <summary>Attempts to load prg.</summary>
         public bool TryLoadPrg(string? requestedName, out byte[] prg, out string resolvedName)
         {
             prg = Array.Empty<byte>();
@@ -54,12 +65,14 @@ namespace C64
             return true;
         }
 
+        /// <summary>Attempts to read sector.</summary>
         public bool TryReadSector(int track, int sector, out byte[] sectorBytes)
         {
             sectorBytes = Array.Empty<byte>();
             return image?.TryReadSector(track, sector, out sectorBytes) == true;
         }
 
+        /// <summary>Determines whether a load name requests the disk directory.</summary>
         private static bool IsDirectoryRequest(string? requestedName)
         {
             if (string.IsNullOrWhiteSpace(requestedName))

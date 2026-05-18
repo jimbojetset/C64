@@ -6,6 +6,10 @@ using static SDL2.SDL;
 
 namespace C64
 {
+
+    /// <summary>
+    /// Provides the process entry point and native-library resolution hooks used before the emulator starts.
+    /// </summary>
     internal static class Program
     {
         static int Main(string[] args)
@@ -35,6 +39,9 @@ namespace C64
             }
         }
 
+        /// <summary>
+        /// Resolves the SDL2 native library from common platform-specific install locations before falling back to the system loader.
+        /// </summary>
         private static IntPtr ResolveNativeLibrary(string libraryName, System.Reflection.Assembly assembly, DllImportSearchPath? searchPath)
         {
             if (libraryName != "SDL2") return IntPtr.Zero;
@@ -73,6 +80,10 @@ namespace C64
         }
     }
 
+    /// <summary>
+    /// Coordinates the CPU, VIC display, SID audio, CIA state, keyboard, IEC drive, REU, and datasette devices.
+    /// This class owns the main event loop and the glue logic that maps C64 I/O reads and writes onto emulated hardware.
+    /// </summary>
     internal sealed class C64Emulator : IDisposable
     {
         // --- Constants ---
@@ -173,7 +184,7 @@ namespace C64
         private byte cia2SerialInShiftReg;
         private int cia2SerialInBits;
 
-
+        /// <summary>Initializes a new C64Emulator instance.</summary>
         public C64Emulator()
         {
             cts = new System.Threading.CancellationTokenSource();
@@ -218,6 +229,9 @@ namespace C64
             cpu.memory.OnIORead = OnIORead;
         }
 
+        /// <summary>
+        /// Resets RAM, ROM banking, device registers, CIA timers, display state, SID state, IEC lines, datasette state, and host-load metadata.
+        /// </summary>
         private void InitHardware()
         {
             byte[] m = cpu.memory.memory;
@@ -383,6 +397,10 @@ namespace C64
             display.EndReset();
         }
 
+        /// <summary>
+        /// Routes CPU writes in the I/O window to VIC, SID, CIA, REU, datasette, IEC, and color-RAM handlers.
+        /// Returns true when the emulated device consumed the write.
+        /// </summary>
         private bool OnIOWrite(ulong addr, byte value)
         {
             switch (addr)
@@ -727,6 +745,7 @@ namespace C64
             return false;
         }
 
+        /// <summary>Writes vic render register.</summary>
         private void WriteVicRenderRegister(ulong addr, byte value)
         {
             byte oldValue = cpu.memory.memory[addr];
@@ -736,6 +755,7 @@ namespace C64
                 display.RefreshCurrentRasterLine();
         }
 
+        /// <summary>Determines whether vic render register.</summary>
         private static bool IsVicRenderRegister(ulong addr)
         {
             return addr switch
@@ -751,6 +771,7 @@ namespace C64
             };
         }
 
+        /// <summary>Determines whether vic sprite render register.</summary>
         private static bool IsVicSpriteRenderRegister(ulong addr)
         {
             return addr switch
@@ -766,6 +787,9 @@ namespace C64
             };
         }
 
+        /// <summary>
+        /// Resolves CPU reads from the I/O window, including VIC collision latches, SID readback, CIA ports, IEC lines, and datasette signals.
+        /// </summary>
         private byte OnIORead(ulong addr, byte fallback)
         {
             switch (addr)
@@ -897,6 +921,7 @@ namespace C64
             }
         }
 
+        /// <summary>Normalizes cia control write.</summary>
         private static byte NormalizeCiaControlWrite(byte value)
         {
             // Bit 4 force-loads the timer latch into the counter and then
@@ -904,6 +929,7 @@ namespace C64
             return (byte)(value & 0xEF);
         }
 
+        /// <summary>Reads cia1 port a.</summary>
         private byte ReadCia1PortA()
         {
             byte external = 0xFF;
@@ -912,12 +938,14 @@ namespace C64
             return MergeCiaPortRead(cia1PortA, cia1Ddra, external);
         }
 
+        /// <summary>Reads cia1 port b.</summary>
         private byte ReadCia1PortB()
         {
             byte external = keyboard.ScanMatrix(cia1PortA, cia1Ddra);
             return MergeCiaPortRead(cia1PortB, cia1Ddrb, external);
         }
 
+        /// <summary>Merges cia port read.</summary>
         private static byte MergeCiaPortRead(byte latch, byte ddr, byte external)
         {
             byte outBits = (byte)((latch & external) & ddr);
@@ -927,6 +955,8 @@ namespace C64
 
         // External serial/user-port model entry points. CNT rising edges drive
         // serial input mode and timer CNT-counting modes.
+
+        /// <summary>Sets cia1 serial pins.</summary>
         public void SetCia1SerialPins(bool spHigh, bool cntHigh)
         {
             bool raiseIrq = false;
@@ -945,6 +975,7 @@ namespace C64
                 cpu.InitiateIRQ(0xFFFE);
         }
 
+        /// <summary>Sets cia2 serial pins.</summary>
         public void SetCia2SerialPins(bool spHigh, bool cntHigh)
         {
             bool raiseNmi = false;
@@ -963,6 +994,7 @@ namespace C64
                 cpu.InitiateNMI(0xFFFA);
         }
 
+        /// <summary>Handles cia1 cnt rising edge.</summary>
         private void OnCia1CntRisingEdge(ref bool raiseIrq)
         {
             cia1CntPulseBudget++;
@@ -990,6 +1022,7 @@ namespace C64
             }
         }
 
+        /// <summary>Handles cia2 cnt rising edge.</summary>
         private void OnCia2CntRisingEdge(ref bool raiseNmi)
         {
             cia2CntPulseBudget++;
@@ -1016,6 +1049,7 @@ namespace C64
             }
         }
 
+        /// <summary>Advances cia1 serial output from timer a.</summary>
         private void StepCia1SerialOutputFromTimerA(int underflows, ref bool raiseIrq)
         {
             if (underflows <= 0 || (cia1Cra & 0x40) == 0)
@@ -1053,6 +1087,7 @@ namespace C64
             }
         }
 
+        /// <summary>Advances cia2 serial output from timer a.</summary>
         private void StepCia2SerialOutputFromTimerA(int underflows, ref bool raiseNmi)
         {
             if (underflows <= 0 || (cia2Cra & 0x40) == 0)
@@ -1089,6 +1124,7 @@ namespace C64
             }
         }
 
+        /// <summary>Writes cia tod register.</summary>
         private static void WriteCiaTodRegister(
             int reg,
             byte value,
@@ -1126,6 +1162,7 @@ namespace C64
             }
         }
 
+        /// <summary>Reads cia tod register.</summary>
         private static byte ReadCiaTodRegister(
             int reg,
             ref bool latched,
@@ -1166,6 +1203,7 @@ namespace C64
             return value;
         }
 
+        /// <summary>Updates cia tod mirror.</summary>
         private void UpdateCiaTodMirror(int baseAddr, byte tenths, byte seconds, byte minutes, byte hours)
         {
             cpu.memory.memory[baseAddr] = tenths;
@@ -1174,16 +1212,19 @@ namespace C64
             cpu.memory.memory[baseAddr + 3] = hours;
         }
 
+        /// <summary>Converts a BCD byte to an integer.</summary>
         private static int BcdToInt(byte v)
         {
             return ((v >> 4) & 0x0F) * 10 + (v & 0x0F);
         }
 
+        /// <summary>Converts an integer to a BCD byte.</summary>
         private static byte IntToBcd(int v)
         {
             return (byte)(((v / 10) << 4) | (v % 10));
         }
 
+        /// <summary>Increments tod.</summary>
         private static void IncrementTod(ref byte tenths, ref byte seconds, ref byte minutes, ref byte hours)
         {
             int t = (tenths & 0x0F) + 1;
@@ -1234,6 +1275,7 @@ namespace C64
             hours = (byte)((pm ? 0x80 : 0x00) | (IntToBcd(h) & 0x1F));
         }
 
+        /// <summary>Advances cia1 tod.</summary>
         private void StepCia1Tod(uint cycles, ref bool raiseIrq)
         {
             int todHz = (cia1Cra & 0x80) != 0 ? 50 : 60;
@@ -1272,6 +1314,7 @@ namespace C64
             UpdateCiaTodMirror(0xDC08, cia1TodTenths, cia1TodSeconds, cia1TodMinutes, cia1TodHours);
         }
 
+        /// <summary>Advances cia2 tod.</summary>
         private void StepCia2Tod(uint cycles, ref bool raiseNmi)
         {
             int todHz = (cia2Cra & 0x80) != 0 ? 50 : 60;
@@ -1310,7 +1353,7 @@ namespace C64
             UpdateCiaTodMirror(0xDD08, cia2TodTenths, cia2TodSeconds, cia2TodMinutes, cia2TodHours);
         }
 
-
+        /// <summary>Counts underflows.</summary>
         private static int CountUnderflows(ref ushort counter, ushort latch, uint ticks, bool oneShot, ref byte control)
         {
             if (ticks == 0 || (control & 0x01) == 0)
@@ -1337,6 +1380,9 @@ namespace C64
             return underflows;
         }
 
+        /// <summary>
+        /// Advances CIA1 timers, serial output, keyboard scanning, interrupt latches, and timer-driven underflow behavior.
+        /// </summary>
         private void StepCia1Timers(uint cycles)
         {
             if (cycles == 0) return;
@@ -1430,6 +1476,9 @@ namespace C64
                 cpu.InitiateIRQ(0xFFFE);
         }
 
+        /// <summary>
+        /// Advances CIA2 timers, serial output, NMI latches, and timer-driven underflow behavior.
+        /// </summary>
         private void StepCia2Timers(uint cycles)
         {
             if (cycles == 0) return;
@@ -1512,6 +1561,10 @@ namespace C64
 
         // Drive CIA state directly from executed CPU cycles so timer and IRQ/NMI
         // behavior follows CPU progression instead of coarse host wall-clock ticks.
+
+        /// <summary>
+        /// Steps peripherals after CPU execution, including VIC raster timing, CIA timers/TOD, REU DMA, datasette pulses, and keyboard queue draining.
+        /// </summary>
         private void OnCpuCyclesExecuted(int cycles)
         {
             if (cycles <= 0 || display.IsResetting)
@@ -1566,6 +1619,9 @@ namespace C64
             }
         }
 
+        /// <summary>
+        /// Intercepts selected KERNAL IEC routines and services them through the virtual IEC bus when possible.
+        /// </summary>
         private void TryHandleKernalIecTrap()
         {
             ulong pc = cpu.registers.PC;
@@ -1662,6 +1718,7 @@ namespace C64
             }
         }
 
+        /// <summary>Handles kernal open trap.</summary>
         private void HandleKernalOpenTrap()
         {
             byte[] mem = cpu.memory.memory;
@@ -1687,6 +1744,9 @@ namespace C64
             }
         }
 
+        /// <summary>
+        /// Handles intercepted KERNAL LOAD calls for host PRG/T64 files, attached D64 media, loose host programs, and load messages.
+        /// </summary>
         private void TryHandleKernalLoadTrap()
         {
             // KERNAL LOAD entry. Trap after JSR has transferred PC to $FFD5.
@@ -1794,6 +1854,9 @@ namespace C64
             ReturnFromKernelTrap();
         }
 
+        /// <summary>
+        /// Handles intercepted KERNAL SAVE calls by resolving the requested filename and writing the selected memory range as a PRG file.
+        /// </summary>
         private void TryHandleKernalSaveTrap()
         {
             // KERNAL SAVE entry. A points to a zero-page word containing the
@@ -1847,12 +1910,14 @@ namespace C64
             ReturnFromKernelTrap();
         }
 
+        /// <summary>Loads a host PRG file requested by a trapped KERNAL LOAD call and emits the matching KERNAL status text.</summary>
         private (ushort Start, ushort End) LoadPrgFromLoadCommand(string path, string? requestedName, ushort? loadOverride)
         {
             PrintKernalLoadMessages(requestedName);
             return LoadPrgFromBytes(File.ReadAllBytes(path), loadOverride);
         }
 
+        /// <summary>Loads the selected entry from a host T64 image requested by a trapped KERNAL LOAD call.</summary>
         private (ushort Start, ushort End) LoadT64FromLoadCommand(string path, string? requestedName)
         {
             List<TapeEntry> entries = TapeLoader.ReadT64(File.ReadAllBytes(path));
@@ -1864,6 +1929,7 @@ namespace C64
             return LoadTapeEntry(entry);
         }
 
+        /// <summary>Selects the requested tape entry, or the first entry when no explicit name was supplied.</summary>
         private static TapeEntry? SelectTapeEntry(List<TapeEntry> entries, string? requestedName)
         {
             if (entries.Count == 0)
@@ -1883,6 +1949,7 @@ namespace C64
                 ?? entries.FirstOrDefault(e => NormalizeTapeName(e.Name).StartsWith(wanted, StringComparison.Ordinal));
         }
 
+        /// <summary>Normalizes tape name.</summary>
         private static string NormalizeTapeName(string? name)
         {
             return string.IsNullOrWhiteSpace(name)
@@ -1890,6 +1957,7 @@ namespace C64
                 : name.Trim().Trim('"', '\'').ToUpperInvariant();
         }
 
+        /// <summary>Prints tape load messages.</summary>
         private void PrintTapeLoadMessages(string name)
         {
             EnsureScreenLineStart();
@@ -1901,6 +1969,7 @@ namespace C64
             NewScreenLine();
         }
 
+        /// <summary>Prints kernal load messages.</summary>
         private void PrintKernalLoadMessages(string? requestedName)
         {
             string name = string.IsNullOrWhiteSpace(requestedName)
@@ -1916,6 +1985,7 @@ namespace C64
             NewScreenLine();
         }
 
+        /// <summary>Prints kernal save messages.</summary>
         private void PrintKernalSaveMessages(string requestedName)
         {
             string name = requestedName.Trim().Trim('"', '\'');
@@ -1924,6 +1994,7 @@ namespace C64
             NewScreenLine();
         }
 
+        /// <summary>Reads kernal filename.</summary>
         private string? ReadKernalFilename()
         {
             byte[] mem = cpu.memory.memory;
@@ -1943,6 +2014,7 @@ namespace C64
             return new string(chars).Trim();
         }
 
+        /// <summary>Resolves kernel load path.</summary>
         private string? ResolveKernelLoadPath(string? requestedName)
         {
             if (!string.IsNullOrWhiteSpace(requestedName))
@@ -1991,12 +2063,14 @@ namespace C64
             return null;
         }
 
+        /// <summary>Ensures screen line start.</summary>
         private void EnsureScreenLineStart()
         {
             if (cpu.memory.memory[0x00D3] != 0)
                 NewScreenLine();
         }
 
+        /// <summary>Starts a new screen line.</summary>
         private void NewScreenLine()
         {
             byte[] mem = cpu.memory.memory;
@@ -2008,6 +2082,7 @@ namespace C64
             mem[0x00D6] = (byte)row;
         }
 
+        /// <summary>Writes screen text.</summary>
         private void WriteScreenText(string text)
         {
             foreach (char ch in text)
@@ -2022,6 +2097,7 @@ namespace C64
             }
         }
 
+        /// <summary>Writes screen char.</summary>
         private void WriteScreenChar(char ch)
         {
             byte[] mem = cpu.memory.memory;
@@ -2043,6 +2119,7 @@ namespace C64
             mem[0x00D3] = (byte)(col + 1);
         }
 
+        /// <summary>Implements the scroll basic screen up helper.</summary>
         private void ScrollBasicScreenUp()
         {
             byte[] mem = cpu.memory.memory;
@@ -2064,6 +2141,7 @@ namespace C64
             }
         }
 
+        /// <summary>Implements the ascii char to screen code helper.</summary>
         private static byte AsciiCharToScreenCode(char ch)
         {
             if (ch >= 'a' && ch <= 'z')
@@ -2089,6 +2167,7 @@ namespace C64
             };
         }
 
+        /// <summary>Returns from kernel trap.</summary>
         private void ReturnFromKernelTrap()
         {
             byte s = cpu.registers.S;
@@ -2098,6 +2177,7 @@ namespace C64
             cpu.registers.PC = (ushort)(((hi << 8) | lo) + 1);
         }
 
+        /// <summary>Runs the main emulator loop.</summary>
         public void Run()
         {
 
@@ -2202,6 +2282,7 @@ namespace C64
             cts.Cancel();
         }
 
+        /// <summary>Releases resources owned by this instance.</summary>
         public void Dispose()
         {
             try { cts?.Cancel(); } catch { }
@@ -2212,6 +2293,7 @@ namespace C64
             SDL_Quit();
         }
 
+        /// <summary>Performs a full emulator hardware reset.</summary>
         private void HardReset()
         {
             display.BeginReset();
@@ -2223,17 +2305,20 @@ namespace C64
             cpu.RequestReset();
         }
 
+        /// <summary>Handles a keyboard-triggered hard reset.</summary>
         private void HardResetFromKeyboard()
         {
             ClearLastHostLoadedFile();
             HardReset();
         }
 
+        /// <summary>Raises the RESTORE-key NMI.</summary>
         private void TriggerRestoreNmi()
         {
             cpu.InitiateNMI(0xFFFA);
         }
 
+        /// <summary>Toggles mute.</summary>
         private void ToggleMute()
         {
             bool muted = !sound.Muted;
@@ -2241,13 +2326,16 @@ namespace C64
             display.MuteOverlayVisible = muted;
         }
 
+        /// <summary>Gets whether the emulator is currently paused.</summary>
         private bool IsPaused => cpu.Paused;
 
+        /// <summary>Toggles pause.</summary>
         private void TogglePause()
         {
             SetPaused(!IsPaused);
         }
 
+        /// <summary>Selects audio device.</summary>
         private void SelectAudioDevice()
         {
             bool wasPaused = IsPaused;
@@ -2270,6 +2358,7 @@ namespace C64
             }
         }
 
+        /// <summary>Sets whether execution is paused.</summary>
         private void SetPaused(bool paused)
         {
             cpu.SetPaused(paused);
@@ -2317,7 +2406,7 @@ namespace C64
                         enterExtraMs: 120).ConfigureAwait(false);
                 }
                 return;
-            } 
+            }
             else if (ext == ".t64")
             {
                 await TypePetsciiLikeHumanAsync(
@@ -2354,6 +2443,7 @@ namespace C64
             //    enterExtraMs: 120).ConfigureAwait(false);
         }
 
+        /// <summary>Types petscii like human async.</summary>
         private async Task TypePetsciiLikeHumanAsync(
             ReadOnlyMemory<byte> text,
             int minInterKeyMs,
@@ -2373,6 +2463,7 @@ namespace C64
             }
         }
 
+        /// <summary>Waits for for ready prompt async.</summary>
         private async Task<bool> WaitForReadyPromptAsync(int timeoutMs)
         {
             const int pollMs = 20;
@@ -2396,6 +2487,7 @@ namespace C64
             return false;
         }
 
+        /// <summary>Gets whether ready prompt on screen.</summary>
         private bool HasReadyPromptOnScreen()
         {
             // C64 screen RAM stores screen codes, not ASCII.
@@ -2424,10 +2516,10 @@ namespace C64
             return false;
         }
 
+        /// <summary>Queues a host file to load and run.</summary>
         public void QueueLoadAndRun(string path) => pendingLoads.Enqueue((path, true));
 
-        public void QueueLoad(string path) => pendingLoads.Enqueue((path, false));
-
+        /// <summary>Loads program.</summary>
         private void LoadProgram()
         {
             bool wasPaused = IsPaused;
@@ -2454,6 +2546,9 @@ namespace C64
             }
         }
 
+        /// <summary>
+        /// Loads text/PRG/T64 files into memory or attaches TAP/D64 media, updating host-file metadata and user-facing status messages.
+        /// </summary>
         private void DoLoad(string path)
         {
             if (!File.Exists(path))
@@ -2496,22 +2591,20 @@ namespace C64
                     Console.WriteLine($"Loaded {Path.GetFileName(path)}");
                 }
             }
-            catch (TurboTapeException ex)
-            {
-                Console.Error.WriteLine($"Tape load failed: {ex.Message}");
-            }
             catch (Exception ex)
             {
                 Console.Error.WriteLine($"Load failed: {ex.Message}");
             }
         }
 
+        /// <summary>Loads prg.</summary>
         private void LoadPrg(string path)
         {
             LoadPrgFromBytes(File.ReadAllBytes(path));
             SetLastHostLoadedFile(path);
         }
 
+        /// <summary>Sets last host loaded file.</summary>
         private void SetLastHostLoadedFile(string? path)
         {
             lastHostLoadedFile = path;
@@ -2519,6 +2612,7 @@ namespace C64
             iecBus.SetHostLooseProgramPresent(!string.IsNullOrWhiteSpace(path));
         }
 
+        /// <summary>Clears last host loaded file.</summary>
         private void ClearLastHostLoadedFile()
         {
             lastHostLoadedFile = null;
@@ -2526,6 +2620,7 @@ namespace C64
             iecBus.SetHostLooseProgramPresent(false);
         }
 
+        /// <summary>Copies a PRG payload into emulated RAM and updates BASIC pointers when it loads at the BASIC start address.</summary>
         private (ushort LoadAddress, ushort EndAddress) LoadPrgFromBytes(byte[] data, ushort? loadAddressOverride = null)
         {
             if (data.Length < 3)
@@ -2555,37 +2650,7 @@ namespace C64
             return (loadAddr, (ushort)endAddr);
         }
 
-        private void LoadTapeEntries(List<TapeEntry> entries, string archiveName)
-        {
-            // Load all entries in order.  Multi-file games (e.g. loader + main)
-            // store parts as separate directory entries; loading them sequentially
-            // places everything in memory before the first SYS / RUN.
-            int loaded = 0;
-            foreach (TapeEntry entry in entries)
-            {
-                try
-                {
-                    (ushort _, ushort endAddr) = LoadTapeEntry(entry);
-                    Console.WriteLine(
-                        $"  FOUND  {entry.Name,-16}  ${entry.LoadAddress:X4}-" +
-                        $"${endAddr - 1:X4}  ({entry.Data.Length} bytes)");
-                    loaded++;
-                }
-                catch (Exception ex)
-                {
-                    Console.Error.WriteLine($"  Skipping '{entry.Name}': {ex.Message}");
-                }
-            }
-
-            if (loaded == 0)
-            {
-                Console.Error.WriteLine($"Tape load failed: no entries could be loaded from {archiveName}.");
-                return;
-            }
-
-            Console.WriteLine($"Loaded {archiveName}  ({loaded} block{(loaded == 1 ? "" : "s")})");
-        }
-
+        /// <summary>Copies a decoded tape entry into emulated RAM and updates BASIC pointers for BASIC tape programs.</summary>
         private (ushort LoadAddress, ushort EndAddress) LoadTapeEntry(TapeEntry entry)
         {
             byte[] mem = cpu.memory.memory;
@@ -2611,6 +2676,7 @@ namespace C64
             return (entry.LoadAddress, (ushort)endAddr);
         }
 
+        /// <summary>Loads text.</summary>
         private void LoadText(string path)
         {
             foreach (var rawLine in File.ReadAllLines(path))
@@ -2625,6 +2691,7 @@ namespace C64
             }
         }
 
+        /// <summary>Implements the ascii char to petscii helper.</summary>
         private static byte AsciiCharToPetscii(char ch)
         {
             if (ch >= 'a' && ch <= 'z') return (byte)('A' + (ch - 'a'));
@@ -2632,6 +2699,7 @@ namespace C64
             return 0;
         }
 
+        /// <summary>Saves program.</summary>
         private void SaveProgram()
         {
             byte[] mem = cpu.memory.memory;
@@ -2668,6 +2736,7 @@ namespace C64
             }
         }
 
+        /// <summary>Saves memory range as prg.</summary>
         private static void SaveMemoryRangeAsPrg(string path, byte[] mem, ushort start, ushort end)
         {
             int length = end - start;
@@ -2680,6 +2749,7 @@ namespace C64
             fs.Write(mem, start, length);
         }
 
+        /// <summary>Normalizes prg filename.</summary>
         private static string NormalizePrgFilename(string raw)
         {
             string name = raw.Trim().Trim('"', '\'');
@@ -2709,6 +2779,7 @@ namespace C64
             return name;
         }
 
+        /// <summary>Builds the default PRG save filename.</summary>
         private string DefaultSaveFilename()
         {
             if (!string.IsNullOrWhiteSpace(lastHostLoadedFile))

@@ -2,10 +2,11 @@ using System;
 
 namespace C64
 {
+
     /// <summary>
     /// CMD REU (RAM Expansion Unit) emulator.
     /// Provides 128KB–512KB of additional RAM accessible via DMA transfers.
-    /// 
+    ///
     /// Register map ($DF00–$DFFF):
     ///   $DF00: REU Address Low (bits 0–7)
     ///   $DF01: REU Address High (bits 8–15)
@@ -17,14 +18,11 @@ namespace C64
     ///   $DF07: Command (bit 0=direction, bit 1=execute, bit 4=IRQ enable, bit 5=complete flag)
     ///   $DF08: Unused
     ///   $DF09: Interrupt Control Register
-    /// 
+    ///
     /// DMA transfer is cycle-accurate: 1 byte transferred per 2 CPU cycles (approximate).
     /// </summary>
     internal sealed class REU : IDisposable
     {
-        private const int REU_BASE = 0xDF00;
-        private const int REU_SIZE = 0x0100;
-
         // REU RAM configurations: 128KB, 256KB, or 512KB
         private byte[] _reuRam;
         private int _reuSizeKb;
@@ -44,8 +42,11 @@ namespace C64
         private bool _addressWrap;
 
         // Interrupt signaling
+
+        /// <summary>Gets or sets the callback invoked for irq request.</summary>
         public Action? OnIrqRequest { get; set; }  // Called when REU needs to raise IRQ
 
+        /// <summary>Initializes a new REU instance.</summary>
         public REU(int sizeKb = 128)
         {
             _reuSizeKb = sizeKb;
@@ -53,6 +54,7 @@ namespace C64
             Reset();
         }
 
+        /// <summary>Resets this instance to its initial state.</summary>
         public void Reset()
         {
             Array.Clear(_reuRam, 0, _reuRam.Length);
@@ -67,6 +69,7 @@ namespace C64
             _addressWrap = false;
         }
 
+        /// <summary>Reads a value from the addressed device state.</summary>
         public byte Read(int addr)
         {
             // REU control register reads
@@ -90,6 +93,7 @@ namespace C64
             }
         }
 
+        /// <summary>Writes a value to the addressed device state.</summary>
         public void Write(int addr, byte value)
         {
             switch (addr & 0xFF)
@@ -128,6 +132,7 @@ namespace C64
             }
         }
 
+        /// <summary>Starts an REU DMA transfer from the command register.</summary>
         private void StartDmaTransfer()
         {
             if (_transferLen == 0) _transferLen = 65536;  // 0 means 64KB transfer
@@ -195,18 +200,21 @@ namespace C64
             }
         }
 
+        /// <summary>Reads reu byte.</summary>
         private byte ReadReuByte(int addr)
         {
             addr &= ((_reuSizeKb * 1024) - 1);
             return _reuRam[addr];
         }
 
+        /// <summary>Writes reu byte.</summary>
         private void WriteReuByte(int addr, byte value)
         {
             addr &= ((_reuSizeKb * 1024) - 1);
             _reuRam[addr] = value;
         }
 
+        /// <summary>Releases resources owned by this instance.</summary>
         public void Dispose()
         {
             // No unmanaged resources

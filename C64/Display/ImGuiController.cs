@@ -7,13 +7,13 @@ using static SDL2.SDL;
 
 namespace C64
 {
+
     /// <summary>
     /// Handles ImGui initialization, input processing, and rendering with SDL2 + OpenGL
     /// </summary>
     public class ImGuiController : IDisposable
     {
         private readonly GL _gl;
-        private readonly IntPtr _window;
 
         private uint _vao;
         private uint _vbo;
@@ -30,13 +30,11 @@ namespace C64
         private int _windowWidth;
         private int _windowHeight;
 
-        private readonly List<char> _inputChars = new();
-        private bool _disposed = false;
+        private bool _disposed;
 
-        public ImGuiController(GL gl, IntPtr window, int width, int height)
+        public ImGuiController(GL gl, int width, int height)
         {
             _gl = gl;
-            _window = window;
             _windowWidth = width;
             _windowHeight = height;
 
@@ -53,18 +51,11 @@ namespace C64
                 io.NativePtr->IniFilename = null;
             }
 
-            // Set up key mappings
-            SetupKeyMappings(io);
-
             // Create device objects (shaders, buffers, fonts)
             CreateDeviceObjects();
         }
 
-        private void SetupKeyMappings(ImGuiIOPtr io)
-        {
-            // ImGui.NET uses ImGuiKey enum directly now
-        }
-
+        /// <summary>Creates device objects.</summary>
         private unsafe void CreateDeviceObjects()
         {
             // Create shaders
@@ -138,6 +129,7 @@ namespace C64
             CreateFontTexture();
         }
 
+        /// <summary>Compiles shader.</summary>
         private uint CompileShader(ShaderType type, string source)
         {
             uint shader = _gl.CreateShader(type);
@@ -154,6 +146,7 @@ namespace C64
             return shader;
         }
 
+        /// <summary>Creates font texture.</summary>
         private unsafe void CreateFontTexture()
         {
             var io = ImGui.GetIO();
@@ -174,6 +167,7 @@ namespace C64
             io.Fonts.ClearTexData();
         }
 
+        /// <summary>Processes event.</summary>
         public void ProcessEvent(SDL_Event e)
         {
             var io = ImGui.GetIO();
@@ -230,6 +224,7 @@ namespace C64
             }
         }
 
+        /// <summary>Updates modifiers.</summary>
         private void UpdateModifiers(ImGuiIOPtr io)
         {
             SDL_Keymod mod = SDL_GetModState();
@@ -239,6 +234,7 @@ namespace C64
             io.AddKeyEvent(ImGuiKey.ModSuper, (mod & SDL_Keymod.KMOD_GUI) != 0);
         }
 
+        /// <summary>Maps an SDL key code to an ImGui key.</summary>
         private ImGuiKey TranslateKey(SDL_Keycode key)
         {
             return key switch
@@ -300,6 +296,7 @@ namespace C64
             };
         }
 
+        /// <summary>Begins a new ImGui frame.</summary>
         public void NewFrame(float deltaTime)
         {
             var io = ImGui.GetIO();
@@ -309,12 +306,14 @@ namespace C64
             ImGui.NewFrame();
         }
 
+        /// <summary>Updates ImGui dimensions after a window resize.</summary>
         public void WindowResized(int width, int height)
         {
             _windowWidth = width;
             _windowHeight = height;
         }
 
+        /// <summary>Renders the current ImGui draw data.</summary>
         public unsafe void Render()
         {
             ImGui.Render();
@@ -413,6 +412,7 @@ namespace C64
             if (lastEnableScissorTest) _gl.Enable(EnableCap.ScissorTest); else _gl.Disable(EnableCap.ScissorTest);
         }
 
+        /// <summary>Releases resources owned by this instance.</summary>
         public void Dispose()
         {
             if (!_disposed)
@@ -430,15 +430,4 @@ namespace C64
         }
     }
 
-    /// <summary>
-    /// Centralized defaults for Dear ImGui window layout and appearance.
-    /// </summary>
-    public static class UiLayoutDefaults
-    {
-        public const string SettingsWindowTitle = "Settings [F1]";
-        public static readonly Vector2 SettingsWindowSize = new(280f, 310f);
-        public static readonly Vector2 SettingsWindowPosition = Vector2.Zero;
-        public const bool SettingsWindowStartsCollapsed = true;
-        public const float SettingsWindowBackgroundAlpha = 0.85f;
-    }
 }

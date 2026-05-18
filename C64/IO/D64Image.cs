@@ -2,6 +2,10 @@ using System.Text;
 
 namespace C64
 {
+
+    /// <summary>
+    /// Parses a D64 disk image and exposes directory, PRG loading, disk-name, and raw sector access helpers.
+    /// </summary>
     internal sealed class D64Image
     {
         private static readonly int[] SectorsPerTrack =
@@ -16,13 +20,16 @@ namespace C64
 
         private readonly byte[] raw;
 
+        /// <summary>Initializes a new D64Image instance.</summary>
         private D64Image(byte[] raw)
         {
             this.raw = raw;
         }
 
+        /// <summary>Gets or sets the source image path.</summary>
         public string SourcePath { get; private set; } = string.Empty;
 
+        /// <summary>Loads a D64 disk image from disk.</summary>
         public static D64Image Load(string path)
         {
             byte[] raw = File.ReadAllBytes(path);
@@ -33,6 +40,7 @@ namespace C64
             return img;
         }
 
+        /// <summary>Lists PRG directory entries in the image.</summary>
         public IReadOnlyList<string> ListPrgFiles()
         {
             var files = new List<string>();
@@ -45,14 +53,13 @@ namespace C64
             return files;
         }
 
+        /// <summary>Determines whether a directory file type is loadable.</summary>
         private static bool IsLoadableFileType(byte fileType)
         {
-            // Low 3 bits of the type byte are the CBM file type: 2 = PRG.
-            // The 0x80 bit indicates the file was properly closed; many cracked
-            // disks leave it clear, so accept both 0x82 and 0x02.
             return (fileType & 0x07) == 0x02;
         }
 
+        /// <summary>Attempts to load prg.</summary>
         public bool TryLoadPrg(string? requestedName, out byte[] prgBytes, out string resolvedName)
         {
             prgBytes = Array.Empty<byte>();
@@ -118,6 +125,7 @@ namespace C64
             return prgBytes.Length >= 3;
         }
 
+        /// <summary>Attempts to load directory.</summary>
         public bool TryLoadDirectory(out byte[] prgBytes)
         {
             prgBytes = Array.Empty<byte>();
@@ -143,6 +151,7 @@ namespace C64
             return true;
         }
 
+        /// <summary>Attempts to read sector.</summary>
         public bool TryReadSector(int track, int sector, out byte[] sectorBytes)
         {
             sectorBytes = Array.Empty<byte>();
@@ -155,6 +164,7 @@ namespace C64
             return true;
         }
 
+        /// <summary>Reads directory entries.</summary>
         private List<DirectoryEntry> ReadDirectoryEntries()
         {
             var list = new List<DirectoryEntry>();
@@ -173,10 +183,6 @@ namespace C64
 
                 for (int i = 0; i < 8; i++)
                 {
-                    // Each directory entry is 32 bytes long starting at sector offset i*32.
-                    // The first two bytes of entry 0 hold the chain link (already read above);
-                    // the remaining entries' first two bytes are unused. File type lives at
-                    // entry offset 2 regardless.
                     int eoff = off + i * 32;
                     byte fileType = (byte)(raw[eoff + 2] & 0x87);
                     if (fileType == 0)
@@ -199,6 +205,7 @@ namespace C64
             return list;
         }
 
+        /// <summary>Reads the disk name from the directory sector.</summary>
         private string GetDiskName()
         {
             int bam = Offset(18, 0);
@@ -209,6 +216,7 @@ namespace C64
             return string.IsNullOrWhiteSpace(name) ? "DISK" : name;
         }
 
+        /// <summary>Appends one BASIC directory listing line.</summary>
         private static void AppendDirectoryLine(List<byte> body, ref ushort lineAddress, ushort lineNumber, string text)
         {
             int lineStart = body.Count;
@@ -228,6 +236,7 @@ namespace C64
             lineAddress = next;
         }
 
+        /// <summary>Converts an ASCII character to PETSCII.</summary>
         private static byte CharToPetscii(char ch)
         {
             if (ch >= 'a' && ch <= 'z')
@@ -235,6 +244,7 @@ namespace C64
             return ch >= ' ' && ch <= '~' ? (byte)ch : (byte)'?';
         }
 
+        /// <summary>Formats a D64 file type byte.</summary>
         private static string FileTypeName(byte fileType)
         {
             return (fileType & 0x07) switch
@@ -248,6 +258,7 @@ namespace C64
             };
         }
 
+        /// <summary>Decodes petscii name.</summary>
         private static string DecodePetsciiName(byte[] src, int offset, int len)
         {
             var sb = new StringBuilder(len);
@@ -266,11 +277,13 @@ namespace C64
             return sb.ToString().Trim();
         }
 
+        /// <summary>Normalizes name.</summary>
         private static string NormalizeName(string s)
         {
             return s.Trim().Trim('"', '\'').ToUpperInvariant();
         }
 
+        /// <summary>Calculates the byte offset of a D64 sector.</summary>
         private static int Offset(int track, int sector)
         {
             if (track <= 0 || track >= SectorsPerTrack.Length)
@@ -285,6 +298,7 @@ namespace C64
             return (sectorsBefore + sector) * 256;
         }
 
+        /// <summary>Represents Directory Entry.</summary>
         private sealed record DirectoryEntry(string Name, byte FileType, byte StartTrack, byte StartSector, ushort Blocks);
     }
 }

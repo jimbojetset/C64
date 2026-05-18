@@ -3,6 +3,7 @@ using ImGuiNET;
 
 namespace C64
 {
+
     /// <summary>
     /// Modal ImGui popup that prompts the user to choose an audio output device.
     /// Selection is made by clicking an entry, using arrow keys plus Enter, or
@@ -19,6 +20,7 @@ namespace C64
 
         private int _currentIndex = 0;  // Default to index 0
 
+        /// <summary>Initializes a new AudioDeviceSelector instance.</summary>
         public AudioDeviceSelector(List<string> devices)
         {
             _devices = devices;
@@ -97,6 +99,7 @@ namespace C64
             }
         }
 
+        /// <summary>Accepts the item at the selected index.</summary>
         private void Select(int index)
         {
             _selectedDeviceName = _devices[index];

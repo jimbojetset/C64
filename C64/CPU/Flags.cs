@@ -3,6 +3,10 @@ using System.Runtime.CompilerServices;
 
 namespace C64.CPU
 {
+
+    /// <summary>
+    /// Stores the 6502 processor status register and exposes named flag accessors used by instruction implementations.
+    /// </summary>
     public class Flags
     {
         // Bit layout of the 6502 status register:
@@ -28,21 +32,25 @@ namespace C64.CPU
         public bool N { [MethodImpl(MethodImplOptions.AggressiveInlining)] get => (p & FLAG_N) != 0; [MethodImpl(MethodImplOptions.AggressiveInlining)] set => p = value ? (byte)(p | FLAG_N) : (byte)(p & ~FLAG_N); } // Negative
         public bool T { [MethodImpl(MethodImplOptions.AggressiveInlining)] get => (p & FLAG_T) != 0; [MethodImpl(MethodImplOptions.AggressiveInlining)] set => p = value ? (byte)(p | FLAG_T) : (byte)(p & ~FLAG_T); } // Test Flag Not Used By CPU
 
+        /// <summary>Initializes a new Flags instance.</summary>
         public Flags()
         {
         }
 
+        /// <summary>Clears this instance to its reset state.</summary>
         public void Clear()
         {
             p = (byte)(p & FLAG_T);
         }
 
+        /// <summary>Sets flags from byte.</summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void SetFlagsFromByte(byte flags, byte bits = 0xFF)
         {
             p = (byte)((p & (byte)~bits) | (flags & bits));
         }
 
+        /// <summary>Returns the processor status flags as a byte.</summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public byte GetFlagsAsByte() => p;
     }

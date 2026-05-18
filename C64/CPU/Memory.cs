@@ -3,11 +3,17 @@ using System.Runtime.CompilerServices;
 
 namespace C64.CPU
 {
+
+    /// <summary>
+    /// Models the C64 address space, including RAM-under-ROM, 6510 banking, I/O hooks, color RAM behavior, and VIC-visible reads.
+    /// </summary>
     public class Memory
     {
         // The flat 64K address space. After banking is enabled, this
         // buffer always holds the RAM-under-ROM; reads in banked-out
         // regions return RAM from here, ROMs are kept separately below.
+
+        /// <summary>Gets or sets the backing 64 KiB memory array.</summary>
         public byte[] memory { get; set; }
 
         // Legacy ROM-write protection ranges (used only when no banked
@@ -38,6 +44,8 @@ namespace C64.CPU
         private bool bankingEnabled;
 
         // Slot identifiers for LoadBankedROM.
+
+        /// <summary>Defines values for Bank Slot.</summary>
         public enum BankSlot { Basic, Kernal, Char }
 
         // Optional write hook for the I/O range $D000-$DFFF. Returning true
@@ -58,11 +66,13 @@ namespace C64.CPU
         // ($D01E / $D01F).
         public Action<ulong>? OnIOPostRead;
 
+        /// <summary>Initializes a new Memory instance.</summary>
         public Memory(int size)
         {
             memory = new byte[size];
         }
 
+        /// <summary>Clears io under ram.</summary>
         public void ClearIoUnderRam()
         {
             Array.Clear(ioUnderRam, 0, ioUnderRam.Length);
@@ -71,6 +81,8 @@ namespace C64.CPU
         // Writes directly to underlying RAM regardless of current banking.
         // Used by loaders so bytes destined for $D000-$DFFF land in RAM
         // beneath I/O/CHAR mapping, matching C64 load behavior.
+
+        /// <summary>Writes ram byte.</summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void WriteRamByte(ulong addr, byte value)
         {
@@ -95,6 +107,8 @@ namespace C64.CPU
         // The ROM no longer lives inside memory[] - writes to its address
         // range now land on RAM-under-ROM, and reads return the ROM only
         // when the corresponding bit in the $01 processor port selects it.
+
+        /// <summary>Loads banked rom.</summary>
         public void LoadBankedROM(string filePath, BankSlot slot)
         {
             byte[] data = File.ReadAllBytes(filePath);
@@ -122,6 +136,8 @@ namespace C64.CPU
         // Direct access to a banked ROM image (e.g. so the boot code can
         // patch out RAMTAS in the KERNAL). Returns null if the slot has
         // not been loaded yet.
+
+        /// <summary>Gets banked rom.</summary>
         public byte[]? GetBankedROM(BankSlot slot) => slot switch
         {
             BankSlot.Basic => basicRom,
@@ -130,6 +146,7 @@ namespace C64.CPU
             _ => null
         };
 
+        /// <summary>Writes byte.</summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void WriteByte(ulong addr, byte value)
         {
@@ -185,6 +202,7 @@ namespace C64.CPU
             memory[addr] = value;
         }
 
+        /// <summary>Determines whether an address is in a legacy ROM range.</summary>
         private bool IsROM(int addr)
         {
             // Use indexed for-loop to avoid enumerator allocation on each call.
@@ -198,6 +216,7 @@ namespace C64.CPU
             return false;
         }
 
+        /// <summary>Reads byte.</summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public byte ReadByte(ulong addr)
         {
@@ -264,6 +283,8 @@ namespace C64.CPU
 
         // True when the $D000-$DFFF window currently maps the I/O chips
         // (the only configuration in which OnIOWrite must fire).
+
+        /// <summary>Determines whether the I/O window is currently mapped.</summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private bool Is_IO_Mapped()
         {
@@ -273,6 +294,7 @@ namespace C64.CPU
             return loHi != 0 && charen;
         }
 
+        /// <summary>Computes the effective 6510 processor-port value.</summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private byte GetProcessorPortEffective()
         {
@@ -283,6 +305,7 @@ namespace C64.CPU
             return (byte)((data & ddr) | (~ddr & 0xFF));
         }
 
+        /// <summary>Reads word.</summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public ulong ReadWord(ulong addr)
         {
@@ -294,6 +317,8 @@ namespace C64.CPU
         // VIC-II memory view: always sees RAM in the selected 16 KiB bank,
         // except for the character ROM shadow handled in Display.cs.
         // In particular, $D000-$DFFF must read RAM-under-I/O, not CPU I/O regs.
+
+        /// <summary>Reads vic byte.</summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public byte ReadVicByte(ulong addr)
         {
@@ -303,6 +328,7 @@ namespace C64.CPU
             return memory[addr];
         }
 
+        /// <summary>Loads data from disk.</summary>
         public void Load(string filePath, int startAddr, int length, bool readOnly)
         {
             Array.Copy(File.ReadAllBytes(filePath), 0, memory, startAddr, length);
@@ -311,9 +337,16 @@ namespace C64.CPU
         }
     }
 
+    /// <summary>
+    /// Describes a legacy read-only memory range used by the pre-banked memory path.
+    /// </summary>
     internal class ROM
     {
+
+        /// <summary>Gets or sets the ROM start address.</summary>
         public int StartAddr { get; set; }
+
+        /// <summary>Gets or sets the length value.</summary>
         public int Length { get; set; }
     }
 }

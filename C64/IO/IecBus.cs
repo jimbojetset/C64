@@ -2,6 +2,10 @@ using System.Text;
 
 namespace C64
 {
+
+    /// <summary>
+    /// Emulates the high-level IEC bus commands and a lightweight low-level responder for the virtual 1541 drive path.
+    /// </summary>
     internal sealed class IecBus
     {
         private readonly VirtualDrive1541 drive;
@@ -39,13 +43,16 @@ namespace C64
         private int lowLevelBytePhase;  // 0=handshake, 1-8=bit0-7, cycles for next byte
         private byte lowLevelCurrentByte;
 
+        /// <summary>Initializes a new IecBus instance.</summary>
         public IecBus(VirtualDrive1541 drive)
         {
             this.drive = drive;
         }
 
+        /// <summary>Gets or sets the callback invoked for drive activity.</summary>
         public Action? OnDriveActivity { get; set; }
 
+        /// <summary>Updates the host-side CIA2 IEC port pins.</summary>
         public void UpdateHostCia2PortA(byte dd00, byte dd02)
         {
             // CIA2 port A IEC lines (active-low) on bits 5:DATA, 4:CLOCK, 3:ATN.
@@ -61,11 +68,15 @@ namespace C64
                 StepLowLevelResponder();
         }
 
+        /// <summary>Sets whether a loose host program is available to the drive path.</summary>
         public void SetHostLooseProgramPresent(bool present)
         {
             hostLooseProgramPresent = present;
         }
 
+        /// <summary>
+        /// Opens an IEC logical file and prepares command, directory, PRG, status, or direct-access channel state for device 8.
+        /// </summary>
         public bool Open(byte logicalFile, byte device, byte secondaryAddress, string? name)
         {
             if (NormalizeDevice(device) != 8)
@@ -98,6 +109,7 @@ namespace C64
             return true;
         }
 
+        /// <summary>Closes an IEC logical file.</summary>
         public bool Close(byte logicalFile)
         {
             if (!logicalChannels.TryGetValue(logicalFile, out byte channel))
@@ -117,6 +129,7 @@ namespace C64
             return true;
         }
 
+        /// <summary>Selects an IEC logical file for input.</summary>
         public bool Chkin(byte logicalFile)
         {
             if (!logicalChannels.TryGetValue(logicalFile, out byte channel))
@@ -128,6 +141,7 @@ namespace C64
             return true;
         }
 
+        /// <summary>Selects an IEC logical file for output.</summary>
         public bool Chkout(byte logicalFile)
         {
             if (!logicalChannels.TryGetValue(logicalFile, out byte channel))
@@ -138,6 +152,7 @@ namespace C64
             return true;
         }
 
+        /// <summary>Clears the active IEC input and output channels.</summary>
         public void Clrchn()
         {
             currentInputChannel = null;
@@ -145,10 +160,13 @@ namespace C64
             commandBytes.Clear();
         }
 
+        /// <summary>Gets whether either an IEC input or output channel is currently selected.</summary>
         public bool HasActiveChannel => currentInputChannel.HasValue || currentOutputChannel.HasValue;
 
+        /// <summary>Gets whether an IEC input channel is currently selected for reads.</summary>
         public bool HasInputChannel => currentInputChannel.HasValue;
 
+        /// <summary>Reads a byte from the active IEC input channel.</summary>
         public byte Chrin()
         {
             if (!currentInputChannel.HasValue)
@@ -157,6 +175,7 @@ namespace C64
             return ReadChannelByte(currentInputChannel.Value);
         }
 
+        /// <summary>Writes a byte to the active IEC output channel.</summary>
         public bool Chrout(byte value)
         {
             if (!currentOutputChannel.HasValue)
@@ -167,6 +186,7 @@ namespace C64
             return true;
         }
 
+        /// <summary>Flushes pending IEC output command bytes.</summary>
         public void FlushOutput()
         {
             if (currentOutputChannel == 15 && commandBytes.Count > 0)
@@ -176,6 +196,7 @@ namespace C64
             }
         }
 
+        /// <summary>Builds external cia2 port a.</summary>
         public byte BuildExternalCia2PortA(byte baseExternal)
         {
             bool dataHigh = hostDataRelease && devDataRelease;
@@ -190,6 +211,7 @@ namespace C64
             return ext;
         }
 
+        /// <summary>Sets the current IEC talker device.</summary>
         public void Talk(byte dev)
         {
             currentTalker = NormalizeDevice(dev);
@@ -199,6 +221,7 @@ namespace C64
             devClockRelease = true;
         }
 
+        /// <summary>Sets the current IEC listener device.</summary>
         public void Listen(byte dev)
         {
             currentListener = NormalizeDevice(dev);
@@ -209,18 +232,21 @@ namespace C64
             devClockRelease = true;
         }
 
+        /// <summary>Sends an IEC secondary address.</summary>
         public void Second(byte sa)
         {
             listenSecondary = (byte)(sa & 0x0F);
             commandBytes.Clear();
         }
 
+        /// <summary>Sets the IEC talk secondary address.</summary>
         public void Tksa(byte sa)
         {
             talkSecondary = (byte)(sa & 0x0F);
             PrepareTalkBuffer(talkSecondary.Value);
         }
 
+        /// <summary>Sends one byte on the IEC command path.</summary>
         public void Ciout(byte value)
         {
             if (currentListener != 8)
@@ -228,6 +254,7 @@ namespace C64
             commandBytes.Add(value);
         }
 
+        /// <summary>Receives one byte from the IEC talker.</summary>
         public byte Acptr()
         {
             if (currentTalker != 8)
@@ -242,6 +269,7 @@ namespace C64
             return talkQueue.Dequeue();
         }
 
+        /// <summary>Clears the active IEC listener.</summary>
         public void Unlisten()
         {
             if (currentListener == 8 && commandBytes.Count > 0)
@@ -257,6 +285,7 @@ namespace C64
             commandBytes.Clear();
         }
 
+        /// <summary>Clears the active IEC talker.</summary>
         public void Untalk()
         {
             currentTalker = null;
@@ -267,6 +296,7 @@ namespace C64
             devClockRelease = true;
         }
 
+        /// <summary>Reads channel byte.</summary>
         private byte ReadChannelByte(byte channel)
         {
             if (channel == 15)
@@ -289,6 +319,7 @@ namespace C64
             return talkQueue.Dequeue();
         }
 
+        /// <summary>Attempts to load from drive.</summary>
         public bool TryLoadFromDrive(out byte[] prg, out string resolvedName)
         {
             string? requested = pendingFilename;
@@ -299,6 +330,7 @@ namespace C64
             return ok;
         }
 
+        /// <summary>Attempts to load from drive.</summary>
         public bool TryLoadFromDrive(string? requestedName, out byte[] prg, out string resolvedName)
         {
             bool ok = drive.TryLoadPrg(requestedName, out prg, out resolvedName);
@@ -307,6 +339,7 @@ namespace C64
             return ok;
         }
 
+        /// <summary>Prepares talk buffer.</summary>
         private void PrepareTalkBuffer(byte channel)
         {
             talkQueue.Clear();
@@ -332,12 +365,16 @@ namespace C64
             devClockRelease = true;
         }
 
+        /// <summary>Prepares status buffer.</summary>
         private void PrepareStatusBuffer()
         {
             statusQueue = new Queue<byte>(Encoding.ASCII.GetBytes(driveStatus + "\r"));
             driveStatus = "00, OK,00,00";
         }
 
+        /// <summary>
+        /// Executes supported 1541 command-channel operations and updates drive status for unsupported commands.
+        /// </summary>
         private void ExecuteDriveCommand(string command)
         {
             string normalized = command.Trim().Trim('"', '\'').ToUpperInvariant();
@@ -363,6 +400,7 @@ namespace C64
             SetDriveStatus(30, "SYNTAX ERROR", 0, 0);
         }
 
+        /// <summary>Executes block read.</summary>
         private void ExecuteBlockRead(string args)
         {
             int[] values = ParseDriveCommandNumbers(args);
@@ -386,6 +424,7 @@ namespace C64
             SetDriveOk(track, sector);
         }
 
+        /// <summary>Executes buffer pointer.</summary>
         private void ExecuteBufferPointer(string args)
         {
             int[] values = ParseDriveCommandNumbers(args);
@@ -399,6 +438,7 @@ namespace C64
             SetDriveOk();
         }
 
+        /// <summary>Parses numeric arguments from a drive command.</summary>
         private static int[] ParseDriveCommandNumbers(string args)
         {
             string[] parts = args.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
@@ -411,17 +451,20 @@ namespace C64
             return values.ToArray();
         }
 
+        /// <summary>Sets drive ok.</summary>
         private void SetDriveOk(int track = 0, int sector = 0)
         {
             SetDriveStatus(0, "OK", track, sector);
         }
 
+        /// <summary>Sets drive status.</summary>
         private void SetDriveStatus(int code, string message, int track, int sector)
         {
             driveStatus = $"{code:00}, {message},{track:00},{sector:00}";
             statusQueue.Clear();
         }
 
+        /// <summary>Decodes petscii.</summary>
         private static string DecodePetscii(List<byte> bytes)
         {
             var sb = new StringBuilder(bytes.Count);
@@ -435,22 +478,29 @@ namespace C64
             return sb.ToString().Trim().Trim('"', '\'');
         }
 
+        /// <summary>Normalizes device.</summary>
         private static byte NormalizeDevice(byte dev)
         {
             return (byte)(dev & 0x1F);
         }
 
+        /// <summary>
+        /// Holds direct-access channel data and the current read pointer for IEC block operations.
+        /// </summary>
         private sealed class DirectChannel
         {
             private readonly byte[] data;
 
+            /// <summary>Initializes a new DirectChannel instance.</summary>
             public DirectChannel(byte[] data)
             {
                 this.data = data;
             }
 
+            /// <summary>Gets or sets the current read position.</summary>
             public int Position { get; set; }
 
+            /// <summary>Reads byte.</summary>
             public byte ReadByte()
             {
                 if (Position < 0 || Position >= data.Length)
@@ -459,6 +509,9 @@ namespace C64
             }
         }
 
+        /// <summary>
+        /// Advances the optional bit-level IEC responder that samples ATN/clock transitions and drives data/clock release lines.
+        /// </summary>
         private void StepLowLevelResponder()
         {
             if (currentListener == 8 || currentTalker == 8)

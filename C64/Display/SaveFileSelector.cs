@@ -3,6 +3,7 @@ using ImGuiNET;
 
 namespace C64
 {
+
     /// <summary>
     /// Modal ImGui popup that prompts for a PRG filename inside Software.
     /// </summary>
@@ -17,15 +18,19 @@ namespace C64
         private string? _selectedFilename;
         private string? _error;
 
+        /// <summary>Initializes a new save-file selector.</summary>
         public SaveFileSelector(string defaultFilename)
         {
             _filename = defaultFilename;
         }
 
+        /// <summary>Gets whether the selector has completed.</summary>
         public bool IsCompleted => _completed;
 
+        /// <summary>Gets the selected filename.</summary>
         public string? SelectedFilename => _selectedFilename;
 
+        /// <summary>Draws this selector window.</summary>
         public void Draw()
         {
             if (_completed)
@@ -75,6 +80,7 @@ namespace C64
             }
         }
 
+        /// <summary>Validates and accepts the current filename.</summary>
         private void TryAccept()
         {
             string filename = NormalizeFilename(_filename);
@@ -89,6 +95,7 @@ namespace C64
             ImGui.CloseCurrentPopup();
         }
 
+        /// <summary>Normalizes a user-entered filename for PRG saving.</summary>
         private static string NormalizeFilename(string raw)
         {
             string name = raw.Trim().Trim('"', '\'');

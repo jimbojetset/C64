@@ -4,6 +4,7 @@ using static SDL2.SDL;
 
 namespace C64
 {
+
     /// <summary>
     /// Hosts an SDL2 + OpenGL window long enough to run an ImGui
     /// <see cref="AudioDeviceSelector"/> modal, then disposes everything and
@@ -11,6 +12,8 @@ namespace C64
     /// </summary>
     internal static class SoundDeviceWindow
     {
+
+        /// <summary>Shows the picker window and returns the selected value.</summary>
         public static string? Prompt(List<string> devices)
         {
             if (devices.Count == 0) return null;
@@ -63,7 +66,7 @@ namespace C64
             ImGuiController? controller = null;
             try
             {
-                controller = new ImGuiController(gl, win, Width, Height);
+                controller = new ImGuiController(gl, Width, Height);
                 var selector = new AudioDeviceSelector(devices);
 
                 var sw = Stopwatch.StartNew();

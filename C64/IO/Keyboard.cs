@@ -4,6 +4,7 @@ using static SDL2.SDL;
 
 namespace C64
 {
+
     /// <summary>
     /// Standalone keyboard and joystick port 2 controller.
     /// Owns the C64 keyboard matrix, the PETSCII key queue, and the
@@ -26,7 +27,6 @@ namespace C64
         private byte controllerButtonMask;
         private byte controllerAxisMask;
 
-        private bool caseModeUpper = true;
         private bool shiftLockActive;
         private const short ControllerDeadZone = 12000;
 
@@ -56,19 +56,7 @@ namespace C64
         /// <summary>Invoked when Ctrl+A is pressed.</summary>
         public Action? OnSelectAudioDevice { get; set; }
 
-        private static readonly byte[] CtrlColours =
-        {
-            0x90, 0x05, 0x1C, 0x9F, 0x9C, 0x1E, 0x1F, 0x9E,
-        };
-        private static readonly byte[] CommodoreColours =
-        {
-            0x81, 0x95, 0x96, 0x97, 0x98, 0x99, 0x9A, 0x9B,
-        };
-        private static readonly byte[] FunctionKeys =
-        {
-            0x85, 0x89, 0x86, 0x8A, 0x87, 0x8B, 0x88, 0x8C,
-        };
-
+        /// <summary>Initializes a new Keyboard instance.</summary>
         public Keyboard(CPU_6510 cpu)
         {
             this.cpu = cpu;
@@ -79,6 +67,7 @@ namespace C64
         /// <summary>CIA-1 port A ($DC00) joystick port 2 byte (active-low).</summary>
         public byte Joystick2 => (byte)(keyboardJoystick2 & controllerJoystick2);
 
+        /// <summary>Initializes SDL game controller support.</summary>
         public void InitGameControllers()
         {
             SDL_GameControllerEventState(SDL_ENABLE);
@@ -135,7 +124,6 @@ namespace C64
             for (int i = 0; i < keyboardMatrix.Length; i++)
                 keyboardMatrix[i] = 0xFF;
             while (keyQueue.TryDequeue(out _)) { }
-            caseModeUpper = true;
             shiftLockActive = false;
         }
 
@@ -173,6 +161,7 @@ namespace C64
             }
         }
 
+        /// <summary>Releases resources owned by this instance.</summary>
         public void Dispose()
         {
             CloseController();
@@ -180,6 +169,7 @@ namespace C64
 
         // ?? Private implementation ????????????????????????????????????????????
 
+        /// <summary>Handles key down.</summary>
         private bool HandleKeyDown(SDL_KeyboardEvent ke)
         {
             if (ke.repeat != 0) return false;
@@ -259,6 +249,7 @@ namespace C64
             return false;
         }
 
+        /// <summary>Handles key up.</summary>
         private void HandleKeyUp(SDL_KeyboardEvent ke)
         {
             byte jmask = JoystickMaskFromKey(ke.keysym.sym);
@@ -268,84 +259,7 @@ namespace C64
             UpdateKeyboardState(ke.keysym.sym, false);
         }
 
-        private byte ToPetscii(SDL_Keycode sym, SDL_Keymod mod)
-        {
-            bool shift = (mod & SDL_Keymod.KMOD_SHIFT) != 0;
-            bool ctrl = (mod & SDL_Keymod.KMOD_CTRL) != 0;
-            bool cbm = (mod & SDL_Keymod.KMOD_RALT) != 0;
-
-            if (shift && cbm && (sym == SDL_Keycode.SDLK_LSHIFT || sym == SDL_Keycode.SDLK_RSHIFT ||
-                                 sym == SDL_Keycode.SDLK_LALT || sym == SDL_Keycode.SDLK_RALT))
-            {
-                caseModeUpper = !caseModeUpper;
-                return caseModeUpper ? (byte)0x8E : (byte)0x0E;
-            }
-
-            if (sym >= SDL_Keycode.SDLK_F1 && sym <= SDL_Keycode.SDLK_F8)
-                return FunctionKeys[(int)(sym - SDL_Keycode.SDLK_F1)];
-
-            if (sym >= SDL_Keycode.SDLK_a && sym <= SDL_Keycode.SDLK_z)
-                return (byte)(0x41 + (int)(sym - SDL_Keycode.SDLK_a));
-
-            if (sym >= SDL_Keycode.SDLK_1 && sym <= SDL_Keycode.SDLK_8)
-            {
-                int idx = (int)(sym - SDL_Keycode.SDLK_1);
-                if (ctrl) return CtrlColours[idx];
-                if (cbm) return CommodoreColours[idx];
-            }
-
-            if (sym >= SDL_Keycode.SDLK_0 && sym <= SDL_Keycode.SDLK_9)
-            {
-                int d = (int)(sym - SDL_Keycode.SDLK_0);
-                if (!shift) return (byte)(0x30 + d);
-                return d switch
-                {
-                    1 => (byte)'!',
-                    2 => (byte)'"',
-                    3 => (byte)'#',
-                    4 => (byte)'$',
-                    5 => (byte)'%',
-                    6 => (byte)'&',
-                    7 => (byte)'\'',
-                    8 => (byte)'*',
-                    9 => (byte)'(',
-                    0 => (byte)')',
-                    _ => 0
-                };
-            }
-
-            if (sym >= SDL_Keycode.SDLK_KP_0 && sym <= SDL_Keycode.SDLK_KP_9)
-                return (byte)(0x30 + (int)(sym - SDL_Keycode.SDLK_KP_0));
-
-            return sym switch
-            {
-                SDL_Keycode.SDLK_SPACE => (byte)0x20,
-                SDL_Keycode.SDLK_RETURN => (byte)0x0D,
-                SDL_Keycode.SDLK_KP_ENTER => (byte)0x0D,
-                SDL_Keycode.SDLK_BACKSPACE => (byte)0x14,
-                SDL_Keycode.SDLK_TAB => (byte)0x20,
-                SDL_Keycode.SDLK_ESCAPE => (byte)0x03,
-                SDL_Keycode.SDLK_HOME => (byte)0x13,
-                SDL_Keycode.SDLK_INSERT => (byte)0x94,
-                SDL_Keycode.SDLK_DELETE => (byte)0x14,
-                SDL_Keycode.SDLK_LEFT => (byte)0x9D,
-                SDL_Keycode.SDLK_RIGHT => (byte)0x1D,
-                SDL_Keycode.SDLK_UP => (byte)0x91,
-                SDL_Keycode.SDLK_DOWN => (byte)0x11,
-                SDL_Keycode.SDLK_PERIOD => shift ? (byte)'>' : (byte)'.',
-                SDL_Keycode.SDLK_COMMA => shift ? (byte)'<' : (byte)',',
-                SDL_Keycode.SDLK_SLASH => shift ? (byte)'?' : (byte)'/',
-                SDL_Keycode.SDLK_SEMICOLON => shift ? (byte)':' : (byte)';',
-                SDL_Keycode.SDLK_QUOTE => shift ? (byte)'@' : (byte)'\'',
-                SDL_Keycode.SDLK_MINUS => shift ? (byte)'_' : (byte)'-',
-                SDL_Keycode.SDLK_EQUALS => shift ? (byte)'+' : (byte)'=',
-                SDL_Keycode.SDLK_LEFTBRACKET => shift ? (byte)'{' : (byte)'[',
-                SDL_Keycode.SDLK_RIGHTBRACKET => shift ? (byte)'}' : (byte)']',
-                SDL_Keycode.SDLK_BACKSLASH => shift ? (byte)'|' : (byte)'\\',
-                _ => 0
-            };
-        }
-
+        /// <summary>Updates keyboard state.</summary>
         private void UpdateKeyboardState(SDL_Keycode sym, bool pressed)
         {
             switch (sym)
@@ -474,6 +388,7 @@ namespace C64
             }
         }
 
+        /// <summary>Sets matrix key.</summary>
         private void SetMatrixKey(int row, int column, bool pressed)
         {
             byte mask = (byte)(1 << column);
@@ -483,6 +398,7 @@ namespace C64
                 keyboardMatrix[row] = (byte)(keyboardMatrix[row] | mask);
         }
 
+        /// <summary>Opens first available controller.</summary>
         private void OpenFirstAvailableController()
         {
             if (gameController != IntPtr.Zero)
@@ -500,6 +416,7 @@ namespace C64
             }
         }
 
+        /// <summary>Opens controller.</summary>
         private void OpenController(int deviceIndex)
         {
             CloseController();
@@ -518,6 +435,7 @@ namespace C64
             UpdateControllerJoystick();
         }
 
+        /// <summary>Closes controller.</summary>
         private void CloseController()
         {
             if (gameController != IntPtr.Zero)
@@ -532,12 +450,14 @@ namespace C64
             UpdateControllerJoystick();
         }
 
+        /// <summary>Handles controller added.</summary>
         private void HandleControllerAdded(SDL_ControllerDeviceEvent ev)
         {
             if (gameController == IntPtr.Zero && SDL_IsGameController(ev.which) != SDL_bool.SDL_FALSE)
                 OpenController(ev.which);
         }
 
+        /// <summary>Handles controller removed.</summary>
         private void HandleControllerRemoved(SDL_ControllerDeviceEvent ev)
         {
             if (ev.which != gameControllerInstanceId)
@@ -547,6 +467,7 @@ namespace C64
             OpenFirstAvailableController();
         }
 
+        /// <summary>Handles controller button.</summary>
         private void HandleControllerButton(SDL_ControllerButtonEvent ev)
         {
             if (ev.which != gameControllerInstanceId)
@@ -564,6 +485,7 @@ namespace C64
             UpdateControllerJoystick();
         }
 
+        /// <summary>Handles controller axis.</summary>
         private void HandleControllerAxis(SDL_ControllerAxisEvent ev)
         {
             if (ev.which != gameControllerInstanceId)
@@ -600,11 +522,13 @@ namespace C64
             UpdateControllerJoystick();
         }
 
+        /// <summary>Updates controller joystick.</summary>
         private void UpdateControllerJoystick()
         {
             controllerJoystick2 = (byte)~(controllerButtonMask | controllerAxisMask);
         }
 
+        /// <summary>Maps a controller button to a joystick bit mask.</summary>
         private static byte ControllerButtonMask(SDL_GameControllerButton button) => button switch
         {
             SDL_GameControllerButton.SDL_CONTROLLER_BUTTON_DPAD_UP => 0x01,
@@ -620,6 +544,7 @@ namespace C64
             _ => 0
         };
 
+        /// <summary>Maps a keyboard key to a joystick bit mask.</summary>
         private static byte JoystickMaskFromKey(SDL_Keycode k) => k switch
         {
             SDL_Keycode.SDLK_UP => 0x01,

@@ -4,6 +4,7 @@ using static SDL2.SDL;
 
 namespace C64
 {
+
     /// <summary>
     /// MOS 6581 SID chip emulator.  Three voices with triangle / sawtooth /
     /// pulse / noise waveforms, full ADSR envelopes, hard-sync, ring modulation,
@@ -123,6 +124,8 @@ namespace C64
 
         // Exponential slowdown applied during decay/release based on current
         // envelope level � reproduces the characteristic SID curve.
+
+        /// <summary>Returns the ADSR exponential-rate scale for an envelope level.</summary>
         private static int ExpScale(int level)
         {
             if (level > 93) return 1;
@@ -161,18 +164,21 @@ namespace C64
             return names;
         }
 
+        /// <summary>Gets the first available SDL playback device name.</summary>
         public static string? GetDefaultDeviceName()
         {
             List<string> devices = EnumerateDevices();
             return devices.Count > 0 ? devices[0] : null;
         }
 
+        /// <summary>Prompts for an audio output device.</summary>
         public static string? PromptForDevice()
         {
             List<string> devices = EnumerateDevices();
             return SoundDeviceWindow.Prompt(devices);
         }
 
+        /// <summary>Initializes this component.</summary>
         public void Init(string? deviceName = null)
         {
             if (SDL_InitSubSystem(SDL_INIT_AUDIO) != 0)
@@ -185,6 +191,7 @@ namespace C64
             }
         }
 
+        /// <summary>Opens an SDL queue-audio playback device for SID output.</summary>
         private static uint OpenDevice(string? deviceName)
         {
             var desired = new SDL_AudioSpec
@@ -203,6 +210,7 @@ namespace C64
             return device;
         }
 
+        /// <summary>Resets SID audio timing cursors.</summary>
         private void ResetAudioCursors()
         {
             _writeCycleCursor = 0;
@@ -212,6 +220,7 @@ namespace C64
             _muteSamplesRemaining = (SampleRate * ResetMuteMs) / 1000;
         }
 
+        /// <summary>Switches the SDL audio output device.</summary>
         public void SwitchDevice(string? deviceName, bool paused)
         {
             if (SDL_InitSubSystem(SDL_INIT_AUDIO) != 0)
@@ -237,6 +246,7 @@ namespace C64
             }
         }
 
+        /// <summary>Starts this component.</summary>
         public void Start(CancellationToken token)
         {
             _ct = token;
@@ -259,6 +269,7 @@ namespace C64
             _thread.Start();
         }
 
+        /// <summary>Queues a short silent audio buffer.</summary>
         private void PrimeSilence()
         {
             int primeSamples = (SampleRate * StartupPrimeMs) / 1000;
@@ -302,12 +313,14 @@ namespace C64
             _ => 0,
         };
 
+        /// <summary>Gets or sets whether SID output is muted.</summary>
         public bool Muted
         {
             get => muted;
             set => muted = value;
         }
 
+        /// <summary>Sets whether execution is paused.</summary>
         public void SetPaused(bool paused)
         {
             lock (_audioStateLock)
@@ -374,6 +387,7 @@ namespace C64
             }
         }
 
+        /// <summary>Releases resources owned by this instance.</summary>
         public void Dispose()
         {
             try { _thread?.Join(200); } catch { }
@@ -388,6 +402,9 @@ namespace C64
 
         // ?? Synthesis loop ????????????????????????????????????????????????????
 
+        /// <summary>
+        /// Runs the background SID synthesis loop, converting wall-clock elapsed time into audio samples and queueing them to SDL.
+        /// </summary>
         private void SynthesisLoop()
         {
             long last = Stopwatch.GetTimestamp();
@@ -413,8 +430,7 @@ namespace C64
                 // then into a sample count.  The fractional remainder carries
                 // over so we don't drift over time.
                 long now = Stopwatch.GetTimestamp();
-                long batchStart = last;
-                double elapsed = (now - batchStart) / (double)Stopwatch.Frequency;
+                double elapsed = (now - last) / (double)Stopwatch.Frequency;
                 last = now;
 
                 double cyc = elapsed * CpuFreq + fracCyc;
@@ -432,7 +448,7 @@ namespace C64
 
                     lock (_audioStateLock)
                     {
-                        Synthesize(_buf, count, batchStart, now);
+                        Synthesize(_buf, count);
 
                         unsafe
                         {
@@ -458,19 +474,14 @@ namespace C64
 
         // ?? Per-sample synthesis ??????????????????????????????????????????????
 
-        private void Synthesize(short[] buf, int count, long startTick, long endTick)
+        /// <summary>
+        /// Synthesizes a batch of SID audio by applying timestamped register writes, stepping voices/envelopes, routing filter paths, and mixing output.
+        /// </summary>
+        private void Synthesize(short[] buf, int count)
         {
             byte[] r = _regs;
-            byte modeVol = r[24];
-            byte masterVol = (byte)(modeVol & 0x0F);
-            bool lpOn = (modeVol & 0x10) != 0;
-            bool bpOn = (modeVol & 0x20) != 0;
-            bool hpOn = (modeVol & 0x40) != 0;
-            bool voice3Mute = (modeVol & 0x80) != 0;
 
-            byte resRoute = r[23];
-            byte filterRoute = (byte)(resRoute & 0x07);
-            int resReg = (resRoute >> 4) & 0x0F;
+            int resReg = (r[23] >> 4) & 0x0F;
             int fcReg = (r[22] << 3) | (r[21] & 0x07); // 11-bit cutoff
 
             if (fcReg != _lastFcReg || resReg != _lastResReg)
@@ -490,15 +501,15 @@ namespace C64
                 _volDacShaped += (_volDacHp - _volDacShaped) * VolumeDacSmoothing;
 
                 // Re-read mode/filter state after any writes applied for this sample.
-                modeVol = r[24];
-                masterVol = (byte)(modeVol & 0x0F);
-                lpOn = (modeVol & 0x10) != 0;
-                bpOn = (modeVol & 0x20) != 0;
-                hpOn = (modeVol & 0x40) != 0;
-                voice3Mute = (modeVol & 0x80) != 0;
+                byte modeVol = r[24];
+                byte masterVol = (byte)(modeVol & 0x0F);
+                bool lpOn = (modeVol & 0x10) != 0;
+                bool bpOn = (modeVol & 0x20) != 0;
+                bool hpOn = (modeVol & 0x40) != 0;
+                bool voice3Mute = (modeVol & 0x80) != 0;
 
-                resRoute = r[23];
-                filterRoute = (byte)(resRoute & 0x07);
+                byte resRoute = r[23];
+                byte filterRoute = (byte)(resRoute & 0x07);
                 resReg = (resRoute >> 4) & 0x0F;
                 fcReg = (r[22] << 3) | (r[21] & 0x07);
                 if (fcReg != _lastFcReg || resReg != _lastResReg)
@@ -508,9 +519,9 @@ namespace C64
                     UpdateFilterCoefficients(fcReg, resReg);
                 }
 
-                double v0 = StepVoice(0, r, mute: false);
-                double v1 = StepVoice(1, r, mute: false);
-                double v2 = StepVoice(2, r, mute: false);
+                double v0 = StepVoice(0, r);
+                double v1 = StepVoice(1, r);
+                double v2 = StepVoice(2, r);
 
                 // Voice-3 readback for $D41B/$D41C
                 // so reads see consistent values throughout sample duration
@@ -573,6 +584,9 @@ namespace C64
             }
         }
 
+        /// <summary>
+        /// Applies queued SID register writes up to a synth tick and triggers write-time gate and volume-DAC side effects.
+        /// </summary>
         private void ApplyWritesUntil(long tick, byte[] regs)
         {
             while (_writeQueue.TryPeek(out SidWrite w) && w.Tick <= tick)
@@ -598,6 +612,7 @@ namespace C64
             }
         }
 
+        /// <summary>Advances the volume-DAC decay to a synth tick.</summary>
         private void AdvanceDacToTick(long tick)
         {
             if (_lastDacTick == 0)
@@ -616,6 +631,9 @@ namespace C64
             _lastDacTick = tick;
         }
 
+        /// <summary>
+        /// Applies ADSR phase changes immediately when a SID voice control register write changes the gate bit.
+        /// </summary>
         private void HandleGateEdgeOnWrite(int reg, byte previous, byte value, byte[] regs)
         {
             int voiceBase = (reg / 7) * 7;
@@ -648,10 +666,11 @@ namespace C64
                 v.EnvPhase = EnvPhase.Release;
                 v.EnvTimer = 0.0;
             }
-
-            v.GatePrev = gate;
         }
 
+        /// <summary>
+        /// Captures D418 volume changes for sample-style effects before they are smoothed into the DAC output lane.
+        /// </summary>
         private void HandleVolumeDacOnWrite(int reg, byte previous, byte value)
         {
             if (reg != 24)
@@ -664,12 +683,14 @@ namespace C64
             _volDacHp += delta * VolumeDacStepResponse;
         }
 
+        /// <summary>Applies output low-pass smoothing.</summary>
         private double SmoothOutput(double sample)
         {
             _outputLowPass = sample + OutputLowPassA * (_outputLowPass - sample);
             return _outputLowPass;
         }
 
+        /// <summary>Applies soft clipping to the audio sample.</summary>
         private static double SoftLimit(double sample)
         {
             const double threshold = 0.90;
@@ -685,7 +706,11 @@ namespace C64
         }
 
         // Synthesize one sample from one voice.  Returns value in [-0.5, 0.5].
-        private double StepVoice(int vi, byte[] r, bool mute)
+
+        /// <summary>
+        /// Advances one SID voice for a sample, including phase accumulation, hard sync, noise LFSR clocks, envelope stepping, and waveform output.
+        /// </summary>
+        private double StepVoice(int vi, byte[] r)
         {
             int vbase = vi * 7;
             Voice v = _voices[vi];
@@ -750,7 +775,6 @@ namespace C64
             // ?? Waveform ??
             int waveform = ComputeWaveform(ctrl, v, pw12, ring, syncSrc.PhaseAccum);
             v.LastWaveform = waveform;
-            if (mute) return 0.0;
 
             // Re-centre the 12-bit unsigned waveform around 0 (range -0.5..+0.5)
             // and scale by the 8-bit envelope so that envelope=0 produces true
@@ -764,6 +788,7 @@ namespace C64
 
         // ?? Waveform generator (with combination-AND approximation) ???????????
 
+        /// <summary>Computes the selected SID waveform output.</summary>
         private static int ComputeWaveform(byte ctrl, Voice v, int pw12, bool ring, uint syncSrcAccum)
         {
             bool tri = (ctrl & 0x10) != 0;
@@ -847,6 +872,7 @@ namespace C64
             return result;
         }
 
+        /// <summary>Builds a SID noise waveform sample.</summary>
         private static int NoiseOutput(uint lfsr)
         {
             // 8 noise output bits come from LFSR taps 20,18,14,11,9,5,2,0
@@ -864,16 +890,15 @@ namespace C64
 
         // ?? ADSR envelope ?????????????????????????????????????????????????????
 
+        /// <summary>
+        /// Advances a SID ADSR envelope using the current gate bit, attack/decay/release rates, and sustain level.
+        /// </summary>
         private static void StepEnvelope(Voice v, bool gate, byte ad, byte sr)
         {
             int attackIdx = (ad >> 4) & 0x0F;
             int decayIdx = ad & 0x0F;
             int releaseIdx = sr & 0x0F;
             int sustainLvl = ((sr >> 4) & 0x0F) * 17;   // 0..15 → 0..255
-
-            // Gate transitions are handled in ApplyWritesUntil so short
-            // pulses between samples are not lost.
-            v.GatePrev = gate;
 
             v.EnvTimer += CyclesPerSample;
 
@@ -935,6 +960,9 @@ namespace C64
 
         // ?? Filter ????????????????????????????????????????????????????????????
 
+        /// <summary>
+        /// Recomputes SID filter cutoff, resonance, and damping coefficients from the current filter registers.
+        /// </summary>
         private void UpdateFilterCoefficients(int fcReg, int resReg)
         {
             // 6581 approximation: fc ? 30 + fcReg � 5.8 Hz, capped under Nyquist.
@@ -965,6 +993,9 @@ namespace C64
             }
         }
 
+        /// <summary>
+        /// Steps the SID state-variable filter and combines the selected low-pass, band-pass, and high-pass outputs.
+        /// </summary>
         private double StepFilter(double input, bool lpOn, bool bpOn, bool hpOn)
         {
             // Enhanced Chamberlin two-pole state-variable filter with capacitor modeling
@@ -996,10 +1027,16 @@ namespace C64
 
         // ?? Per-voice state ???????????????????????????????????????????????????
 
+        /// <summary>Defines the current ADSR envelope phase for a SID voice.</summary>
         private enum EnvPhase { Attack, Decay, Sustain, Release }
 
+        /// <summary>
+        /// Represents a SID register write queued with the synth-cycle tick where it should become visible.
+        /// </summary>
         private readonly struct SidWrite
         {
+
+            /// <summary>Initializes a queued SID register write.</summary>
             public SidWrite(int reg, byte value, long tick)
             {
                 Reg = reg;
@@ -1007,11 +1044,19 @@ namespace C64
                 Tick = tick;
             }
 
+            /// <summary>Gets the SID register index for the queued write.</summary>
             public int Reg { get; }
+
+            /// <summary>Gets the SID register value for the queued write.</summary>
             public byte Value { get; }
+
+            /// <summary>Gets the synth-cycle tick for the queued write.</summary>
             public long Tick { get; }
         }
 
+        /// <summary>
+        /// Stores per-voice SID oscillator, waveform, noise, and ADSR envelope state owned by the synthesis thread.
+        /// </summary>
         private sealed class Voice
         {
             public uint PhaseAccum;     // 24-bit phase accumulator
@@ -1021,9 +1066,9 @@ namespace C64
             public int EnvelopeLevel;  // 0..255
             public EnvPhase EnvPhase;       // attack / decay / sustain / release
             public double EnvTimer;       // cycles since last envelope step
-            public bool GatePrev;       // previous gate bit (edge detection)
             public int LastWaveform;   // 12-bit waveform out (voice-3 readback)
 
+            /// <summary>Resets this instance to its initial state.</summary>
             public void Reset()
             {
                 PhaseAccum = 0;
@@ -1032,7 +1077,6 @@ namespace C64
                 EnvelopeLevel = 0;
                 EnvPhase = EnvPhase.Release;
                 EnvTimer = 0.0;
-                GatePrev = false;
                 LastWaveform = 0;
             }
         }

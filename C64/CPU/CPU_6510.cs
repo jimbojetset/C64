@@ -6,12 +6,20 @@ using System.Runtime.Versioning;
 
 namespace C64.CPU
 {
+
+    /// <summary>
+    /// Emulates the MOS 6510 CPU core, including opcode dispatch, interrupt processing, reset handling, cycle accounting, and pacing.
+    /// The C64 host wires this core to memory banking and device callbacks through its public memory and cycle hooks.
+    /// </summary>
     public class CPU_6510
     {
+
+        /// <summary>Requests high-resolution Windows timer scheduling.</summary>
         [DllImport("winmm.dll", EntryPoint = "timeBeginPeriod")]
         [SupportedOSPlatform("windows")]
         private static extern uint TimeBeginPeriod(uint uMilliseconds);
 
+        /// <summary>Releases high-resolution Windows timer scheduling.</summary>
         [DllImport("winmm.dll", EntryPoint = "timeEndPeriod")]
         [SupportedOSPlatform("windows")]
         private static extern uint TimeEndPeriod(uint uMilliseconds);
@@ -24,22 +32,22 @@ namespace C64.CPU
 
 
         private bool running = true;
-        public bool Running { get { return running; } }
         private bool paused;
         public bool Paused => Volatile.Read(ref paused);
         private bool jammed;
 
         private readonly int clockFreq = 2000000; //1MHz
-        public int ClockFrequency => clockFreq;
 
         private readonly ConcurrentQueue<ulong> IRQ_Buffer = new ConcurrentQueue<ulong>();
         private readonly ConcurrentQueue<ulong> NMI_Buffer = new ConcurrentQueue<ulong>();
 
+        /// <summary>Queues an IRQ request for the CPU.</summary>
         public void InitiateIRQ(ulong value)
         {
             IRQ_Buffer.Enqueue(value);
         }
 
+        /// <summary>Queues an NMI request for the CPU.</summary>
         public void InitiateNMI(ulong value)
         {
             NMI_Buffer.Enqueue(value);
@@ -47,22 +55,24 @@ namespace C64.CPU
 
         private int cyclesThisOperation = 0;
         private long totalCycles;
-        public long TotalCycles => Interlocked.Read(ref totalCycles);
         public Action<int>? OnCyclesExecuted;
         private int externalStallCycles;
 
+        /// <summary>Adds externally requested CPU stall cycles.</summary>
         public void RequestExternalStallCycles(int cycles)
         {
             if (cycles <= 0) return;
             Interlocked.Add(ref externalStallCycles, cycles);
         }
 
+        /// <summary>Initializes a new CPU_6510 instance.</summary>
         public CPU_6510(int freq = 1000000)
         {
             Initialise();
             clockFreq = freq;
         }
 
+        /// <summary>Initializes this component.</summary>
         public void Initialise()
         {
             registers = new Registers();
@@ -71,33 +81,21 @@ namespace C64.CPU
             memory = new Memory(0x10000);
         }
 
-        // Reset is now request-based so it's race-free even when called from
-        // a thread other than the CPU thread. RequestReset() flips a flag;
-        // the CPU thread services it at the top of its slice (safe point),
-        // optionally calling OnReset to let the host re-initialise hardware
-        // state (RAM, VIC, etc.) before the CPU re-reads its reset vector.
         public Action? OnReset;
         private int resetPending;
 
+        /// <summary>Requests a CPU reset at the next safe point.</summary>
         public void RequestReset() => Interlocked.Exchange(ref resetPending, 1);
 
-        // Cooperative stop. Sets the running flag so the CPU thread's main
-        // loop exits at the next slice boundary instead of being abort-ed
-        // by the .NET runtime at process exit (which can take seconds).
-        public void Stop() => running = false;
-
+        /// <summary>Sets whether execution is paused.</summary>
         public void SetPaused(bool value) => Volatile.Write(ref paused, value);
 
-        // Performed on the CPU thread inside the Run loop. Doing it here
-        // means OnReset, register clears and queue drains all happen
-        // serially with instruction execution - no concurrent reader of
-        // PC / Flags / memory can land in between.
+        /// <summary>Resets CPU state on the CPU thread.</summary>
         private void DoReset()
         {
             OnReset?.Invoke();
             registers.Clear();
             registers.S = 0xFF;
-            // Clear() now sets I=true, but be explicit since it's critical.
             registers.Flags.I = true;
             registers.PC = memory.ReadWord(0xFFFC);
             jammed = false;
@@ -111,6 +109,7 @@ namespace C64.CPU
         // are not serviced in large bursts.
         private const int SliceCycles = 64;
 
+        /// <summary>Runs the main emulator loop.</summary>
         public void Run(ulong startVector = 0xFFFC)
         {
             registers.PC = memory.ReadWord(startVector);
@@ -133,8 +132,6 @@ namespace C64.CPU
                         continue;
                     }
 
-                    // Service a pending reset request at a safe point
-                    // before fetching the next instruction.
                     if (Interlocked.Exchange(ref resetPending, 0) == 1)
                     {
                         DoReset();
@@ -202,6 +199,7 @@ namespace C64.CPU
             }
         }
 
+        /// <summary>Attempts to begin high resolution timer.</summary>
         private static bool TryBeginHighResolutionTimer()
         {
             if (!OperatingSystem.IsWindows()) return false;
@@ -210,6 +208,7 @@ namespace C64.CPU
             catch (EntryPointNotFoundException) { return false; }
         }
 
+        /// <summary>Attempts to end high resolution timer.</summary>
         private static void TryEndHighResolutionTimer()
         {
             if (!OperatingSystem.IsWindows()) return;
@@ -218,6 +217,7 @@ namespace C64.CPU
             catch (EntryPointNotFoundException) { }
         }
 
+        /// <summary>Waits until the specified stopwatch deadline.</summary>
         private static void WaitUntil(long deadlineTicks)
         {
             long remaining = deadlineTicks - Stopwatch.GetTimestamp();
@@ -232,6 +232,7 @@ namespace C64.CPU
                 Thread.SpinWait(64);
         }
 
+        /// <summary>Executes one decoded CPU opcode.</summary>
         [MethodImpl(MethodImplOptions.AggressiveOptimization)]
         public void Execute(byte opcode)
         {
@@ -922,6 +923,8 @@ namespace C64.CPU
         }
 
         #region Illegal opcode helpers
+
+        /// <summary>Executes the LAX CPU operation.</summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private void LAX(ulong addr)
         {
@@ -931,12 +934,14 @@ namespace C64.CPU
             Set_FlagsNZ(v);
         }
 
+        /// <summary>Executes the SAX CPU operation.</summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private void SAX(ulong addr)
         {
             WriteByteToMemory(addr, (byte)(registers.A & registers.X));
         }
 
+        /// <summary>Executes the DCP CPU operation.</summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private void DCP(ulong addr)
         {
@@ -947,6 +952,7 @@ namespace C64.CPU
             Set_FlagsNZ((byte)diff);
         }
 
+        /// <summary>Executes the ISC CPU operation.</summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private void ISC(ulong addr)
         {
@@ -955,6 +961,7 @@ namespace C64.CPU
             SBC(v);
         }
 
+        /// <summary>Executes the SLO CPU operation.</summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private void SLO(ulong addr)
         {
@@ -966,6 +973,7 @@ namespace C64.CPU
             Set_FlagsNZ(registers.A);
         }
 
+        /// <summary>Executes the SRE CPU operation.</summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private void SRE(ulong addr)
         {
@@ -977,6 +985,7 @@ namespace C64.CPU
             Set_FlagsNZ(registers.A);
         }
 
+        /// <summary>Executes the RLA CPU operation.</summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private void RLA(ulong addr)
         {
@@ -989,6 +998,7 @@ namespace C64.CPU
             Set_FlagsNZ(registers.A);
         }
 
+        /// <summary>Executes the RRA CPU operation.</summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private void RRA(ulong addr)
         {
@@ -1002,6 +1012,8 @@ namespace C64.CPU
 
         // ANC: AND with immediate, then copy bit 7 (N) into C. Used in
         // some bit-test routines as a faster "AND # / BMI" pair.
+
+        /// <summary>Executes the ANC instruction using immediate addressing.</summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private void ANC_IM()
         {
@@ -1011,6 +1023,8 @@ namespace C64.CPU
         }
 
         // ALR: AND with immediate, then LSR A.
+
+        /// <summary>Executes the ALR instruction using immediate addressing.</summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private void ALR_IM()
         {
@@ -1022,6 +1036,8 @@ namespace C64.CPU
 
         // ARR: AND with immediate, then ROR A. Has unusual flag effects:
         // C = bit 6 of result; V = bit 6 XOR bit 5 of result.
+
+        /// <summary>Executes the ARR instruction using immediate addressing.</summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private void ARR_IM()
         {
@@ -1034,6 +1050,8 @@ namespace C64.CPU
         }
 
         // AXS: X = (A AND X) - immediate. No borrow input; C set normally.
+
+        /// <summary>Executes the AXS instruction using immediate addressing.</summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private void AXS_IM()
         {
@@ -1045,6 +1063,8 @@ namespace C64.CPU
 
         // XAA / ANE (unstable on real silicon). Common practical approximation:
         // A = X AND immediate.
+
+        /// <summary>Executes the XAA instruction using immediate addressing.</summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private void XAA_IM()
         {
@@ -1053,6 +1073,8 @@ namespace C64.CPU
         }
 
         // LAX immediate unofficial variant.
+
+        /// <summary>Executes the LAX instruction using immediate addressing.</summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private void LAX_IM()
         {
@@ -1062,6 +1084,7 @@ namespace C64.CPU
             Set_FlagsNZ(v);
         }
 
+        /// <summary>Executes the LAS instruction using absolute Y-indexed addressing.</summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private void LAS_AY()
         {
@@ -1076,6 +1099,8 @@ namespace C64.CPU
         // AHX stores (A AND X AND (high_byte_of_effective_address + 1)).
         // With page-boundary crossing addressing modes, the actual address calculation
         // may wrap differently than expected. The high-byte formula captures this subtlety.
+
+        /// <summary>Executes the AHX instruction using indirect Y-indexed addressing.</summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private void AHX_IY()
         {
@@ -1085,6 +1110,7 @@ namespace C64.CPU
             WriteByteToMemory(addr, (byte)(registers.A & registers.X & m));
         }
 
+        /// <summary>Executes the AHX instruction using absolute Y-indexed addressing.</summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private void AHX_AY()
         {
@@ -1094,6 +1120,7 @@ namespace C64.CPU
             WriteByteToMemory(addr, (byte)(registers.A & registers.X & m));
         }
 
+        /// <summary>Executes the TAS instruction using absolute Y-indexed addressing.</summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private void TAS_AY()
         {
@@ -1104,6 +1131,7 @@ namespace C64.CPU
             WriteByteToMemory(addr, (byte)(s & m));
         }
 
+        /// <summary>Executes the SHY instruction using absolute X-indexed addressing.</summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private void SHY_AX()
         {
@@ -1112,6 +1140,7 @@ namespace C64.CPU
             WriteByteToMemory(addr, (byte)(registers.Y & m));
         }
 
+        /// <summary>Executes the SHX instruction using absolute Y-indexed addressing.</summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private void SHX_AY()
         {
@@ -1122,18 +1151,24 @@ namespace C64.CPU
         #endregion
 
         #region Addressing Modes
+
+        /// <summary>Reads the next immediate operand byte.</summary>
         [MethodImpl(MethodImplOptions.AggressiveOptimization)]
         private byte Immediate()
         {
             byte addr = GetNextByteInstruction();
             return addr;
         }
+
+        /// <summary>Reads the next absolute operand address.</summary>
         [MethodImpl(MethodImplOptions.AggressiveOptimization)]
         private ulong Absolute()
         {
             ulong addr = GetNextWordInstruction();
             return addr & 0xFFFF;
         }
+
+        /// <summary>Reads an absolute-indirect jump target.</summary>
         [MethodImpl(MethodImplOptions.AggressiveOptimization)]
         private ulong AbsoluteIndirect()
         {
@@ -1154,6 +1189,8 @@ namespace C64.CPU
             ulong value = (ulong)((hi << 8) | lo);
             return value & 0xFFFF;
         }
+
+        /// <summary>Reads an absolute address indexed by X.</summary>
         [MethodImpl(MethodImplOptions.AggressiveOptimization)]
         private ulong X_Indexed_Absolute(bool checkBoundary = true)
         {
@@ -1162,6 +1199,8 @@ namespace C64.CPU
             if (CrossBoundary(addr, baseAddr) && checkBoundary) { cyclesThisOperation += 1; }
             return addr & 0xFFFF;
         }
+
+        /// <summary>Reads an absolute address indexed by Y.</summary>
         [MethodImpl(MethodImplOptions.AggressiveOptimization)]
         private ulong Y_Indexed_Absolute(bool checkBoundary = true)
         {
@@ -1170,24 +1209,32 @@ namespace C64.CPU
             if (CrossBoundary(addr, baseAddr) && checkBoundary) { cyclesThisOperation += 1; }
             return addr & 0xFFFF;
         }
+
+        /// <summary>Reads the next zero-page operand address.</summary>
         [MethodImpl(MethodImplOptions.AggressiveOptimization)]
         private byte Zero_Page()
         {
             byte addr = GetNextByteInstruction();
             return addr;
         }
+
+        /// <summary>Reads a zero-page address indexed by X.</summary>
         [MethodImpl(MethodImplOptions.AggressiveOptimization)]
         private byte X_Indexed_Zero_Page()
         {
             byte addr = (byte)((Zero_Page() + registers.X) & 0xFF);
             return addr;
         }
+
+        /// <summary>Reads a zero-page address indexed by Y.</summary>
         [MethodImpl(MethodImplOptions.AggressiveOptimization)]
         private byte Y_Indexed_Zero_Page()
         {
             byte addr = (byte)((Zero_Page() + registers.Y) & 0xFF);
             return addr;
         }
+
+        /// <summary>Reads an indexed-indirect zero-page address.</summary>
         [MethodImpl(MethodImplOptions.AggressiveOptimization)]
         private ulong X_Indexed_Zero_Page_Indirect()
         {
@@ -1197,6 +1244,8 @@ namespace C64.CPU
             ulong addr = (ulong)((value2 << 8) | value1);
             return addr & 0xFFFF;
         }
+
+        /// <summary>Reads an indirect-indexed zero-page address.</summary>
         [MethodImpl(MethodImplOptions.AggressiveOptimization)]
         private ulong Zero_Page_Indirect_Y_Indexed(bool checkBoundary = true)
         {
@@ -1208,6 +1257,8 @@ namespace C64.CPU
             if (CrossBoundary(addr, value3) && checkBoundary) { cyclesThisOperation += 1; }
             return addr & 0xFFFF;
         }
+
+        /// <summary>Sets flags nz.</summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private void Set_FlagsNZ(byte value)
         {
@@ -1219,108 +1270,144 @@ namespace C64.CPU
         #region Documented Opcodes
 
         #region LD*
+
+        /// <summary>Executes the LDA instruction using immediate addressing.</summary>
         private void LDA_IM()
         {
             registers.A = Immediate();
             Set_FlagsNZ(registers.A);
             cyclesThisOperation += 2;
         }
+
+        /// <summary>Executes the LDA instruction using absolute addressing.</summary>
         private void LDA_AB()
         {
             registers.A = ReadByteFromMemory(Absolute());
             Set_FlagsNZ(registers.A);
             cyclesThisOperation += 4;
         }
+
+        /// <summary>Executes the LDA instruction using absolute X-indexed addressing.</summary>
         private void LDA_ABX()
         {
             registers.A = ReadByteFromMemory(X_Indexed_Absolute());
             Set_FlagsNZ(registers.A);
             cyclesThisOperation += 4;
         }
+
+        /// <summary>Executes the LDA instruction using absolute Y-indexed addressing.</summary>
         private void LDA_ABY()
         {
             registers.A = ReadByteFromMemory(Y_Indexed_Absolute());
             Set_FlagsNZ(registers.A);
             cyclesThisOperation += 4;
         }
+
+        /// <summary>Executes the LDA instruction using zero-page addressing.</summary>
         private void LDA_ZP()
         {
             registers.A = ReadByteFromMemory(Zero_Page());
             Set_FlagsNZ(registers.A);
             cyclesThisOperation += 3;
         }
+
+        /// <summary>Executes the LDA instruction using zero-page X-indexed addressing.</summary>
         private void LDA_ZPX()
         {
             registers.A = ReadByteFromMemory(X_Indexed_Zero_Page());
             Set_FlagsNZ(registers.A);
             cyclesThisOperation += 4;
         }
+
+        /// <summary>Executes the LDA instruction using indexed-indirect zero-page addressing.</summary>
         private void LDA_ZPIX()
         {
             registers.A = ReadByteFromMemory(X_Indexed_Zero_Page_Indirect());
             Set_FlagsNZ(registers.A);
             cyclesThisOperation += 6;
         }
+
+        /// <summary>Executes the LDA instruction using indirect-indexed zero-page addressing.</summary>
         private void LDA_ZPIY()
         {
             registers.A = ReadByteFromMemory(Zero_Page_Indirect_Y_Indexed());
             Set_FlagsNZ(registers.A);
             cyclesThisOperation += 5;
         }
+
+        /// <summary>Executes the LDX instruction using immediate addressing.</summary>
         private void LDX_IM()
         {
             registers.X = Immediate();
             Set_FlagsNZ(registers.X);
             cyclesThisOperation += 2;
         }
+
+        /// <summary>Executes the LDX instruction using absolute addressing.</summary>
         private void LDX_AB()
         {
             registers.X = ReadByteFromMemory(Absolute());
             Set_FlagsNZ(registers.X);
             cyclesThisOperation += 4;
         }
+
+        /// <summary>Executes the LDX instruction using absolute Y-indexed addressing.</summary>
         private void LDX_ABY()
         {
             registers.X = ReadByteFromMemory(Y_Indexed_Absolute());
             Set_FlagsNZ(registers.X);
             cyclesThisOperation += 4;
         }
+
+        /// <summary>Executes the LDX instruction using zero-page addressing.</summary>
         private void LDX_ZP()
         {
             registers.X = ReadByteFromMemory(Zero_Page());
             Set_FlagsNZ(registers.X);
             cyclesThisOperation += 3;
         }
+
+        /// <summary>Executes the LDX instruction using zero-page Y-indexed addressing.</summary>
         private void LDX_ZPY()
         {
             registers.X = ReadByteFromMemory(Y_Indexed_Zero_Page());
             Set_FlagsNZ(registers.X);
             cyclesThisOperation += 4;
         }
+
+        /// <summary>Executes the LDY instruction using immediate addressing.</summary>
         private void LDY_IM()
         {
             registers.Y = Immediate();
             Set_FlagsNZ(registers.Y);
             cyclesThisOperation += 2;
         }
+
+        /// <summary>Executes the LDY instruction using absolute addressing.</summary>
         private void LDY_AB()
         {
             registers.Y = ReadByteFromMemory(Absolute());
             Set_FlagsNZ(registers.Y);
             cyclesThisOperation += 4;
         }
+
+        /// <summary>Executes the LDY instruction using absolute X-indexed addressing.</summary>
         private void LDY_ABX()
         {
             registers.Y = ReadByteFromMemory(X_Indexed_Absolute());
             Set_FlagsNZ(registers.Y);
             cyclesThisOperation += 4;
         }
+
+        /// <summary>Executes the LDY instruction using zero-page addressing.</summary>
         private void LDY_ZP()
         {
             registers.Y = ReadByteFromMemory(Zero_Page());
             Set_FlagsNZ(registers.Y);
             cyclesThisOperation += 3;
         }
+
+        /// <summary>Executes the LDY instruction using zero-page X-indexed addressing.</summary>
         private void LDY_ZPX()
         {
             registers.Y = ReadByteFromMemory(X_Indexed_Zero_Page());
@@ -1330,66 +1417,92 @@ namespace C64.CPU
         #endregion
 
         #region ST*
+
+        /// <summary>Executes the STA instruction using absolute addressing.</summary>
         private void STA_AB()
         {
             WriteByteToMemory(Absolute(), registers.A);
             cyclesThisOperation += 4;
         }
+
+        /// <summary>Executes the STA instruction using absolute X-indexed addressing.</summary>
         private void STA_ABX()
         {
             WriteByteToMemory(X_Indexed_Absolute(false), registers.A);
             cyclesThisOperation += 5;
         }
+
+        /// <summary>Executes the STA instruction using absolute Y-indexed addressing.</summary>
         private void STA_ABY()
         {
             WriteByteToMemory(Y_Indexed_Absolute(false), registers.A);
             cyclesThisOperation += 5;
         }
+
+        /// <summary>Executes the STA instruction using zero-page addressing.</summary>
         private void STA_ZP()
         {
             WriteByteToMemory(Zero_Page(), registers.A);
             cyclesThisOperation += 3;
         }
+
+        /// <summary>Executes the STA instruction using zero-page X-indexed addressing.</summary>
         private void STA_ZPX()
         {
             WriteByteToMemory(X_Indexed_Zero_Page(), registers.A);
             cyclesThisOperation += 4;
         }
+
+        /// <summary>Executes the STA instruction using indexed-indirect zero-page addressing.</summary>
         private void STA_ZPIX()
         {
             WriteByteToMemory(X_Indexed_Zero_Page_Indirect(), registers.A);
             cyclesThisOperation += 6;
         }
+
+        /// <summary>Executes the STA instruction using indirect-indexed zero-page addressing.</summary>
         private void STA_ZPIY()
         {
             WriteByteToMemory(Zero_Page_Indirect_Y_Indexed(false), registers.A);
             cyclesThisOperation += 6;
         }
+
+        /// <summary>Executes the STX instruction using absolute addressing.</summary>
         private void STX_AB()
         {
             WriteByteToMemory(Absolute(), registers.X);
             cyclesThisOperation += 4;
         }
+
+        /// <summary>Executes the STX instruction using zero-page addressing.</summary>
         private void STX_ZP()
         {
             WriteByteToMemory(Zero_Page(), registers.X);
             cyclesThisOperation += 3;
         }
+
+        /// <summary>Executes the STX instruction using zero-page Y-indexed addressing.</summary>
         private void STX_ZPY()
         {
             WriteByteToMemory(Y_Indexed_Zero_Page(), registers.X);
             cyclesThisOperation += 4;
         }
+
+        /// <summary>Executes the STY instruction using absolute addressing.</summary>
         private void STY_AB()
         {
             WriteByteToMemory(Absolute(), registers.Y);
             cyclesThisOperation += 4;
         }
+
+        /// <summary>Executes the STY instruction using zero-page addressing.</summary>
         private void STY_ZP()
         {
             WriteByteToMemory(Zero_Page(), registers.Y);
             cyclesThisOperation += 3;
         }
+
+        /// <summary>Executes the STY instruction using zero-page X-indexed addressing.</summary>
         private void STY_ZPX()
         {
             WriteByteToMemory(X_Indexed_Zero_Page(), registers.Y);
@@ -1398,35 +1511,47 @@ namespace C64.CPU
         #endregion
 
         #region T**
+
+        /// <summary>Executes the TAX CPU operation.</summary>
         private void TAX()
         {
             registers.X = registers.A;
             Set_FlagsNZ(registers.X);
             cyclesThisOperation += 2;
         }
+
+        /// <summary>Executes the TAY CPU operation.</summary>
         private void TAY()
         {
             registers.Y = registers.A;
             Set_FlagsNZ(registers.Y);
             cyclesThisOperation += 2;
         }
+
+        /// <summary>Executes the TSX CPU operation.</summary>
         private void TSX()
         {
             registers.X = registers.S;
             Set_FlagsNZ(registers.X);
             cyclesThisOperation += 2;
         }
+
+        /// <summary>Executes the TXA CPU operation.</summary>
         private void TXA()
         {
             registers.A = registers.X;
             Set_FlagsNZ(registers.A);
             cyclesThisOperation += 2;
         }
+
+        /// <summary>Executes the TXS CPU operation.</summary>
         private void TXS()
         {
             registers.S = registers.X;
             cyclesThisOperation += 2;
         }
+
+        /// <summary>Executes the TYA CPU operation.</summary>
         private void TYA()
         {
             registers.A = registers.Y;
@@ -1436,16 +1561,22 @@ namespace C64.CPU
         #endregion
 
         #region SE*
+
+        /// <summary>Executes the SEC CPU operation.</summary>
         private void SEC()
         {
             registers.Flags.C = true;
             cyclesThisOperation += 2;
         }
+
+        /// <summary>Executes the SED CPU operation.</summary>
         private void SED()
         {
             registers.Flags.D = true;
             cyclesThisOperation += 2;
         }
+
+        /// <summary>Executes the SEI CPU operation.</summary>
         private void SEI()
         {
             registers.Flags.I = true;
@@ -1454,11 +1585,15 @@ namespace C64.CPU
         #endregion
 
         #region PH*
+
+        /// <summary>Executes the PHA CPU operation.</summary>
         private void PHA()
         {
             PushByteToStack(registers.A);
             cyclesThisOperation += 3;
         }
+
+        /// <summary>Executes the PHP CPU operation.</summary>
         private void PHP()
         {
             byte addr = registers.Flags.GetFlagsAsByte();
@@ -1470,12 +1605,16 @@ namespace C64.CPU
         #endregion
 
         #region PL*
+
+        /// <summary>Executes the PLA CPU operation.</summary>
         private void PLA()
         {
             registers.A = PopByteFromStack();
             Set_FlagsNZ(registers.A);
             cyclesThisOperation += 4;
         }
+
+        /// <summary>Executes the PLP CPU operation.</summary>
         private void PLP()
         {
             byte value = PopByteFromStack();
@@ -1485,21 +1624,29 @@ namespace C64.CPU
         #endregion
 
         #region CL*
+
+        /// <summary>Executes the CLC CPU operation.</summary>
         private void CLC()
         {
             registers.Flags.C = false;
             cyclesThisOperation += 2;
         }
+
+        /// <summary>Executes the CLD CPU operation.</summary>
         private void CLD()
         {
             registers.Flags.D = false;
             cyclesThisOperation += 2;
         }
+
+        /// <summary>Executes the CLI CPU operation.</summary>
         private void CLI()
         {
             registers.Flags.I = false;
             cyclesThisOperation += 2;
         }
+
+        /// <summary>Executes the CLV CPU operation.</summary>
         private void CLV()
         {
             registers.Flags.V = false;
@@ -1508,6 +1655,8 @@ namespace C64.CPU
         #endregion
 
         #region DE*
+
+        /// <summary>Executes the DECA CPU operation.</summary>
         private void DECA()
         {
             ulong addr = Absolute();
@@ -1517,6 +1666,8 @@ namespace C64.CPU
             Set_FlagsNZ(value2);
             cyclesThisOperation += 6;
         }
+
+        /// <summary>Executes the DECXA CPU operation.</summary>
         private void DECXA()
         {
             ulong addr = X_Indexed_Absolute(false);
@@ -1526,6 +1677,8 @@ namespace C64.CPU
             Set_FlagsNZ(value2);
             cyclesThisOperation += 7;
         }
+
+        /// <summary>Executes the DECZP CPU operation.</summary>
         private void DECZP()
         {
             ulong addr = Zero_Page();
@@ -1535,6 +1688,8 @@ namespace C64.CPU
             Set_FlagsNZ(value2);
             cyclesThisOperation += 5;
         }
+
+        /// <summary>Executes the DECXZP CPU operation.</summary>
         private void DECXZP()
         {
             ulong addr = X_Indexed_Zero_Page();
@@ -1544,6 +1699,8 @@ namespace C64.CPU
             Set_FlagsNZ(value2);
             cyclesThisOperation += 6;
         }
+
+        /// <summary>Executes the DEX CPU operation.</summary>
         private void DEX()
         {
             byte value2 = (byte)(registers.X - 1);
@@ -1551,6 +1708,8 @@ namespace C64.CPU
             Set_FlagsNZ(value2);
             cyclesThisOperation += 2;
         }
+
+        /// <summary>Executes the DEY CPU operation.</summary>
         private void DEY()
         {
             byte value2 = (byte)(registers.Y - 1);
@@ -1561,6 +1720,8 @@ namespace C64.CPU
         #endregion
 
         #region IN*
+
+        /// <summary>Executes the INCA CPU operation.</summary>
         private void INCA()
         {
             ulong addr = Absolute();
@@ -1570,6 +1731,8 @@ namespace C64.CPU
             Set_FlagsNZ(value1);
             cyclesThisOperation += 6;
         }
+
+        /// <summary>Executes the INCXA CPU operation.</summary>
         private void INCXA()
         {
             ulong addr = X_Indexed_Absolute(false);
@@ -1579,6 +1742,8 @@ namespace C64.CPU
             Set_FlagsNZ(value1);
             cyclesThisOperation += 7;
         }
+
+        /// <summary>Executes the INCZP CPU operation.</summary>
         private void INCZP()
         {
             ulong addr = Zero_Page();
@@ -1588,6 +1753,8 @@ namespace C64.CPU
             Set_FlagsNZ(value1);
             cyclesThisOperation += 5;
         }
+
+        /// <summary>Executes the INCXZP CPU operation.</summary>
         private void INCXZP()
         {
             ulong addr = X_Indexed_Zero_Page();
@@ -1597,6 +1764,8 @@ namespace C64.CPU
             Set_FlagsNZ(value1);
             cyclesThisOperation += 6;
         }
+
+        /// <summary>Executes the INX CPU operation.</summary>
         private void INX()
         {
             byte value1 = (byte)(registers.X + 1);
@@ -1604,6 +1773,8 @@ namespace C64.CPU
             Set_FlagsNZ(value1);
             cyclesThisOperation += 2;
         }
+
+        /// <summary>Executes the INY CPU operation.</summary>
         private void INY()
         {
             byte value1 = (byte)(registers.Y + 1);
@@ -1614,6 +1785,8 @@ namespace C64.CPU
         #endregion
 
         #region CM*
+
+        /// <summary>Executes the CMPI CPU operation.</summary>
         private void CMPI()
         {
             byte addr = Immediate();
@@ -1622,6 +1795,8 @@ namespace C64.CPU
             Set_FlagsNZ(value2);
             cyclesThisOperation += 2;
         }
+
+        /// <summary>Executes the CMPA CPU operation.</summary>
         private void CMPA()
         {
             byte addr = ReadByteFromMemory(Absolute());
@@ -1630,6 +1805,8 @@ namespace C64.CPU
             Set_FlagsNZ(value2);
             cyclesThisOperation += 4;
         }
+
+        /// <summary>Executes the CMPXA CPU operation.</summary>
         private void CMPXA()
         {
             byte addr = ReadByteFromMemory(X_Indexed_Absolute());
@@ -1638,6 +1815,8 @@ namespace C64.CPU
             Set_FlagsNZ(value2);
             cyclesThisOperation += 4;
         }
+
+        /// <summary>Executes the CMPYA CPU operation.</summary>
         private void CMPYA()
         {
             byte addr = ReadByteFromMemory(Y_Indexed_Absolute());
@@ -1646,6 +1825,8 @@ namespace C64.CPU
             Set_FlagsNZ(value2);
             cyclesThisOperation += 4;
         }
+
+        /// <summary>Executes the CMPZ CPU operation.</summary>
         private void CMPZ()
         {
             byte addr = ReadByteFromMemory(Zero_Page());
@@ -1654,6 +1835,8 @@ namespace C64.CPU
             Set_FlagsNZ(value2);
             cyclesThisOperation += 3;
         }
+
+        /// <summary>Executes the CMPXZ CPU operation.</summary>
         private void CMPXZ()
         {
             byte addr = ReadByteFromMemory(X_Indexed_Zero_Page());
@@ -1662,6 +1845,8 @@ namespace C64.CPU
             Set_FlagsNZ(value2);
             cyclesThisOperation += 4;
         }
+
+        /// <summary>Executes the CMPXZI CPU operation.</summary>
         private void CMPXZI()
         {
             byte addr = ReadByteFromMemory(X_Indexed_Zero_Page_Indirect());
@@ -1670,6 +1855,8 @@ namespace C64.CPU
             Set_FlagsNZ(value2);
             cyclesThisOperation += 6;
         }
+
+        /// <summary>Executes the CMPYZI CPU operation.</summary>
         private void CMPYZI()
         {
             byte addr = ReadByteFromMemory(Zero_Page_Indirect_Y_Indexed());
@@ -1681,6 +1868,8 @@ namespace C64.CPU
         #endregion
 
         #region CPX
+
+        /// <summary>Executes the CPXI CPU operation.</summary>
         private void CPXI()
         {
             byte addr = Immediate();
@@ -1689,6 +1878,8 @@ namespace C64.CPU
             Set_FlagsNZ(value);
             cyclesThisOperation += 2;
         }
+
+        /// <summary>Executes the CPXA CPU operation.</summary>
         private void CPXA()
         {
             byte addr = ReadByteFromMemory(Absolute());
@@ -1697,6 +1888,8 @@ namespace C64.CPU
             Set_FlagsNZ(value);
             cyclesThisOperation += 4;
         }
+
+        /// <summary>Executes the CPXZ CPU operation.</summary>
         private void CPXZ()
         {
             byte addr = ReadByteFromMemory(Zero_Page());
@@ -1708,6 +1901,8 @@ namespace C64.CPU
         #endregion
 
         #region CPY
+
+        /// <summary>Executes the CPYI CPU operation.</summary>
         private void CPYI()
         {
             byte addr = Immediate();
@@ -1716,6 +1911,8 @@ namespace C64.CPU
             Set_FlagsNZ(value);
             cyclesThisOperation += 2;
         }
+
+        /// <summary>Executes the CPYA CPU operation.</summary>
         private void CPYA()
         {
             byte addr = ReadByteFromMemory(Absolute());
@@ -1724,6 +1921,8 @@ namespace C64.CPU
             Set_FlagsNZ(value);
             cyclesThisOperation += 4;
         }
+
+        /// <summary>Executes the CPYZ CPU operation.</summary>
         private void CPYZ()
         {
             byte addr = ReadByteFromMemory(Zero_Page());
@@ -1735,54 +1934,72 @@ namespace C64.CPU
         #endregion
 
         #region ADC
+
+        /// <summary>Executes the ADCI CPU operation.</summary>
         private void ADCI()
         {
             byte value = Immediate();
             ADC(value);
             cyclesThisOperation += 2;
         }
+
+        /// <summary>Executes the ADCA CPU operation.</summary>
         private void ADCA()
         {
             byte value = ReadByteFromMemory(Absolute());
             ADC(value);
             cyclesThisOperation += 4;
         }
+
+        /// <summary>Executes the ADCXA CPU operation.</summary>
         private void ADCXA()
         {
             byte value = ReadByteFromMemory(X_Indexed_Absolute());
             ADC(value);
             cyclesThisOperation += 4;
         }
+
+        /// <summary>Executes the ADCYA CPU operation.</summary>
         private void ADCYA()
         {
             byte value = ReadByteFromMemory(Y_Indexed_Absolute());
             ADC(value);
             cyclesThisOperation += 4;
         }
+
+        /// <summary>Executes the ADCZ CPU operation.</summary>
         private void ADCZ()
         {
             byte value = ReadByteFromMemory(Zero_Page());
             ADC(value);
             cyclesThisOperation += 3;
         }
+
+        /// <summary>Executes the ADCXZ CPU operation.</summary>
         private void ADCXZ()
         {
             byte value = ReadByteFromMemory(X_Indexed_Zero_Page());
             ADC(value);
             cyclesThisOperation += 4;
         }
+
+        /// <summary>Executes the ADCXZI CPU operation.</summary>
         private void ADCXZI()
         {
             byte value = ReadByteFromMemory(X_Indexed_Zero_Page_Indirect());
             ADC(value);
             cyclesThisOperation += 6;
         }
+
+        /// <summary>Executes the ADCYZI CPU operation.</summary>
         private void ADCYZI()
         {
             byte value = ReadByteFromMemory(Zero_Page_Indirect_Y_Indexed());
             ADC(value);
             cyclesThisOperation += 5;
         }
+
+        /// <summary>Executes the ADC CPU operation.</summary>
         private void ADC(byte value)
         {
             int carry = registers.Flags.C ? 1 : 0;
@@ -1814,54 +2031,72 @@ namespace C64.CPU
         #endregion
 
         #region SBC
+
+        /// <summary>Executes the SBCI CPU operation.</summary>
         private void SBCI()
         {
             byte value = Immediate();
             SBC(value);
             cyclesThisOperation += 2;
         }
+
+        /// <summary>Executes the SBCA CPU operation.</summary>
         private void SBCA()
         {
             byte value = ReadByteFromMemory(Absolute());
             SBC(value);
             cyclesThisOperation += 4;
         }
+
+        /// <summary>Executes the SBCXA CPU operation.</summary>
         private void SBCXA()
         {
             byte value = ReadByteFromMemory(X_Indexed_Absolute());
             SBC(value);
             cyclesThisOperation += 4;
         }
+
+        /// <summary>Executes the SBCYA CPU operation.</summary>
         private void SBCYA()
         {
             byte value = ReadByteFromMemory(Y_Indexed_Absolute());
             SBC(value);
             cyclesThisOperation += 4;
         }
+
+        /// <summary>Executes the SBCZ CPU operation.</summary>
         private void SBCZ()
         {
             byte value = ReadByteFromMemory(Zero_Page());
             SBC(value);
             cyclesThisOperation += 3;
         }
+
+        /// <summary>Executes the SBCXZ CPU operation.</summary>
         private void SBCXZ()
         {
             byte value = ReadByteFromMemory(X_Indexed_Zero_Page());
             SBC(value);
             cyclesThisOperation += 4;
         }
+
+        /// <summary>Executes the SBCXZI CPU operation.</summary>
         private void SBCXZI()
         {
             byte value = ReadByteFromMemory(X_Indexed_Zero_Page_Indirect());
             SBC(value);
             cyclesThisOperation += 6;
         }
+
+        /// <summary>Executes the SBCYZI CPU operation.</summary>
         private void SBCYZI()
         {
             byte value = ReadByteFromMemory(Zero_Page_Indirect_Y_Indexed());
             SBC(value);
             cyclesThisOperation += 5;
         }
+
+        /// <summary>Executes the SBC CPU operation.</summary>
         private void SBC(byte value)
         {
             int carry = registers.Flags.C ? 1 : 0;
@@ -1892,6 +2127,8 @@ namespace C64.CPU
         #endregion
 
         #region EOR
+
+        /// <summary>Executes the EORI CPU operation.</summary>
         private void EORI()
         {
             byte addr = Immediate();
@@ -1900,6 +2137,8 @@ namespace C64.CPU
             Set_FlagsNZ(value);
             cyclesThisOperation += 2;
         }
+
+        /// <summary>Executes the EORA CPU operation.</summary>
         private void EORA()
         {
             byte addr = ReadByteFromMemory(Absolute());
@@ -1908,6 +2147,8 @@ namespace C64.CPU
             Set_FlagsNZ(value);
             cyclesThisOperation += 4;
         }
+
+        /// <summary>Executes the EORXA CPU operation.</summary>
         private void EORXA()
         {
             byte addr = ReadByteFromMemory(X_Indexed_Absolute());
@@ -1916,6 +2157,8 @@ namespace C64.CPU
             Set_FlagsNZ(value);
             cyclesThisOperation += 4;
         }
+
+        /// <summary>Executes the EORYA CPU operation.</summary>
         private void EORYA()
         {
             byte addr = ReadByteFromMemory(Y_Indexed_Absolute());
@@ -1924,6 +2167,8 @@ namespace C64.CPU
             Set_FlagsNZ(value);
             cyclesThisOperation += 4;
         }
+
+        /// <summary>Executes the EORZ CPU operation.</summary>
         private void EORZ()
         {
             byte addr = ReadByteFromMemory(Zero_Page());
@@ -1932,6 +2177,8 @@ namespace C64.CPU
             Set_FlagsNZ(value);
             cyclesThisOperation += 3;
         }
+
+        /// <summary>Executes the EORXZ CPU operation.</summary>
         private void EORXZ()
         {
             byte addr = ReadByteFromMemory(X_Indexed_Zero_Page());
@@ -1940,6 +2187,8 @@ namespace C64.CPU
             Set_FlagsNZ(value);
             cyclesThisOperation += 4;
         }
+
+        /// <summary>Executes the EORXZI CPU operation.</summary>
         private void EORXZI()
         {
             byte addr = ReadByteFromMemory(X_Indexed_Zero_Page_Indirect());
@@ -1948,6 +2197,8 @@ namespace C64.CPU
             Set_FlagsNZ(value);
             cyclesThisOperation += 6;
         }
+
+        /// <summary>Executes the EORYZI CPU operation.</summary>
         private void EORYZI()
         {
             byte addr = ReadByteFromMemory(Zero_Page_Indirect_Y_Indexed());
@@ -1959,6 +2210,8 @@ namespace C64.CPU
         #endregion
 
         #region ORA
+
+        /// <summary>Executes the ORAI CPU operation.</summary>
         private void ORAI()
         {
             byte addr = Immediate();
@@ -1967,6 +2220,8 @@ namespace C64.CPU
             Set_FlagsNZ(value);
             cyclesThisOperation += 2;
         }
+
+        /// <summary>Executes the ORAA CPU operation.</summary>
         private void ORAA()
         {
             byte addr = ReadByteFromMemory(Absolute());
@@ -1975,6 +2230,8 @@ namespace C64.CPU
             Set_FlagsNZ(value);
             cyclesThisOperation += 4;
         }
+
+        /// <summary>Executes the ORAXA CPU operation.</summary>
         private void ORAXA()
         {
             byte addr = ReadByteFromMemory(X_Indexed_Absolute());
@@ -1983,6 +2240,8 @@ namespace C64.CPU
             Set_FlagsNZ(value);
             cyclesThisOperation += 4;
         }
+
+        /// <summary>Executes the ORAYA CPU operation.</summary>
         private void ORAYA()
         {
             byte addr = ReadByteFromMemory(Y_Indexed_Absolute());
@@ -1991,6 +2250,8 @@ namespace C64.CPU
             Set_FlagsNZ(value);
             cyclesThisOperation += 4;
         }
+
+        /// <summary>Executes the ORAZ CPU operation.</summary>
         private void ORAZ()
         {
             byte addr = ReadByteFromMemory(Zero_Page());
@@ -1999,6 +2260,8 @@ namespace C64.CPU
             Set_FlagsNZ(value);
             cyclesThisOperation += 3;
         }
+
+        /// <summary>Executes the ORAXZ CPU operation.</summary>
         private void ORAXZ()
         {
             byte addr = ReadByteFromMemory(X_Indexed_Zero_Page());
@@ -2007,6 +2270,8 @@ namespace C64.CPU
             Set_FlagsNZ(value);
             cyclesThisOperation += 4;
         }
+
+        /// <summary>Executes the ORAXZI CPU operation.</summary>
         private void ORAXZI()
         {
             byte addr = ReadByteFromMemory(X_Indexed_Zero_Page_Indirect());
@@ -2015,6 +2280,8 @@ namespace C64.CPU
             Set_FlagsNZ(value);
             cyclesThisOperation += 6;
         }
+
+        /// <summary>Executes the ORAYZI CPU operation.</summary>
         private void ORAYZI()
         {
             byte addr = ReadByteFromMemory(Zero_Page_Indirect_Y_Indexed());
@@ -2026,6 +2293,8 @@ namespace C64.CPU
         #endregion
 
         #region AND
+
+        /// <summary>Executes the ANDI CPU operation.</summary>
         private void ANDI()
         {
             byte addr = Immediate();
@@ -2034,6 +2303,8 @@ namespace C64.CPU
             Set_FlagsNZ(value);
             cyclesThisOperation += 2;
         }
+
+        /// <summary>Executes the ANDA CPU operation.</summary>
         private void ANDA()
         {
             byte addr = ReadByteFromMemory(Absolute());
@@ -2042,6 +2313,8 @@ namespace C64.CPU
             Set_FlagsNZ(value);
             cyclesThisOperation += 4;
         }
+
+        /// <summary>Executes the ANDXA CPU operation.</summary>
         private void ANDXA()
         {
             byte addr = ReadByteFromMemory(X_Indexed_Absolute());
@@ -2050,6 +2323,8 @@ namespace C64.CPU
             Set_FlagsNZ(value);
             cyclesThisOperation += 4;
         }
+
+        /// <summary>Executes the ANDYA CPU operation.</summary>
         private void ANDYA()
         {
             byte addr = ReadByteFromMemory(Y_Indexed_Absolute());
@@ -2058,6 +2333,8 @@ namespace C64.CPU
             Set_FlagsNZ(value);
             cyclesThisOperation += 4;
         }
+
+        /// <summary>Executes the ANDZ CPU operation.</summary>
         private void ANDZ()
         {
             byte addr = ReadByteFromMemory(Zero_Page());
@@ -2066,6 +2343,8 @@ namespace C64.CPU
             Set_FlagsNZ(value);
             cyclesThisOperation += 3;
         }
+
+        /// <summary>Executes the ANDXZ CPU operation.</summary>
         private void ANDXZ()
         {
             byte addr = ReadByteFromMemory(X_Indexed_Zero_Page());
@@ -2074,6 +2353,8 @@ namespace C64.CPU
             Set_FlagsNZ(value);
             cyclesThisOperation += 4;
         }
+
+        /// <summary>Executes the ANDXZI CPU operation.</summary>
         private void ANDXZI()
         {
             byte addr = ReadByteFromMemory(X_Indexed_Zero_Page_Indirect());
@@ -2082,6 +2363,8 @@ namespace C64.CPU
             Set_FlagsNZ(value);
             cyclesThisOperation += 6;
         }
+
+        /// <summary>Executes the ANDYZI CPU operation.</summary>
         private void ANDYZI()
         {
             byte addr = ReadByteFromMemory(Zero_Page_Indirect_Y_Indexed());
@@ -2093,6 +2376,8 @@ namespace C64.CPU
         #endregion
 
         #region BIT
+
+        /// <summary>Executes the BITA CPU operation.</summary>
         private void BITA()
         {
             byte addr = ReadByteFromMemory(Absolute());
@@ -2102,6 +2387,8 @@ namespace C64.CPU
             registers.Flags.Z = (value == 0);
             cyclesThisOperation += 4;
         }
+
+        /// <summary>Executes the BITZ CPU operation.</summary>
         private void BITZ()
         {
             byte addr = ReadByteFromMemory(Zero_Page());
@@ -2114,6 +2401,8 @@ namespace C64.CPU
         #endregion
 
         #region ASL
+
+        /// <summary>Executes the ASLAC CPU operation.</summary>
         private void ASLAC()
         {
             byte addr = registers.A;
@@ -2124,6 +2413,8 @@ namespace C64.CPU
             registers.A = value;
             cyclesThisOperation += 2;
         }
+
+        /// <summary>Executes the ASLA CPU operation.</summary>
         private void ASLA()
         {
             ulong addr = Absolute();
@@ -2135,6 +2426,8 @@ namespace C64.CPU
             WriteByteToMemory(addr, value2);
             cyclesThisOperation += 6;
         }
+
+        /// <summary>Executes the ASLXA CPU operation.</summary>
         private void ASLXA()
         {
             ulong addr = X_Indexed_Absolute(false);
@@ -2146,6 +2439,8 @@ namespace C64.CPU
             WriteByteToMemory(addr, value2);
             cyclesThisOperation += 7;
         }
+
+        /// <summary>Executes the ASLZ CPU operation.</summary>
         private void ASLZ()
         {
             ulong addr = Zero_Page();
@@ -2157,6 +2452,8 @@ namespace C64.CPU
             WriteByteToMemory(addr, value2);
             cyclesThisOperation += 5;
         }
+
+        /// <summary>Executes the ASLXZ CPU operation.</summary>
         private void ASLXZ()
         {
             ulong addr = X_Indexed_Zero_Page();
@@ -2171,6 +2468,8 @@ namespace C64.CPU
         #endregion
 
         #region LSR
+
+        /// <summary>Executes the LSRAC CPU operation.</summary>
         private void LSRAC()
         {
             byte addr = registers.A;
@@ -2181,6 +2480,8 @@ namespace C64.CPU
             registers.A = value;
             cyclesThisOperation += 2;
         }
+
+        /// <summary>Executes the LSRA CPU operation.</summary>
         private void LSRA()
         {
             ulong addr = Absolute();
@@ -2192,6 +2493,8 @@ namespace C64.CPU
             WriteByteToMemory(addr, value2);
             cyclesThisOperation += 6;
         }
+
+        /// <summary>Executes the LSRXA CPU operation.</summary>
         private void LSRXA()
         {
             ulong addr = X_Indexed_Absolute(false);
@@ -2203,6 +2506,8 @@ namespace C64.CPU
             WriteByteToMemory(addr, value2);
             cyclesThisOperation += 7;
         }
+
+        /// <summary>Executes the LSRZ CPU operation.</summary>
         private void LSRZ()
         {
             ulong addr = Zero_Page();
@@ -2215,6 +2520,8 @@ namespace C64.CPU
             WriteByteToMemory(addr, value2);
             cyclesThisOperation += 5;
         }
+
+        /// <summary>Executes the LSRXZ CPU operation.</summary>
         private void LSRXZ()
         {
             ulong addr = X_Indexed_Zero_Page();
@@ -2230,6 +2537,8 @@ namespace C64.CPU
         #endregion
 
         #region ROL
+
+        /// <summary>Executes the ROLAC CPU operation.</summary>
         private void ROLAC()
         {
             byte addr = registers.A;
@@ -2240,6 +2549,8 @@ namespace C64.CPU
             registers.A = (byte)value;
             cyclesThisOperation += 2;
         }
+
+        /// <summary>Executes the ROLA CPU operation.</summary>
         private void ROLA()
         {
             ulong addr = Absolute();
@@ -2251,6 +2562,8 @@ namespace C64.CPU
             WriteByteToMemory(addr, value2);
             cyclesThisOperation += 6;
         }
+
+        /// <summary>Executes the ROLXA CPU operation.</summary>
         private void ROLXA()
         {
             ulong addr = X_Indexed_Absolute(false);
@@ -2262,6 +2575,8 @@ namespace C64.CPU
             WriteByteToMemory(addr, value2);
             cyclesThisOperation += 7;
         }
+
+        /// <summary>Executes the ROLZ CPU operation.</summary>
         private void ROLZ()
         {
             ulong addr = Zero_Page();
@@ -2273,6 +2588,8 @@ namespace C64.CPU
             WriteByteToMemory(addr, value2);
             cyclesThisOperation += 5;
         }
+
+        /// <summary>Executes the ROLXZ CPU operation.</summary>
         private void ROLXZ()
         {
             ulong addr = X_Indexed_Zero_Page();
@@ -2287,6 +2604,8 @@ namespace C64.CPU
         #endregion
 
         #region ROR
+
+        /// <summary>Executes the RORAC CPU operation.</summary>
         private void RORAC()
         {
             byte addr = registers.A;
@@ -2298,6 +2617,8 @@ namespace C64.CPU
             registers.A = (byte)value;
             cyclesThisOperation += 2;
         }
+
+        /// <summary>Executes the RORA CPU operation.</summary>
         private void RORA()
         {
             ulong addr = Absolute();
@@ -2310,6 +2631,8 @@ namespace C64.CPU
             WriteByteToMemory(addr, value2);
             cyclesThisOperation += 6;
         }
+
+        /// <summary>Executes the RORXA CPU operation.</summary>
         private void RORXA()
         {
             ulong addr = X_Indexed_Absolute(false);
@@ -2322,6 +2645,8 @@ namespace C64.CPU
             WriteByteToMemory(addr, value2);
             cyclesThisOperation += 7;
         }
+
+        /// <summary>Executes the RORZ CPU operation.</summary>
         private void RORZ()
         {
             ulong addr = Zero_Page();
@@ -2334,6 +2659,8 @@ namespace C64.CPU
             WriteByteToMemory(addr, value2);
             cyclesThisOperation += 5;
         }
+
+        /// <summary>Executes the RORXZ CPU operation.</summary>
         private void RORXZ()
         {
             ulong addr = X_Indexed_Zero_Page();
@@ -2349,6 +2676,8 @@ namespace C64.CPU
         #endregion
 
         #region BRANCH
+
+        /// <summary>Executes the BCC CPU operation.</summary>
         private void BCC()
         {
             cyclesThisOperation += 2;
@@ -2357,6 +2686,8 @@ namespace C64.CPU
             if (!registers.Flags.C)
                 Branch(value);
         }
+
+        /// <summary>Executes the BCS CPU operation.</summary>
         private void BCS()
         {
             cyclesThisOperation += 2;
@@ -2365,6 +2696,8 @@ namespace C64.CPU
             if (registers.Flags.C)
                 Branch(value);
         }
+
+        /// <summary>Executes the BEQ CPU operation.</summary>
         private void BEQ()
         {
             cyclesThisOperation += 2;
@@ -2373,6 +2706,8 @@ namespace C64.CPU
             if (registers.Flags.Z)
                 Branch(value);
         }
+
+        /// <summary>Executes the BMI CPU operation.</summary>
         private void BMI()
         {
             byte value = ReadByteFromMemory(registers.PC);
@@ -2381,6 +2716,8 @@ namespace C64.CPU
             if (registers.Flags.N)
                 Branch(value);
         }
+
+        /// <summary>Executes the BNE CPU operation.</summary>
         private void BNE()
         {
             cyclesThisOperation += 2;
@@ -2389,6 +2726,8 @@ namespace C64.CPU
             if (!registers.Flags.Z)
                 Branch(value);
         }
+
+        /// <summary>Executes the BPL CPU operation.</summary>
         private void BPL()
         {
             cyclesThisOperation += 2;
@@ -2397,6 +2736,8 @@ namespace C64.CPU
             if (!registers.Flags.N)
                 Branch(value);
         }
+
+        /// <summary>Executes the BVC CPU operation.</summary>
         private void BVC()
         {
             cyclesThisOperation += 2;
@@ -2405,6 +2746,8 @@ namespace C64.CPU
             if (!registers.Flags.V)
                 Branch(value);
         }
+
+        /// <summary>Executes the BVS CPU operation.</summary>
         private void BVS()
         {
             cyclesThisOperation += 2;
@@ -2413,6 +2756,8 @@ namespace C64.CPU
             if (registers.Flags.V)
                 Branch(value);
         }
+
+        /// <summary>Executes the BRK CPU operation.</summary>
         private void BRK()
         {
             IncrementProgramCounter();
@@ -2426,6 +2771,8 @@ namespace C64.CPU
             registers.PC = (ulong)(ReadByteFromMemory(0xFFFE) + ReadByteFromMemory(0xFFFF) * 0x100);
             cyclesThisOperation += 7;
         }
+
+        /// <summary>Applies a relative branch target and cycle penalty.</summary>
         private void Branch(ulong value)
         {
             // Branch offset is a signed 8-bit value; cast handles both directions.
@@ -2440,18 +2787,24 @@ namespace C64.CPU
         #endregion
 
         #region J**
+
+        /// <summary>Executes the JMPA CPU operation.</summary>
         private void JMPA()
         {
             ulong value = Absolute();
             registers.PC = value;
             cyclesThisOperation += 3;
         }
+
+        /// <summary>Executes the JMPAI CPU operation.</summary>
         private void JMPAI()
         {
             ulong addr = AbsoluteIndirect();
             registers.PC = addr;
             cyclesThisOperation += 5;
         }
+
+        /// <summary>Executes the JSRA CPU operation.</summary>
         private void JSRA()
         {
             byte pclo = ReadByteFromMemory(registers.PC);
@@ -2467,6 +2820,8 @@ namespace C64.CPU
         #endregion
 
         #region RT*
+
+        /// <summary>Executes the RTI CPU operation.</summary>
         private void RTI()
         {
             byte flags = PopByteFromStack();
@@ -2476,6 +2831,8 @@ namespace C64.CPU
             registers.Flags.SetFlagsFromByte(flags, 0b11001111);
             cyclesThisOperation += 6;
         }
+
+        /// <summary>Executes the RTS CPU operation.</summary>
         private void RTS()
         {
             byte lo = PopByteFromStack();
@@ -2488,6 +2845,7 @@ namespace C64.CPU
 
         #endregion
 
+        /// <summary>Increments program counter.</summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private void IncrementProgramCounter(ulong value = 1)
         {
@@ -2495,18 +2853,21 @@ namespace C64.CPU
             registers.PC = (registers.PC + value) & 0xFFFF;
         }
 
+        /// <summary>Reads byte from memory.</summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private byte ReadByteFromMemory(ulong addr)
         {
             return memory.ReadByte(addr);
         }
 
+        /// <summary>Writes byte to memory.</summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private void WriteByteToMemory(ulong addr, byte value)
         {
             memory.WriteByte(addr, value);
         }
 
+        /// <summary>Reads the next instruction byte and advances PC.</summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public byte GetNextByteInstruction()
         {
@@ -2515,6 +2876,7 @@ namespace C64.CPU
             return value;
         }
 
+        /// <summary>Reads the next instruction word and advances PC.</summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private ulong GetNextWordInstruction()
         {
@@ -2523,6 +2885,7 @@ namespace C64.CPU
             return (ulong)(value1 | (value2 << 8));
         }
 
+        /// <summary>Pushes byte to stack.</summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private void PushByteToStack(byte value)
         {
@@ -2530,6 +2893,7 @@ namespace C64.CPU
             registers.S--;
         }
 
+        /// <summary>Pops byte from stack.</summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private byte PopByteFromStack()
         {
@@ -2537,6 +2901,7 @@ namespace C64.CPU
             return ReadByteFromMemory((ulong)(registers.S + 0x100));
         }
 
+        /// <summary>Processes nmi.</summary>
         private void ProcessNMI(ulong value = 0xFFFA)
         {
             PushByteToStack((byte)((registers.PC >> 8) & 0xFF));
@@ -2548,6 +2913,7 @@ namespace C64.CPU
             cyclesThisOperation += 7;
         }
 
+        /// <summary>Processes irq.</summary>
         private void ProcessIRQ(ulong value = 0xFFFE)
         {
             PushByteToStack((byte)((registers.PC >> 8) & 0xFF));
@@ -2561,6 +2927,7 @@ namespace C64.CPU
             cyclesThisOperation += 7;
         }
 
+        /// <summary>Determines whether two addresses cross a page boundary.</summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private static bool CrossBoundary(ulong addr1, ulong addr2)
         {
