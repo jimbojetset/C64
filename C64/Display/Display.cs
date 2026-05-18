@@ -901,7 +901,9 @@ namespace C64
             const int x = 5;
             const int y = 34;
 
-            BlendStatusRect(x, y, 4, 4, 95, 255, 125, alpha);
+            BlendStatusRect(x + 1, y, 2, 1, 95, 255, 125, alpha);
+            BlendStatusRect(x, y + 1, 4, 2, 95, 255, 125, alpha);
+            BlendStatusRect(x + 1, y + 3, 2, 1, 95, 255, 125, alpha);
             BlendStatusPixel(x - 1, y + 1, 95, 255, 125, alpha);
             BlendStatusPixel(x + 4, y + 1, 95, 255, 125, alpha);
             BlendStatusPixel(x - 1, y + 2, 95, 255, 125, alpha);
