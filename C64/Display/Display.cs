@@ -901,13 +901,7 @@ namespace C64
             const int x = 5;
             const int y = 34;
 
-            BlendStatusRect(x + 1, y, 2, 1, 95, 255, 125, alpha);
-            BlendStatusRect(x, y + 1, 4, 2, 95, 255, 125, alpha);
-            BlendStatusRect(x + 1, y + 3, 2, 1, 95, 255, 125, alpha);
-            BlendStatusPixel(x - 1, y + 1, 95, 255, 125, alpha);
-            BlendStatusPixel(x + 4, y + 1, 95, 255, 125, alpha);
-            BlendStatusPixel(x - 1, y + 2, 95, 255, 125, alpha);
-            BlendStatusPixel(x + 4, y + 2, 95, 255, 125, alpha);
+            BlendStatusRect(x, y, 2, 2, 95, 255, 125, alpha);
         }
 
         /// <summary>Draws a scaled rectangle into the monitor-space status overlay.</summary>
@@ -948,18 +942,6 @@ namespace C64
                 y1 * StatusOverlayScale,
                 r, g, b, a,
                 statusOverlayBuf);
-        }
-
-        /// <summary>Draws a scaled pixel into the monitor-space status overlay.</summary>
-        /// <param name="x">The X coordinate in unscaled status glyph pixels.</param>
-        /// <param name="y">The Y coordinate in unscaled status glyph pixels.</param>
-        /// <param name="r">The red channel value.</param>
-        /// <param name="g">The green channel value.</param>
-        /// <param name="b">The blue channel value.</param>
-        /// <param name="a">The alpha channel value.</param>
-        private void BlendStatusPixel(int x, int y, byte r, byte g, byte b, byte a)
-        {
-            BlendStatusRect(x, y, 1, 1, r, g, b, a);
         }
 
         /// <summary>Blends rect.</summary>
