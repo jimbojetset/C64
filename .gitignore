@@ -104,11 +104,7 @@ StyleCopReport.xml
 # Game Specific Files
 *.bmp
 *.jpg
-*.prg
-*.d64
-*.tap
-*.t64
-*.crt
+
 
 # Chutzpah Test files
 _Chutzpah*
