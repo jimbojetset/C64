@@ -1,4 +1,17 @@
-﻿using C64.CPU;
+﻿// ============================================================================
+// Project:     C64
+// File:        Program.cs
+// Description: Application entry point and main C64 emulator host wiring CPU,
+//              memory, display, audio, input, storage, and KERNAL traps.
+// Author:      James Booth
+// Created:     2025
+// License:     MIT License - See LICENSE file in the project root
+// Copyright:   (c) 2024-2026 James Booth
+// Notice:      Commodore 64 and related ROMs are property of their respective
+//              rights holders. This emulator is for educational purposes only.
+// ============================================================================
+
+using C64.CPU;
 using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Runtime.InteropServices;
@@ -194,9 +207,9 @@ namespace C64
             cts = new System.Threading.CancellationTokenSource();
             cpu = new CPU_6510(Clock_PAL);
             cpu.OnCyclesExecuted = OnCpuCyclesExecuted;
-            cpu.memory.LoadBankedROM(Path.Combine("ROMS", "basic.901226-01.bin"), Memory.BankSlot.Basic);
-            cpu.memory.LoadBankedROM(Path.Combine("ROMS", "kernal.901227-03.bin"), Memory.BankSlot.Kernal);
-            cpu.memory.LoadBankedROM(Path.Combine("ROMS", "characters.901225-01.bin"), Memory.BankSlot.Char);
+            cpu.memory.LoadBankedROM(Path.Combine("ROMS", "basic.bin"), Memory.BankSlot.Basic);
+            cpu.memory.LoadBankedROM(Path.Combine("ROMS", "kernal.bin"), Memory.BankSlot.Kernal);
+            cpu.memory.LoadBankedROM(Path.Combine("ROMS", "characters.bin"), Memory.BankSlot.Char);
             display = new Display(cpu);
             keyboard = new Keyboard(cpu);
             sound = new Sound();

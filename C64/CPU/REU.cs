@@ -1,3 +1,17 @@
+// ============================================================================
+// Project:     C64
+// File:        REU.cs
+// Description: CMD RAM Expansion Unit emulator with register handling, DMA
+//              transfer modes, interrupt signaling, and wraparound memory
+//              access.
+// Author:      James Booth
+// Created:     2025
+// License:     MIT License - See LICENSE file in the project root
+// Copyright:   (c) 2024-2026 James Booth
+// Notice:      Commodore 64 and related ROMs are property of their respective
+//              rights holders. This emulator is for educational purposes only.
+// ============================================================================
+
 using System;
 
 namespace C64

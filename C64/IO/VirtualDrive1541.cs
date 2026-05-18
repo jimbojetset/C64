@@ -1,3 +1,16 @@
+// ============================================================================
+// Project:     C64
+// File:        VirtualDrive1541.cs
+// Description: Virtual Commodore 1541 drive facade for attached D64 images,
+//              directory reads, PRG loading, and sector access.
+// Author:      James Booth
+// Created:     2025
+// License:     MIT License - See LICENSE file in the project root
+// Copyright:   (c) 2024-2026 James Booth
+// Notice:      Commodore 64 and related ROMs are property of their respective
+//              rights holders. This emulator is for educational purposes only.
+// ============================================================================
+
 namespace C64
 {
 

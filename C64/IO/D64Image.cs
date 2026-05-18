@@ -1,3 +1,16 @@
+// ============================================================================
+// Project:     C64
+// File:        D64Image.cs
+// Description: D64 disk image parser with directory decoding, PRG loading,
+//              disk-name handling, and raw sector access.
+// Author:      James Booth
+// Created:     2025
+// License:     MIT License - See LICENSE file in the project root
+// Copyright:   (c) 2024-2026 James Booth
+// Notice:      Commodore 64 and related ROMs are property of their respective
+//              rights holders. This emulator is for educational purposes only.
+// ============================================================================
+
 using System.Text;
 
 namespace C64

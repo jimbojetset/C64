@@ -1,3 +1,16 @@
+// ============================================================================
+// Project:     C64
+// File:        DatasetteDevice.cs
+// Description: Datasette TAP pulse playback model with motor state, sense line
+//              behavior, and read-line transitions.
+// Author:      James Booth
+// Created:     2025
+// License:     MIT License - See LICENSE file in the project root
+// Copyright:   (c) 2024-2026 James Booth
+// Notice:      Commodore 64 and related ROMs are property of their respective
+//              rights holders. This emulator is for educational purposes only.
+// ============================================================================
+
 namespace C64
 {
 

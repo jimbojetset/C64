@@ -1,3 +1,16 @@
+// ============================================================================
+// Project:     C64
+// File:        SoftwareFileSelector.cs
+// Description: ImGui modal selector for browsing and choosing loadable files
+//              from the bundled Software directory.
+// Author:      James Booth
+// Created:     2025
+// License:     MIT License - See LICENSE file in the project root
+// Copyright:   (c) 2024-2026 James Booth
+// Notice:      Commodore 64 and related ROMs are property of their respective
+//              rights holders. This emulator is for educational purposes only.
+// ============================================================================
+
 using System.Numerics;
 using ImGuiNET;
 

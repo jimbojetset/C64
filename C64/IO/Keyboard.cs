@@ -1,3 +1,16 @@
+// ============================================================================
+// Project:     C64
+// File:        Keyboard.cs
+// Description: SDL keyboard and controller input handler for the C64 keyboard
+//              matrix, joystick port, hotkeys, and queued key injection.
+// Author:      James Booth
+// Created:     2025
+// License:     MIT License - See LICENSE file in the project root
+// Copyright:   (c) 2024-2026 James Booth
+// Notice:      Commodore 64 and related ROMs are property of their respective
+//              rights holders. This emulator is for educational purposes only.
+// ============================================================================
+
 using System.Collections.Concurrent;
 using C64.CPU;
 using static SDL2.SDL;
