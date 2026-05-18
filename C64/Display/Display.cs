@@ -16,7 +16,6 @@ using C64.CPU;
 using Silk.NET.OpenGL;
 using System.Diagnostics;
 using System.IO.Compression;
-using System.Threading;
 using static SDL2.SDL;
 
 namespace C64
@@ -32,12 +31,12 @@ namespace C64
 
         public const int FrameW = 384;
         public const int FrameH = 272;
-        private const int MonitorImageW = 688;
-        private const int MonitorImageH = 701;
-        private const int MonitorScreenX = 90;
-        private const int MonitorScreenY = 83;
-        private const int MonitorScreenW = 508;
-        private const int MonitorScreenH = 423;
+        private const int MonitorImageW = 873;
+        private const int MonitorImageH = 913;
+        private const int MonitorScreenX = 181;
+        private const int MonitorScreenY = 81;
+        private const int MonitorScreenW = 509;
+        private const int MonitorScreenH = 426;
         private const double MonitorScreenOverscan = 1.08;
         private const int FramePlayfieldX = (FrameW - ScreenW) / 2;
         private const int FramePlayfieldY = (FrameH - ScreenH) / 2;
@@ -381,7 +380,8 @@ namespace C64
                     vec4 color = texture(Texture, sampleUv);
 
                     float vignette = 1.0 - clamp(r2 * 0.12, 0.0, 0.22);
-                    float scanline = 1.0 - 0.045 * step(0.5, fract(gl_FragCoord.y * 0.5));
+                    float scaledScreenY = sampleUv.y * OutputSize.y;
+                    float scanline = 1.0 - 0.15 * step(0.5, fract(scaledScreenY * 0.5));
                     color.rgb *= vignette * scanline;
 
                     Out_Color = vec4(color.rgb, 1.0);
@@ -464,7 +464,7 @@ namespace C64
         private unsafe uint CreateMonitorTexture()
         {
             GL glApi = gl ?? throw new InvalidOperationException("OpenGL API is not initialized.");
-            byte[] pixels = LoadPngBgra(FindDisplayAsset("monitor.png"), out int width, out int height);
+            byte[] pixels = LoadPngBgra(FindDisplayAsset("monitor2.png"), out int width, out int height);
 
             uint texture = glApi.GenTexture();
             glApi.BindTexture(TextureTarget.Texture2D, texture);
