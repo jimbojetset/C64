@@ -82,17 +82,19 @@ namespace C64
 
         // ?? Public API ????????????????????????????????????????????????????????
 
-        /// <summary>Gets the selected joystick port number used by keyboard and controller input, or 0 when joystick mapping is disabled.</summary>
+        /// <summary>Gets the selected joystick port number used by keyboard joystick mapping, or 0 when keyboard mapping is disabled.</summary>
         public int ActiveJoystickPort => activeJoystickPort;
 
         /// <summary>CIA-1 port B ($DC01) joystick port 1 byte (active-low).</summary>
-        public byte Joystick1 => activeJoystickPort == 1 ? ActiveJoystickByte : (byte)0xFF;
+        public byte Joystick1 => (byte)(KeyboardJoystickForPort(1) & controllerJoystick);
 
         /// <summary>CIA-1 port A ($DC00) joystick port 2 byte (active-low).</summary>
-        public byte Joystick2 => activeJoystickPort == 2 ? ActiveJoystickByte : (byte)0xFF;
+        public byte Joystick2 => (byte)(KeyboardJoystickForPort(2) & controllerJoystick);
 
-        /// <summary>Gets the combined active-low keyboard and controller joystick byte.</summary>
-        private byte ActiveJoystickByte => (byte)(keyboardJoystick & controllerJoystick);
+        /// <summary>Gets the active-low keyboard joystick byte for the requested port.</summary>
+        /// <param name="port">The C64 joystick port number to query.</param>
+        /// <returns>The keyboard joystick byte for that port, or neutral when keyboard mapping is disabled or routed elsewhere.</returns>
+        private byte KeyboardJoystickForPort(int port) => activeJoystickPort == port ? keyboardJoystick : (byte)0xFF;
 
         /// <summary>Initializes SDL game controller support.</summary>
         public void InitGameControllers()
@@ -162,8 +164,8 @@ namespace C64
         /// <summary>Enqueues a raw PETSCII byte for typed-text injection (e.g. from file load).</summary>
         public void EnqueuePetscii(byte petscii) => keyQueue.Enqueue(petscii);
 
-        /// <summary>Toggles keyboard and controller joystick input between C64 port 1, port 2, and keyboard-only mode.</summary>
-        /// <returns>The newly selected joystick port number, or 0 when joystick mapping is disabled.</returns>
+        /// <summary>Toggles keyboard joystick input between C64 port 1, port 2, and keyboard-only mode.</summary>
+        /// <returns>The newly selected keyboard joystick port number, or 0 when keyboard mapping is disabled.</returns>
         public int ToggleJoystickPort()
         {
             int previousPort = activeJoystickPort;
