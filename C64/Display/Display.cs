@@ -282,7 +282,7 @@ namespace C64
             gl = GL.GetApi(name => SDL_GL_GetProcAddress(name));
             CreatePresentationObjects();
 
-            charRom = File.ReadAllBytes(Path.Combine("ROMS", "characters.901225-01.bin"));
+            charRom = File.ReadAllBytes(Path.Combine("ROMS", "characters.bin"));
             windowTitleDirty = true;
             ApplyPendingWindowTitle();
         }

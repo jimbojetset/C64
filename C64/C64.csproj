@@ -16,19 +16,16 @@
   </ItemGroup>
 
   <ItemGroup>
-    <None Update="ROMS\basic.901226-01.bin">
+    <None Update="ROMS\basic.bin">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
-    <None Update="ROMS\characters.901225-01.bin">
+    <None Update="ROMS\characters.bin">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
-    <None Update="ROMS\kernal.901227-03.bin">
+    <None Update="ROMS\kernal.bin">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
     <None Update="Software\**\*">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </None>
-    <None Update="Display\monitor.jpg">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
     <None Update="Display\monitor.png">
