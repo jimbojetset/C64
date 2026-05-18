@@ -464,7 +464,7 @@ namespace C64
         private unsafe uint CreateMonitorTexture()
         {
             GL glApi = gl ?? throw new InvalidOperationException("OpenGL API is not initialized.");
-            byte[] pixels = LoadPngBgra(FindDisplayAsset("monitor2.png"), out int width, out int height);
+            byte[] pixels = LoadPngBgra(FindDisplayAsset("monitor.png"), out int width, out int height);
 
             uint texture = glApi.GenTexture();
             glApi.BindTexture(TextureTarget.Texture2D, texture);
