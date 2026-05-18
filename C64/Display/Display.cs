@@ -106,6 +106,8 @@ namespace C64
         private volatile bool resyncPending;
         private volatile bool muteOverlayVisible;
         private volatile bool pausedOverlayVisible;
+        private string? temporaryMessage;
+        private long temporaryMessageTicks;
         private long driveActivityTicks;
         private int rasterCycleInLine;
         private readonly bool[] busStealMask = new bool[CyclesPerRasterLine];
@@ -328,6 +330,7 @@ namespace C64
                 DrawPausedOverlay();
             if (muteOverlayVisible)
                 DrawMuteOverlay();
+            DrawTemporaryMessageOverlay();
             DrawDriveActivityOverlay();
             PresentFrame();
         }
@@ -732,6 +735,30 @@ namespace C64
             DrawBlockTextCentered("PAUSED", 1);
         }
 
+        /// <summary>Shows a centered status message for a short duration.</summary>
+        /// <param name="text">The text to write.</param>
+        /// <param name="durationMs">The duration in milliseconds.</param>
+        public void ShowTemporaryMessage(string text, int durationMs)
+        {
+            temporaryMessage = text;
+            long durationTicks = durationMs * Stopwatch.Frequency / 1000L;
+            Interlocked.Exchange(ref temporaryMessageTicks, Stopwatch.GetTimestamp() + durationTicks);
+        }
+
+        /// <summary>Draws the active temporary status message while it has time remaining.</summary>
+        private void DrawTemporaryMessageOverlay()
+        {
+            long expires = Interlocked.Read(ref temporaryMessageTicks);
+            if (expires == 0 || Stopwatch.GetTimestamp() > expires)
+                return;
+
+            string? text = temporaryMessage;
+            if (string.IsNullOrWhiteSpace(text))
+                return;
+
+            DrawBlockTextCentered(text, 1);
+        }
+
         /// <summary>Draws block text centered.</summary>
         /// <param name="text">The text to write.</param>
         /// <param name="scale">The integer pixel scale used for block text.</param>
@@ -774,9 +801,17 @@ namespace C64
                 'A' => new byte[] { 0x0E, 0x11, 0x11, 0x1F, 0x11, 0x11, 0x11 },
                 'D' => new byte[] { 0x1E, 0x11, 0x11, 0x11, 0x11, 0x11, 0x1E },
                 'E' => new byte[] { 0x1F, 0x10, 0x10, 0x1E, 0x10, 0x10, 0x1F },
+                'J' => new byte[] { 0x01, 0x01, 0x01, 0x01, 0x11, 0x11, 0x0E },
+                'O' => new byte[] { 0x0E, 0x11, 0x11, 0x11, 0x11, 0x11, 0x0E },
                 'P' => new byte[] { 0x1E, 0x11, 0x11, 0x1E, 0x10, 0x10, 0x10 },
+                'R' => new byte[] { 0x1E, 0x11, 0x11, 0x1E, 0x14, 0x12, 0x11 },
                 'S' => new byte[] { 0x0F, 0x10, 0x10, 0x0E, 0x01, 0x01, 0x1E },
+                'T' => new byte[] { 0x1F, 0x04, 0x04, 0x04, 0x04, 0x04, 0x04 },
                 'U' => new byte[] { 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x0E },
+                'Y' => new byte[] { 0x11, 0x11, 0x0A, 0x04, 0x04, 0x04, 0x04 },
+                '1' => new byte[] { 0x04, 0x0C, 0x04, 0x04, 0x04, 0x04, 0x0E },
+                '2' => new byte[] { 0x0E, 0x11, 0x01, 0x02, 0x04, 0x08, 0x1F },
+                ' ' => new byte[] { 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 },
                 _ => new byte[] { 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 },
             };
         }

@@ -33,8 +33,9 @@ namespace C64
         // C64 keyboard matrix: 8 rows, each column bit is active-low.
         private readonly byte[] keyboardMatrix = { 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF };
 
-        private volatile byte keyboardJoystick2 = 0xFF;
-        private volatile byte controllerJoystick2 = 0xFF;
+        private volatile byte keyboardJoystick = 0xFF;
+        private volatile byte controllerJoystick = 0xFF;
+        private volatile int activeJoystickPort = 2;
         private IntPtr gameController;
         private int gameControllerInstanceId = -1;
         private byte controllerButtonMask;
@@ -66,6 +67,9 @@ namespace C64
         /// <summary>Invoked when Ctrl+P is pressed.</summary>
         public Action? OnTogglePause { get; set; }
 
+        /// <summary>Invoked when Ctrl+J is pressed.</summary>
+        public Action? OnToggleJoystickPort { get; set; }
+
         /// <summary>Invoked when Ctrl+A is pressed.</summary>
         public Action? OnSelectAudioDevice { get; set; }
 
@@ -78,8 +82,17 @@ namespace C64
 
         // ?? Public API ????????????????????????????????????????????????????????
 
+        /// <summary>Gets the selected joystick port number used by keyboard and controller input.</summary>
+        public int ActiveJoystickPort => activeJoystickPort;
+
+        /// <summary>CIA-1 port B ($DC01) joystick port 1 byte (active-low).</summary>
+        public byte Joystick1 => activeJoystickPort == 1 ? ActiveJoystickByte : (byte)0xFF;
+
         /// <summary>CIA-1 port A ($DC00) joystick port 2 byte (active-low).</summary>
-        public byte Joystick2 => (byte)(keyboardJoystick2 & controllerJoystick2);
+        public byte Joystick2 => activeJoystickPort == 2 ? ActiveJoystickByte : (byte)0xFF;
+
+        /// <summary>Gets the combined active-low keyboard and controller joystick byte.</summary>
+        private byte ActiveJoystickByte => (byte)(keyboardJoystick & controllerJoystick);
 
         /// <summary>Initializes SDL game controller support.</summary>
         public void InitGameControllers()
@@ -134,8 +147,8 @@ namespace C64
         /// </summary>
         public void Reset()
         {
-            keyboardJoystick2 = 0xFF;
-            controllerJoystick2 = 0xFF;
+            keyboardJoystick = 0xFF;
+            controllerJoystick = 0xFF;
             controllerButtonMask = 0;
             controllerAxisMask = 0;
             for (int i = 0; i < keyboardMatrix.Length; i++)
@@ -146,6 +159,14 @@ namespace C64
 
         /// <summary>Enqueues a raw PETSCII byte for typed-text injection (e.g. from file load).</summary>
         public void EnqueuePetscii(byte petscii) => keyQueue.Enqueue(petscii);
+
+        /// <summary>Toggles keyboard and controller joystick input between C64 port 1 and port 2.</summary>
+        /// <returns>The newly selected joystick port number.</returns>
+        public int ToggleJoystickPort()
+        {
+            activeJoystickPort = activeJoystickPort == 2 ? 1 : 2;
+            return activeJoystickPort;
+        }
 
         /// <summary>
         /// Handles a single SDL event.
@@ -252,6 +273,7 @@ namespace C64
                 switch (sym)
                 {
                     case SDL_Keycode.SDLK_a: OnSelectAudioDevice?.Invoke(); return false;
+                    case SDL_Keycode.SDLK_j: OnToggleJoystickPort?.Invoke(); return false;
                     case SDL_Keycode.SDLK_o: OnLoad?.Invoke(); return false;
                     case SDL_Keycode.SDLK_p: OnTogglePause?.Invoke(); return false;
                     case SDL_Keycode.SDLK_s: OnSave?.Invoke(); return false;
@@ -264,7 +286,7 @@ namespace C64
 
             byte jmask = JoystickMaskFromKey(sym);
             if (jmask != 0)
-                keyboardJoystick2 = (byte)(keyboardJoystick2 & ~jmask);
+                keyboardJoystick = (byte)(keyboardJoystick & ~jmask);
 
             UpdateKeyboardState(sym, true);
             return false;
@@ -276,7 +298,7 @@ namespace C64
         {
             byte jmask = JoystickMaskFromKey(ke.keysym.sym);
             if (jmask != 0)
-                keyboardJoystick2 = (byte)(keyboardJoystick2 | jmask);
+                keyboardJoystick = (byte)(keyboardJoystick | jmask);
 
             UpdateKeyboardState(ke.keysym.sym, false);
         }
@@ -294,8 +316,6 @@ namespace C64
                     SetMatrixKey(6, 4, pressed);
                     return;
                 case SDL_Keycode.SDLK_LCTRL:
-                    SetMatrixKey(7, 2, pressed); // C64 CTRL key
-                    return; // joystick-only to avoid game keyboard side-effects
                 case SDL_Keycode.SDLK_RCTRL:
                     return; // joystick-only to avoid game keyboard side-effects
                 case SDL_Keycode.SDLK_RALT:
@@ -334,13 +354,8 @@ namespace C64
                     SetMatrixKey(0, 3, pressed);
                     return;
                 case SDL_Keycode.SDLK_LEFT:
-                    SetMatrixKey(7, 1, pressed);
-                    return;
                 case SDL_Keycode.SDLK_RIGHT:
-                    SetMatrixKey(0, 2, pressed);
-                    return;
                 case SDL_Keycode.SDLK_UP:
-                    return; // joystick-only to avoid keyboard side-effects in games
                 case SDL_Keycode.SDLK_DOWN:
                     return; // joystick-only to avoid keyboard side-effects in games
             }
@@ -557,7 +572,7 @@ namespace C64
         /// <summary>Updates controller joystick.</summary>
         private void UpdateControllerJoystick()
         {
-            controllerJoystick2 = (byte)~(controllerButtonMask | controllerAxisMask);
+            controllerJoystick = (byte)~(controllerButtonMask | controllerAxisMask);
         }
 
         /// <summary>Maps a controller button to a joystick bit mask.</summary>
