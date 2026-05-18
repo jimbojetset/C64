@@ -35,7 +35,7 @@ namespace C64
 
         private volatile byte keyboardJoystick = 0xFF;
         private volatile byte controllerJoystick = 0xFF;
-        private volatile int activeJoystickPort = 2;
+        private volatile int activeJoystickPort;
         private IntPtr gameController;
         private int gameControllerInstanceId = -1;
         private byte controllerButtonMask;
@@ -82,7 +82,7 @@ namespace C64
 
         // ?? Public API ????????????????????????????????????????????????????????
 
-        /// <summary>Gets the selected joystick port number used by keyboard and controller input.</summary>
+        /// <summary>Gets the selected joystick port number used by keyboard and controller input, or 0 when joystick mapping is disabled.</summary>
         public int ActiveJoystickPort => activeJoystickPort;
 
         /// <summary>CIA-1 port B ($DC01) joystick port 1 byte (active-low).</summary>
@@ -142,13 +142,15 @@ namespace C64
         }
 
         /// <summary>
-        /// Resets the keyboard matrix, joystick port 2, and flushes the key queue.
-        /// Call from <c>C64Emulator.HardReset</c> / <c>InitHardware</c>.
+        /// Resets the keyboard matrix, joystick state, joystick mapping mode,
+        /// and queued key input. Call from <c>C64Emulator.HardReset</c> /
+        /// <c>InitHardware</c>.
         /// </summary>
         public void Reset()
         {
             keyboardJoystick = 0xFF;
             controllerJoystick = 0xFF;
+            activeJoystickPort = 0;
             controllerButtonMask = 0;
             controllerAxisMask = 0;
             for (int i = 0; i < keyboardMatrix.Length; i++)
@@ -160,11 +162,26 @@ namespace C64
         /// <summary>Enqueues a raw PETSCII byte for typed-text injection (e.g. from file load).</summary>
         public void EnqueuePetscii(byte petscii) => keyQueue.Enqueue(petscii);
 
-        /// <summary>Toggles keyboard and controller joystick input between C64 port 1 and port 2.</summary>
-        /// <returns>The newly selected joystick port number.</returns>
+        /// <summary>Toggles keyboard and controller joystick input between C64 port 1, port 2, and keyboard-only mode.</summary>
+        /// <returns>The newly selected joystick port number, or 0 when joystick mapping is disabled.</returns>
         public int ToggleJoystickPort()
         {
-            activeJoystickPort = activeJoystickPort == 2 ? 1 : 2;
+            int previousPort = activeJoystickPort;
+            activeJoystickPort = activeJoystickPort switch
+            {
+                2 => 1,
+                1 => 0,
+                _ => 2
+            };
+            keyboardJoystick = 0xFF;
+            if (previousPort == 0 && activeJoystickPort != 0)
+            {
+                SetMatrixKey(7, 2, false);
+                SetMatrixKey(0, 2, false);
+                SetMatrixKey(0, 7, false);
+                SetMatrixKey(1, 7, false);
+                SetMatrixKey(6, 4, false);
+            }
             return activeJoystickPort;
         }
 
@@ -285,7 +302,7 @@ namespace C64
             }
 
             byte jmask = JoystickMaskFromKey(sym);
-            if (jmask != 0)
+            if (jmask != 0 && activeJoystickPort != 0)
                 keyboardJoystick = (byte)(keyboardJoystick & ~jmask);
 
             UpdateKeyboardState(sym, true);
@@ -297,7 +314,7 @@ namespace C64
         private void HandleKeyUp(SDL_KeyboardEvent ke)
         {
             byte jmask = JoystickMaskFromKey(ke.keysym.sym);
-            if (jmask != 0)
+            if (jmask != 0 && activeJoystickPort != 0)
                 keyboardJoystick = (byte)(keyboardJoystick | jmask);
 
             UpdateKeyboardState(ke.keysym.sym, false);
@@ -316,6 +333,9 @@ namespace C64
                     SetMatrixKey(6, 4, pressed);
                     return;
                 case SDL_Keycode.SDLK_LCTRL:
+                    if (activeJoystickPort == 0)
+                        SetMatrixKey(7, 2, pressed); // C64 CTRL key
+                    return;
                 case SDL_Keycode.SDLK_RCTRL:
                     return; // joystick-only to avoid game keyboard side-effects
                 case SDL_Keycode.SDLK_RALT:
@@ -354,10 +374,29 @@ namespace C64
                     SetMatrixKey(0, 3, pressed);
                     return;
                 case SDL_Keycode.SDLK_LEFT:
+                    if (activeJoystickPort == 0)
+                    {
+                        SetMatrixKey(1, 7, pressed);
+                        SetMatrixKey(6, 4, pressed);
+                        SetMatrixKey(0, 2, pressed);
+                    }
+                    return;
                 case SDL_Keycode.SDLK_RIGHT:
+                    if (activeJoystickPort == 0)
+                        SetMatrixKey(0, 2, pressed);
+                    return;
                 case SDL_Keycode.SDLK_UP:
+                    if (activeJoystickPort == 0)
+                    {
+                        SetMatrixKey(1, 7, pressed);
+                        SetMatrixKey(6, 4, pressed);
+                        SetMatrixKey(0, 7, pressed);
+                    }
+                    return;
                 case SDL_Keycode.SDLK_DOWN:
-                    return; // joystick-only to avoid keyboard side-effects in games
+                    if (activeJoystickPort == 0)
+                        SetMatrixKey(0, 7, pressed);
+                    return;
             }
 
             if (sym >= SDL_Keycode.SDLK_a && sym <= SDL_Keycode.SDLK_z)

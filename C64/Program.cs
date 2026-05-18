@@ -231,6 +231,7 @@ namespace C64
             keyboard.OnTogglePause = TogglePause;
             keyboard.OnToggleJoystickPort = ToggleJoystickPort;
             keyboard.OnSelectAudioDevice = SelectAudioDevice;
+            display.JoystickPortOverlay = keyboard.ActiveJoystickPort;
 
             byte[] kernal = cpu.memory.GetBankedROM(Memory.BankSlot.Kernal)!;
             kernal[0xFCF5 - 0xE000] = 0xEA;
@@ -2399,6 +2400,7 @@ namespace C64
             display.BeginReset();
 
             keyboard.Reset();
+            display.JoystickPortOverlay = keyboard.ActiveJoystickPort;
             reu.Reset();
             iecBus.SetHostLooseProgramPresent(!string.IsNullOrWhiteSpace(lastHostLoadedFile));
 
@@ -2435,11 +2437,11 @@ namespace C64
             SetPaused(!IsPaused);
         }
 
-        /// <summary>Toggles keyboard and controller joystick input between C64 joystick ports.</summary>
+        /// <summary>Toggles keyboard and controller joystick input between C64 joystick ports and keyboard-only mode.</summary>
         private void ToggleJoystickPort()
         {
             int port = keyboard.ToggleJoystickPort();
-            display.ShowTemporaryMessage($"JOY PORT {port}", 2000);
+            display.JoystickPortOverlay = port;
         }
 
         /// <summary>Selects audio device.</summary>
