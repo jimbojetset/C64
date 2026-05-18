@@ -126,6 +126,8 @@ namespace C64
         // envelope level � reproduces the characteristic SID curve.
 
         /// <summary>Returns the ADSR exponential-rate scale for an envelope level.</summary>
+        /// <param name="level">The 4-bit SID envelope level to scale.</param>
+        /// <returns>The numeric value produced by the operation.</returns>
         private static int ExpScale(int level)
         {
             if (level > 93) return 1;
@@ -144,6 +146,7 @@ namespace C64
         /// an empty list if SDL has no devices or audio failed to initialise.
         /// Initialises the SDL audio subsystem as a side-effect.
         /// </summary>
+        /// <returns>The SDL audio device names available on this machine.</returns>
         public static List<string> EnumerateDevices()
         {
             var names = new List<string>();
@@ -165,6 +168,7 @@ namespace C64
         }
 
         /// <summary>Gets the first available SDL playback device name.</summary>
+        /// <returns>The selected or resolved string value, or null when no value is available.</returns>
         public static string? GetDefaultDeviceName()
         {
             List<string> devices = EnumerateDevices();
@@ -172,6 +176,7 @@ namespace C64
         }
 
         /// <summary>Prompts for an audio output device.</summary>
+        /// <returns>The selected or resolved string value, or null when no value is available.</returns>
         public static string? PromptForDevice()
         {
             List<string> devices = EnumerateDevices();
@@ -179,6 +184,7 @@ namespace C64
         }
 
         /// <summary>Initializes this component.</summary>
+        /// <param name="deviceName">The preferred SDL audio device name, or null for the default device.</param>
         public void Init(string? deviceName = null)
         {
             if (SDL_InitSubSystem(SDL_INIT_AUDIO) != 0)
@@ -192,6 +198,8 @@ namespace C64
         }
 
         /// <summary>Opens an SDL queue-audio playback device for SID output.</summary>
+        /// <param name="deviceName">The preferred SDL audio device name, or null for the default device.</param>
+        /// <returns>The numeric value produced by the operation.</returns>
         private static uint OpenDevice(string? deviceName)
         {
             var desired = new SDL_AudioSpec
@@ -221,6 +229,8 @@ namespace C64
         }
 
         /// <summary>Switches the SDL audio output device.</summary>
+        /// <param name="deviceName">The preferred SDL audio device name, or null for the default device.</param>
+        /// <param name="paused">Whether emulation or audio output should be paused.</param>
         public void SwitchDevice(string? deviceName, bool paused)
         {
             if (SDL_InitSubSystem(SDL_INIT_AUDIO) != 0)
@@ -247,6 +257,7 @@ namespace C64
         }
 
         /// <summary>Starts this component.</summary>
+        /// <param name="token">The cancellation token used to stop the audio loop.</param>
         public void Start(CancellationToken token)
         {
             _ct = token;
@@ -287,6 +298,8 @@ namespace C64
         }
 
         /// <summary>Write a SID register (0�28 maps to $D400�$D41C).</summary>
+        /// <param name="reg">The SID register index.</param>
+        /// <param name="value">The value supplied to the operation.</param>
         public void WriteRegister(int reg, byte value)
         {
             if ((uint)reg < 29)
@@ -321,6 +334,7 @@ namespace C64
         }
 
         /// <summary>Sets whether execution is paused.</summary>
+        /// <param name="paused">Whether emulation or audio output should be paused.</param>
         public void SetPaused(bool paused)
         {
             lock (_audioStateLock)
@@ -477,6 +491,8 @@ namespace C64
         /// <summary>
         /// Synthesizes a batch of SID audio by applying timestamped register writes, stepping voices/envelopes, routing filter paths, and mixing output.
         /// </summary>
+        /// <param name="buf">The audio sample buffer to fill.</param>
+        /// <param name="count">The number of samples to synthesize.</param>
         private void Synthesize(short[] buf, int count)
         {
             byte[] r = _regs;
@@ -587,6 +603,8 @@ namespace C64
         /// <summary>
         /// Applies queued SID register writes up to a synth tick and triggers write-time gate and volume-DAC side effects.
         /// </summary>
+        /// <param name="tick">The target SID clock tick to process up to.</param>
+        /// <param name="regs">The SID register snapshot used for synthesis.</param>
         private void ApplyWritesUntil(long tick, byte[] regs)
         {
             while (_writeQueue.TryPeek(out SidWrite w) && w.Tick <= tick)
@@ -613,6 +631,7 @@ namespace C64
         }
 
         /// <summary>Advances the volume-DAC decay to a synth tick.</summary>
+        /// <param name="tick">The target SID clock tick to process up to.</param>
         private void AdvanceDacToTick(long tick)
         {
             if (_lastDacTick == 0)
@@ -634,6 +653,10 @@ namespace C64
         /// <summary>
         /// Applies ADSR phase changes immediately when a SID voice control register write changes the gate bit.
         /// </summary>
+        /// <param name="reg">The SID register index.</param>
+        /// <param name="previous">The previous value before the update.</param>
+        /// <param name="value">The value supplied to the operation.</param>
+        /// <param name="regs">The SID register snapshot used for synthesis.</param>
         private void HandleGateEdgeOnWrite(int reg, byte previous, byte value, byte[] regs)
         {
             int voiceBase = (reg / 7) * 7;
@@ -671,6 +694,9 @@ namespace C64
         /// <summary>
         /// Captures D418 volume changes for sample-style effects before they are smoothed into the DAC output lane.
         /// </summary>
+        /// <param name="reg">The SID register index.</param>
+        /// <param name="previous">The previous value before the update.</param>
+        /// <param name="value">The value supplied to the operation.</param>
         private void HandleVolumeDacOnWrite(int reg, byte previous, byte value)
         {
             if (reg != 24)
@@ -684,6 +710,8 @@ namespace C64
         }
 
         /// <summary>Applies output low-pass smoothing.</summary>
+        /// <param name="sample">The audio sample to process.</param>
+        /// <returns>The numeric value produced by the operation.</returns>
         private double SmoothOutput(double sample)
         {
             _outputLowPass = sample + OutputLowPassA * (_outputLowPass - sample);
@@ -691,6 +719,8 @@ namespace C64
         }
 
         /// <summary>Applies soft clipping to the audio sample.</summary>
+        /// <param name="sample">The audio sample to process.</param>
+        /// <returns>The numeric value produced by the operation.</returns>
         private static double SoftLimit(double sample)
         {
             const double threshold = 0.90;
@@ -710,6 +740,9 @@ namespace C64
         /// <summary>
         /// Advances one SID voice for a sample, including phase accumulation, hard sync, noise LFSR clocks, envelope stepping, and waveform output.
         /// </summary>
+        /// <param name="vi">The voice index to step.</param>
+        /// <param name="r">The red channel value.</param>
+        /// <returns>The numeric value produced by the operation.</returns>
         private double StepVoice(int vi, byte[] r)
         {
             int vbase = vi * 7;
@@ -789,6 +822,12 @@ namespace C64
         // ?? Waveform generator (with combination-AND approximation) ???????????
 
         /// <summary>Computes the selected SID waveform output.</summary>
+        /// <param name="ctrl">The SID waveform control register value.</param>
+        /// <param name="v">The SID voice state to update or inspect.</param>
+        /// <param name="pw12">The 12-bit pulse width value.</param>
+        /// <param name="ring">Whether ring modulation is enabled.</param>
+        /// <param name="syncSrcAccum">The synchronizing source oscillator accumulator.</param>
+        /// <returns>The numeric value produced by the operation.</returns>
         private static int ComputeWaveform(byte ctrl, Voice v, int pw12, bool ring, uint syncSrcAccum)
         {
             bool tri = (ctrl & 0x10) != 0;
@@ -873,6 +912,8 @@ namespace C64
         }
 
         /// <summary>Builds a SID noise waveform sample.</summary>
+        /// <param name="lfsr">The noise generator shift register value.</param>
+        /// <returns>The numeric value produced by the operation.</returns>
         private static int NoiseOutput(uint lfsr)
         {
             // 8 noise output bits come from LFSR taps 20,18,14,11,9,5,2,0
@@ -893,6 +934,10 @@ namespace C64
         /// <summary>
         /// Advances a SID ADSR envelope using the current gate bit, attack/decay/release rates, and sustain level.
         /// </summary>
+        /// <param name="v">The SID voice state to update or inspect.</param>
+        /// <param name="gate">Whether the SID gate bit is currently set.</param>
+        /// <param name="ad">The attack/decay register value.</param>
+        /// <param name="sr">The sustain/release register value.</param>
         private static void StepEnvelope(Voice v, bool gate, byte ad, byte sr)
         {
             int attackIdx = (ad >> 4) & 0x0F;
@@ -963,6 +1008,8 @@ namespace C64
         /// <summary>
         /// Recomputes SID filter cutoff, resonance, and damping coefficients from the current filter registers.
         /// </summary>
+        /// <param name="fcReg">The combined SID filter cutoff register value.</param>
+        /// <param name="resReg">The SID filter resonance and routing register value.</param>
         private void UpdateFilterCoefficients(int fcReg, int resReg)
         {
             // 6581 approximation: fc ? 30 + fcReg � 5.8 Hz, capped under Nyquist.
@@ -996,6 +1043,11 @@ namespace C64
         /// <summary>
         /// Steps the SID state-variable filter and combines the selected low-pass, band-pass, and high-pass outputs.
         /// </summary>
+        /// <param name="input">The input sample entering the filter.</param>
+        /// <param name="lpOn">Whether the low-pass output is enabled.</param>
+        /// <param name="bpOn">Whether the band-pass output is enabled.</param>
+        /// <param name="hpOn">Whether the high-pass output is enabled.</param>
+        /// <returns>The numeric value produced by the operation.</returns>
         private double StepFilter(double input, bool lpOn, bool bpOn, bool hpOn)
         {
             // Enhanced Chamberlin two-pole state-variable filter with capacitor modeling
@@ -1037,6 +1089,9 @@ namespace C64
         {
 
             /// <summary>Initializes a queued SID register write.</summary>
+            /// <param name="reg">The SID register index.</param>
+            /// <param name="value">The SID register value written.</param>
+            /// <param name="tick">The SID clock tick when the write should take effect.</param>
             public SidWrite(int reg, byte value, long tick)
             {
                 Reg = reg;

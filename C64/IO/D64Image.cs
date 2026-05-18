@@ -21,6 +21,7 @@ namespace C64
         private readonly byte[] raw;
 
         /// <summary>Initializes a new D64Image instance.</summary>
+        /// <param name="raw">The raw D64 image bytes.</param>
         private D64Image(byte[] raw)
         {
             this.raw = raw;
@@ -30,6 +31,8 @@ namespace C64
         public string SourcePath { get; private set; } = string.Empty;
 
         /// <summary>Loads a D64 disk image from disk.</summary>
+        /// <param name="path">The path of the file to use.</param>
+        /// <returns>The opened disk image.</returns>
         public static D64Image Load(string path)
         {
             byte[] raw = File.ReadAllBytes(path);
@@ -41,6 +44,7 @@ namespace C64
         }
 
         /// <summary>Lists PRG directory entries in the image.</summary>
+        /// <returns>The available file names.</returns>
         public IReadOnlyList<string> ListPrgFiles()
         {
             var files = new List<string>();
@@ -54,12 +58,18 @@ namespace C64
         }
 
         /// <summary>Determines whether a directory file type is loadable.</summary>
+        /// <param name="fileType">The Commodore directory file type byte.</param>
+        /// <returns>True when the operation succeeds; otherwise, false.</returns>
         private static bool IsLoadableFileType(byte fileType)
         {
             return (fileType & 0x07) == 0x02;
         }
 
         /// <summary>Attempts to load prg.</summary>
+        /// <param name="requestedName">The C64 filename requested by the caller, or null to select a default.</param>
+        /// <param name="prgBytes">Receives or contains the PRG bytes for the operation.</param>
+        /// <param name="resolvedName">Receives the resolved C64 filename when the operation succeeds.</param>
+        /// <returns>True when the operation succeeds; otherwise, false.</returns>
         public bool TryLoadPrg(string? requestedName, out byte[] prgBytes, out string resolvedName)
         {
             prgBytes = Array.Empty<byte>();
@@ -126,6 +136,8 @@ namespace C64
         }
 
         /// <summary>Attempts to load directory.</summary>
+        /// <param name="prgBytes">Receives or contains the PRG bytes for the operation.</param>
+        /// <returns>True when the operation succeeds; otherwise, false.</returns>
         public bool TryLoadDirectory(out byte[] prgBytes)
         {
             prgBytes = Array.Empty<byte>();
@@ -152,6 +164,10 @@ namespace C64
         }
 
         /// <summary>Attempts to read sector.</summary>
+        /// <param name="track">The disk track number.</param>
+        /// <param name="sector">The disk sector number.</param>
+        /// <param name="sectorBytes">Receives the sector bytes when the read succeeds.</param>
+        /// <returns>True when the operation succeeds; otherwise, false.</returns>
         public bool TryReadSector(int track, int sector, out byte[] sectorBytes)
         {
             sectorBytes = Array.Empty<byte>();
@@ -165,6 +181,7 @@ namespace C64
         }
 
         /// <summary>Reads directory entries.</summary>
+        /// <returns>The directory entries decoded from the D64 image.</returns>
         private List<DirectoryEntry> ReadDirectoryEntries()
         {
             var list = new List<DirectoryEntry>();
@@ -206,6 +223,7 @@ namespace C64
         }
 
         /// <summary>Reads the disk name from the directory sector.</summary>
+        /// <returns>The string value produced by the operation.</returns>
         private string GetDiskName()
         {
             int bam = Offset(18, 0);
@@ -217,6 +235,10 @@ namespace C64
         }
 
         /// <summary>Appends one BASIC directory listing line.</summary>
+        /// <param name="body">The BASIC directory body being built.</param>
+        /// <param name="lineAddress">The next BASIC line address to write and advance.</param>
+        /// <param name="lineNumber">The BASIC line number to emit.</param>
+        /// <param name="text">The text to write.</param>
         private static void AppendDirectoryLine(List<byte> body, ref ushort lineAddress, ushort lineNumber, string text)
         {
             int lineStart = body.Count;
@@ -237,6 +259,8 @@ namespace C64
         }
 
         /// <summary>Converts an ASCII character to PETSCII.</summary>
+        /// <param name="ch">The character to convert or write.</param>
+        /// <returns>The byte value produced by the operation.</returns>
         private static byte CharToPetscii(char ch)
         {
             if (ch >= 'a' && ch <= 'z')
@@ -245,6 +269,8 @@ namespace C64
         }
 
         /// <summary>Formats a D64 file type byte.</summary>
+        /// <param name="fileType">The Commodore directory file type byte.</param>
+        /// <returns>The string value produced by the operation.</returns>
         private static string FileTypeName(byte fileType)
         {
             return (fileType & 0x07) switch
@@ -259,6 +285,10 @@ namespace C64
         }
 
         /// <summary>Decodes petscii name.</summary>
+        /// <param name="src">The source byte buffer to read from.</param>
+        /// <param name="offset">The starting offset within the buffer.</param>
+        /// <param name="len">The number of bytes to decode.</param>
+        /// <returns>The string value produced by the operation.</returns>
         private static string DecodePetsciiName(byte[] src, int offset, int len)
         {
             var sb = new StringBuilder(len);
@@ -278,12 +308,17 @@ namespace C64
         }
 
         /// <summary>Normalizes name.</summary>
+        /// <param name="s">The string to normalize.</param>
+        /// <returns>The string value produced by the operation.</returns>
         private static string NormalizeName(string s)
         {
             return s.Trim().Trim('"', '\'').ToUpperInvariant();
         }
 
         /// <summary>Calculates the byte offset of a D64 sector.</summary>
+        /// <param name="track">The disk track number.</param>
+        /// <param name="sector">The disk sector number.</param>
+        /// <returns>The numeric value produced by the operation.</returns>
         private static int Offset(int track, int sector)
         {
             if (track <= 0 || track >= SectorsPerTrack.Length)

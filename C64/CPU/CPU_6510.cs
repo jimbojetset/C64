@@ -42,12 +42,14 @@ namespace C64.CPU
         private readonly ConcurrentQueue<ulong> NMI_Buffer = new ConcurrentQueue<ulong>();
 
         /// <summary>Queues an IRQ request for the CPU.</summary>
+        /// <param name="value">The value supplied to the operation.</param>
         public void InitiateIRQ(ulong value)
         {
             IRQ_Buffer.Enqueue(value);
         }
 
         /// <summary>Queues an NMI request for the CPU.</summary>
+        /// <param name="value">The value supplied to the operation.</param>
         public void InitiateNMI(ulong value)
         {
             NMI_Buffer.Enqueue(value);
@@ -59,6 +61,7 @@ namespace C64.CPU
         private int externalStallCycles;
 
         /// <summary>Adds externally requested CPU stall cycles.</summary>
+        /// <param name="cycles">The number of emulated CPU cycles to advance.</param>
         public void RequestExternalStallCycles(int cycles)
         {
             if (cycles <= 0) return;
@@ -66,6 +69,7 @@ namespace C64.CPU
         }
 
         /// <summary>Initializes a new CPU_6510 instance.</summary>
+        /// <param name="freq">The target CPU frequency in cycles per second.</param>
         public CPU_6510(int freq = 1000000)
         {
             Initialise();
@@ -110,6 +114,7 @@ namespace C64.CPU
         private const int SliceCycles = 64;
 
         /// <summary>Runs the main emulator loop.</summary>
+        /// <param name="startVector">The start vector value used by the operation.</param>
         public void Run(ulong startVector = 0xFFFC)
         {
             registers.PC = memory.ReadWord(startVector);
@@ -200,6 +205,7 @@ namespace C64.CPU
         }
 
         /// <summary>Attempts to begin high resolution timer.</summary>
+        /// <returns>True when the operation succeeds; otherwise, false.</returns>
         private static bool TryBeginHighResolutionTimer()
         {
             if (!OperatingSystem.IsWindows()) return false;
@@ -218,6 +224,7 @@ namespace C64.CPU
         }
 
         /// <summary>Waits until the specified stopwatch deadline.</summary>
+        /// <param name="deadlineTicks">The high-resolution timer deadline to wait for.</param>
         private static void WaitUntil(long deadlineTicks)
         {
             long remaining = deadlineTicks - Stopwatch.GetTimestamp();
@@ -233,6 +240,7 @@ namespace C64.CPU
         }
 
         /// <summary>Executes one decoded CPU opcode.</summary>
+        /// <param name="opcode">The 6510 opcode byte to execute.</param>
         [MethodImpl(MethodImplOptions.AggressiveOptimization)]
         public void Execute(byte opcode)
         {
@@ -925,6 +933,7 @@ namespace C64.CPU
         #region Illegal opcode helpers
 
         /// <summary>Executes the LAX CPU operation.</summary>
+        /// <param name="addr">The emulated address to access.</param>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private void LAX(ulong addr)
         {
@@ -935,6 +944,7 @@ namespace C64.CPU
         }
 
         /// <summary>Executes the SAX CPU operation.</summary>
+        /// <param name="addr">The emulated address to access.</param>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private void SAX(ulong addr)
         {
@@ -942,6 +952,7 @@ namespace C64.CPU
         }
 
         /// <summary>Executes the DCP CPU operation.</summary>
+        /// <param name="addr">The emulated address to access.</param>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private void DCP(ulong addr)
         {
@@ -953,6 +964,7 @@ namespace C64.CPU
         }
 
         /// <summary>Executes the ISC CPU operation.</summary>
+        /// <param name="addr">The emulated address to access.</param>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private void ISC(ulong addr)
         {
@@ -962,6 +974,7 @@ namespace C64.CPU
         }
 
         /// <summary>Executes the SLO CPU operation.</summary>
+        /// <param name="addr">The emulated address to access.</param>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private void SLO(ulong addr)
         {
@@ -974,6 +987,7 @@ namespace C64.CPU
         }
 
         /// <summary>Executes the SRE CPU operation.</summary>
+        /// <param name="addr">The emulated address to access.</param>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private void SRE(ulong addr)
         {
@@ -986,6 +1000,7 @@ namespace C64.CPU
         }
 
         /// <summary>Executes the RLA CPU operation.</summary>
+        /// <param name="addr">The emulated address to access.</param>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private void RLA(ulong addr)
         {
@@ -999,6 +1014,7 @@ namespace C64.CPU
         }
 
         /// <summary>Executes the RRA CPU operation.</summary>
+        /// <param name="addr">The emulated address to access.</param>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private void RRA(ulong addr)
         {
@@ -1153,6 +1169,7 @@ namespace C64.CPU
         #region Addressing Modes
 
         /// <summary>Reads the next immediate operand byte.</summary>
+        /// <returns>The byte value produced by the operation.</returns>
         [MethodImpl(MethodImplOptions.AggressiveOptimization)]
         private byte Immediate()
         {
@@ -1161,6 +1178,7 @@ namespace C64.CPU
         }
 
         /// <summary>Reads the next absolute operand address.</summary>
+        /// <returns>The numeric value produced by the operation.</returns>
         [MethodImpl(MethodImplOptions.AggressiveOptimization)]
         private ulong Absolute()
         {
@@ -1169,6 +1187,7 @@ namespace C64.CPU
         }
 
         /// <summary>Reads an absolute-indirect jump target.</summary>
+        /// <returns>The numeric value produced by the operation.</returns>
         [MethodImpl(MethodImplOptions.AggressiveOptimization)]
         private ulong AbsoluteIndirect()
         {
@@ -1191,6 +1210,8 @@ namespace C64.CPU
         }
 
         /// <summary>Reads an absolute address indexed by X.</summary>
+        /// <param name="checkBoundary">The check boundary value used by the operation.</param>
+        /// <returns>The numeric value produced by the operation.</returns>
         [MethodImpl(MethodImplOptions.AggressiveOptimization)]
         private ulong X_Indexed_Absolute(bool checkBoundary = true)
         {
@@ -1201,6 +1222,8 @@ namespace C64.CPU
         }
 
         /// <summary>Reads an absolute address indexed by Y.</summary>
+        /// <param name="checkBoundary">The check boundary value used by the operation.</param>
+        /// <returns>The numeric value produced by the operation.</returns>
         [MethodImpl(MethodImplOptions.AggressiveOptimization)]
         private ulong Y_Indexed_Absolute(bool checkBoundary = true)
         {
@@ -1211,6 +1234,7 @@ namespace C64.CPU
         }
 
         /// <summary>Reads the next zero-page operand address.</summary>
+        /// <returns>The byte value produced by the operation.</returns>
         [MethodImpl(MethodImplOptions.AggressiveOptimization)]
         private byte Zero_Page()
         {
@@ -1219,6 +1243,7 @@ namespace C64.CPU
         }
 
         /// <summary>Reads a zero-page address indexed by X.</summary>
+        /// <returns>The byte value produced by the operation.</returns>
         [MethodImpl(MethodImplOptions.AggressiveOptimization)]
         private byte X_Indexed_Zero_Page()
         {
@@ -1227,6 +1252,7 @@ namespace C64.CPU
         }
 
         /// <summary>Reads a zero-page address indexed by Y.</summary>
+        /// <returns>The byte value produced by the operation.</returns>
         [MethodImpl(MethodImplOptions.AggressiveOptimization)]
         private byte Y_Indexed_Zero_Page()
         {
@@ -1235,6 +1261,7 @@ namespace C64.CPU
         }
 
         /// <summary>Reads an indexed-indirect zero-page address.</summary>
+        /// <returns>The numeric value produced by the operation.</returns>
         [MethodImpl(MethodImplOptions.AggressiveOptimization)]
         private ulong X_Indexed_Zero_Page_Indirect()
         {
@@ -1246,6 +1273,8 @@ namespace C64.CPU
         }
 
         /// <summary>Reads an indirect-indexed zero-page address.</summary>
+        /// <param name="checkBoundary">The check boundary value used by the operation.</param>
+        /// <returns>The numeric value produced by the operation.</returns>
         [MethodImpl(MethodImplOptions.AggressiveOptimization)]
         private ulong Zero_Page_Indirect_Y_Indexed(bool checkBoundary = true)
         {
@@ -1259,6 +1288,7 @@ namespace C64.CPU
         }
 
         /// <summary>Sets flags nz.</summary>
+        /// <param name="value">The value supplied to the operation.</param>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private void Set_FlagsNZ(byte value)
         {
@@ -2000,6 +2030,7 @@ namespace C64.CPU
         }
 
         /// <summary>Executes the ADC CPU operation.</summary>
+        /// <param name="value">The value supplied to the operation.</param>
         private void ADC(byte value)
         {
             int carry = registers.Flags.C ? 1 : 0;
@@ -2097,6 +2128,7 @@ namespace C64.CPU
         }
 
         /// <summary>Executes the SBC CPU operation.</summary>
+        /// <param name="value">The value supplied to the operation.</param>
         private void SBC(byte value)
         {
             int carry = registers.Flags.C ? 1 : 0;
@@ -2773,6 +2805,7 @@ namespace C64.CPU
         }
 
         /// <summary>Applies a relative branch target and cycle penalty.</summary>
+        /// <param name="value">The value supplied to the operation.</param>
         private void Branch(ulong value)
         {
             // Branch offset is a signed 8-bit value; cast handles both directions.
@@ -2846,6 +2879,7 @@ namespace C64.CPU
         #endregion
 
         /// <summary>Increments program counter.</summary>
+        /// <param name="value">The value supplied to the operation.</param>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private void IncrementProgramCounter(ulong value = 1)
         {
@@ -2854,6 +2888,8 @@ namespace C64.CPU
         }
 
         /// <summary>Reads byte from memory.</summary>
+        /// <param name="addr">The emulated address to access.</param>
+        /// <returns>The byte value produced by the operation.</returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private byte ReadByteFromMemory(ulong addr)
         {
@@ -2861,6 +2897,8 @@ namespace C64.CPU
         }
 
         /// <summary>Writes byte to memory.</summary>
+        /// <param name="addr">The emulated address to access.</param>
+        /// <param name="value">The value supplied to the operation.</param>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private void WriteByteToMemory(ulong addr, byte value)
         {
@@ -2868,6 +2906,7 @@ namespace C64.CPU
         }
 
         /// <summary>Reads the next instruction byte and advances PC.</summary>
+        /// <returns>The byte value produced by the operation.</returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public byte GetNextByteInstruction()
         {
@@ -2877,6 +2916,7 @@ namespace C64.CPU
         }
 
         /// <summary>Reads the next instruction word and advances PC.</summary>
+        /// <returns>The numeric value produced by the operation.</returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private ulong GetNextWordInstruction()
         {
@@ -2886,6 +2926,7 @@ namespace C64.CPU
         }
 
         /// <summary>Pushes byte to stack.</summary>
+        /// <param name="value">The value supplied to the operation.</param>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private void PushByteToStack(byte value)
         {
@@ -2894,6 +2935,7 @@ namespace C64.CPU
         }
 
         /// <summary>Pops byte from stack.</summary>
+        /// <returns>The byte value produced by the operation.</returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private byte PopByteFromStack()
         {
@@ -2902,6 +2944,7 @@ namespace C64.CPU
         }
 
         /// <summary>Processes nmi.</summary>
+        /// <param name="value">The value supplied to the operation.</param>
         private void ProcessNMI(ulong value = 0xFFFA)
         {
             PushByteToStack((byte)((registers.PC >> 8) & 0xFF));
@@ -2914,6 +2957,7 @@ namespace C64.CPU
         }
 
         /// <summary>Processes irq.</summary>
+        /// <param name="value">The value supplied to the operation.</param>
         private void ProcessIRQ(ulong value = 0xFFFE)
         {
             PushByteToStack((byte)((registers.PC >> 8) & 0xFF));
@@ -2928,6 +2972,9 @@ namespace C64.CPU
         }
 
         /// <summary>Determines whether two addresses cross a page boundary.</summary>
+        /// <param name="addr1">The first address to compare.</param>
+        /// <param name="addr2">The second address to compare.</param>
+        /// <returns>True when the operation succeeds; otherwise, false.</returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private static bool CrossBoundary(ulong addr1, ulong addr2)
         {

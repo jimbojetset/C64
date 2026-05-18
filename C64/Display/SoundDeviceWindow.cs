@@ -14,6 +14,8 @@ namespace C64
     {
 
         /// <summary>Shows the picker window and returns the selected value.</summary>
+        /// <param name="devices">The audio device names to show in the picker.</param>
+        /// <returns>The selected or resolved string value, or null when no value is available.</returns>
         public static string? Prompt(List<string> devices)
         {
             if (devices.Count == 0) return null;

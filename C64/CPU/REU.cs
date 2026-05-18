@@ -47,6 +47,7 @@ namespace C64
         public Action? OnIrqRequest { get; set; }  // Called when REU needs to raise IRQ
 
         /// <summary>Initializes a new REU instance.</summary>
+        /// <param name="sizeKb">The REU capacity in kilobytes.</param>
         public REU(int sizeKb = 128)
         {
             _reuSizeKb = sizeKb;
@@ -70,6 +71,8 @@ namespace C64
         }
 
         /// <summary>Reads a value from the addressed device state.</summary>
+        /// <param name="addr">The emulated address to access.</param>
+        /// <returns>The byte value produced by the operation.</returns>
         public byte Read(int addr)
         {
             // REU control register reads
@@ -94,6 +97,8 @@ namespace C64
         }
 
         /// <summary>Writes a value to the addressed device state.</summary>
+        /// <param name="addr">The emulated address to access.</param>
+        /// <param name="value">The value supplied to the operation.</param>
         public void Write(int addr, byte value)
         {
             switch (addr & 0xFF)
@@ -149,6 +154,8 @@ namespace C64
         /// Step DMA transfer by a cycle count. Called from the main CPU cycle callback.
         /// Approximate rate: 1 byte per 2 CPU cycles (realistic for C64 REU).
         /// </summary>
+        /// <param name="cycles">The number of emulated CPU cycles to advance.</param>
+        /// <param name="memory">The CPU memory map used by the operation.</param>
         public void StepDma(int cycles, CPU.Memory memory)
         {
             if (!_dmaActive) return;
@@ -201,6 +208,8 @@ namespace C64
         }
 
         /// <summary>Reads reu byte.</summary>
+        /// <param name="addr">The emulated address to access.</param>
+        /// <returns>The byte value produced by the operation.</returns>
         private byte ReadReuByte(int addr)
         {
             addr &= ((_reuSizeKb * 1024) - 1);
@@ -208,6 +217,8 @@ namespace C64
         }
 
         /// <summary>Writes reu byte.</summary>
+        /// <param name="addr">The emulated address to access.</param>
+        /// <param name="value">The value supplied to the operation.</param>
         private void WriteReuByte(int addr, byte value)
         {
             addr &= ((_reuSizeKb * 1024) - 1);

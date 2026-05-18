@@ -19,6 +19,7 @@ namespace C64
         private string? _error;
 
         /// <summary>Initializes a new save-file selector.</summary>
+        /// <param name="defaultFilename">The filename initially offered to the user.</param>
         public SaveFileSelector(string defaultFilename)
         {
             _filename = defaultFilename;
@@ -96,6 +97,8 @@ namespace C64
         }
 
         /// <summary>Normalizes a user-entered filename for PRG saving.</summary>
+        /// <param name="raw">The raw bytes to decode.</param>
+        /// <returns>The string value produced by the operation.</returns>
         private static string NormalizeFilename(string raw)
         {
             string name = raw.Trim().Trim('"', '\'');

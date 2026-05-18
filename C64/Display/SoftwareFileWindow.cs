@@ -13,6 +13,7 @@ namespace C64
     {
 
         /// <summary>Shows the picker window and returns the selected value.</summary>
+        /// <returns>The selected or resolved string value, or null when no value is available.</returns>
         public static string? Prompt()
         {
             IReadOnlyList<SoftwareFileEntry> files = DiscoverSoftwareFiles();
@@ -137,6 +138,7 @@ namespace C64
         }
 
         /// <summary>Discovers loadable bundled software files.</summary>
+        /// <returns>The discovered software file entries.</returns>
         private static IReadOnlyList<SoftwareFileEntry> DiscoverSoftwareFiles()
         {
             string? softwareDir = SoftwareDirectory.Find();

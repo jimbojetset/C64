@@ -8,6 +8,7 @@ namespace C64
     {
 
         /// <summary>Finds the bundled software directory.</summary>
+        /// <returns>The selected or resolved string value, or null when no value is available.</returns>
         public static string? Find()
         {
             string[] candidates =
@@ -21,6 +22,7 @@ namespace C64
         }
 
         /// <summary>Finds the software directory or throws if missing.</summary>
+        /// <returns>The string value produced by the operation.</returns>
         public static string Ensure()
         {
             string? existing = Find();

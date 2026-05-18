@@ -28,6 +28,7 @@ namespace C64
         public bool ReadHigh { get; private set; } = true;
 
         /// <summary>Attaches a TAP pulse stream to the datasette.</summary>
+        /// <param name="raw">The raw bytes to decode.</param>
         public void AttachTap(byte[] raw)
         {
             pulseCycles.Clear();
@@ -88,6 +89,7 @@ namespace C64
         }
 
         /// <summary>Sets motor.</summary>
+        /// <param name="on">Whether the datasette motor should be on.</param>
         public void SetMotor(bool on)
         {
             if (on && !MotorOn)
@@ -98,6 +100,8 @@ namespace C64
         // Returns true when READ line toggled during this step.
 
         /// <summary>Advances the device by the specified CPU cycles.</summary>
+        /// <param name="cycles">The number of emulated CPU cycles to advance.</param>
+        /// <returns>True when the operation succeeds; otherwise, false.</returns>
         public bool Step(uint cycles)
         {
             if (!MotorOn || !HasTape || cycles == 0)

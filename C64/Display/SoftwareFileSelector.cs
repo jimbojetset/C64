@@ -20,6 +20,7 @@ namespace C64
         private string? _selectedPath;
 
         /// <summary>Initializes a new SoftwareFileSelector instance.</summary>
+        /// <param name="files">The software files to show in the selector.</param>
         public SoftwareFileSelector(IReadOnlyList<SoftwareFileEntry> files)
         {
             _files = files;
@@ -146,6 +147,7 @@ namespace C64
         }
 
         /// <summary>Accepts the item at the selected index.</summary>
+        /// <param name="index">The item index to select.</param>
         private void Select(int index)
         {
             _selectedPath = _files[index].Path;

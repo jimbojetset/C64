@@ -67,6 +67,7 @@ namespace C64.CPU
         public Action<ulong>? OnIOPostRead;
 
         /// <summary>Initializes a new Memory instance.</summary>
+        /// <param name="size">The size of the emulated memory in bytes.</param>
         public Memory(int size)
         {
             memory = new byte[size];
@@ -83,6 +84,8 @@ namespace C64.CPU
         // beneath I/O/CHAR mapping, matching C64 load behavior.
 
         /// <summary>Writes ram byte.</summary>
+        /// <param name="addr">The emulated address to access.</param>
+        /// <param name="value">The value supplied to the operation.</param>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void WriteRamByte(ulong addr, byte value)
         {
@@ -109,6 +112,8 @@ namespace C64.CPU
         // when the corresponding bit in the $01 processor port selects it.
 
         /// <summary>Loads banked rom.</summary>
+        /// <param name="filePath">The path of the file to load.</param>
+        /// <param name="slot">The ROM bank slot that receives the loaded image.</param>
         public void LoadBankedROM(string filePath, BankSlot slot)
         {
             byte[] data = File.ReadAllBytes(filePath);
@@ -147,6 +152,8 @@ namespace C64.CPU
         };
 
         /// <summary>Writes byte.</summary>
+        /// <param name="addr">The emulated address to access.</param>
+        /// <param name="value">The value supplied to the operation.</param>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void WriteByte(ulong addr, byte value)
         {
@@ -203,6 +210,8 @@ namespace C64.CPU
         }
 
         /// <summary>Determines whether an address is in a legacy ROM range.</summary>
+        /// <param name="addr">The emulated address to access.</param>
+        /// <returns>True when the operation succeeds; otherwise, false.</returns>
         private bool IsROM(int addr)
         {
             // Use indexed for-loop to avoid enumerator allocation on each call.
@@ -217,6 +226,8 @@ namespace C64.CPU
         }
 
         /// <summary>Reads byte.</summary>
+        /// <param name="addr">The emulated address to access.</param>
+        /// <returns>The byte value produced by the operation.</returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public byte ReadByte(ulong addr)
         {
@@ -285,6 +296,7 @@ namespace C64.CPU
         // (the only configuration in which OnIOWrite must fire).
 
         /// <summary>Determines whether the I/O window is currently mapped.</summary>
+        /// <returns>True when the operation succeeds; otherwise, false.</returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private bool Is_IO_Mapped()
         {
@@ -295,6 +307,7 @@ namespace C64.CPU
         }
 
         /// <summary>Computes the effective 6510 processor-port value.</summary>
+        /// <returns>The byte value produced by the operation.</returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private byte GetProcessorPortEffective()
         {
@@ -306,6 +319,8 @@ namespace C64.CPU
         }
 
         /// <summary>Reads word.</summary>
+        /// <param name="addr">The emulated address to access.</param>
+        /// <returns>The numeric value produced by the operation.</returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public ulong ReadWord(ulong addr)
         {
@@ -319,6 +334,8 @@ namespace C64.CPU
         // In particular, $D000-$DFFF must read RAM-under-I/O, not CPU I/O regs.
 
         /// <summary>Reads vic byte.</summary>
+        /// <param name="addr">The emulated address to access.</param>
+        /// <returns>The byte value produced by the operation.</returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public byte ReadVicByte(ulong addr)
         {
@@ -329,6 +346,10 @@ namespace C64.CPU
         }
 
         /// <summary>Loads data from disk.</summary>
+        /// <param name="filePath">The path of the file to load.</param>
+        /// <param name="startAddr">The first emulated address to fill.</param>
+        /// <param name="length">The number of bytes to load.</param>
+        /// <param name="readOnly">Whether the loaded range should be marked read-only.</param>
         public void Load(string filePath, int startAddr, int length, bool readOnly)
         {
             Array.Copy(File.ReadAllBytes(filePath), 0, memory, startAddr, length);

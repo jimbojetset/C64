@@ -44,6 +44,7 @@ namespace C64
         private byte lowLevelCurrentByte;
 
         /// <summary>Initializes a new IecBus instance.</summary>
+        /// <param name="drive">The virtual 1541 drive attached to the IEC bus.</param>
         public IecBus(VirtualDrive1541 drive)
         {
             this.drive = drive;
@@ -53,6 +54,8 @@ namespace C64
         public Action? OnDriveActivity { get; set; }
 
         /// <summary>Updates the host-side CIA2 IEC port pins.</summary>
+        /// <param name="dd00">The CIA2 port A data latch value.</param>
+        /// <param name="dd02">The CIA2 port A data direction register value.</param>
         public void UpdateHostCia2PortA(byte dd00, byte dd02)
         {
             // CIA2 port A IEC lines (active-low) on bits 5:DATA, 4:CLOCK, 3:ATN.
@@ -69,6 +72,7 @@ namespace C64
         }
 
         /// <summary>Sets whether a loose host program is available to the drive path.</summary>
+        /// <param name="present">Whether a host loose PRG is available to the virtual drive.</param>
         public void SetHostLooseProgramPresent(bool present)
         {
             hostLooseProgramPresent = present;
@@ -77,6 +81,11 @@ namespace C64
         /// <summary>
         /// Opens an IEC logical file and prepares command, directory, PRG, status, or direct-access channel state for device 8.
         /// </summary>
+        /// <param name="logicalFile">The C64 logical file number.</param>
+        /// <param name="device">The IEC device number.</param>
+        /// <param name="secondaryAddress">The IEC secondary address.</param>
+        /// <param name="name">The C64 filename or display name to use.</param>
+        /// <returns>True when the operation succeeds; otherwise, false.</returns>
         public bool Open(byte logicalFile, byte device, byte secondaryAddress, string? name)
         {
             if (NormalizeDevice(device) != 8)
@@ -110,6 +119,8 @@ namespace C64
         }
 
         /// <summary>Closes an IEC logical file.</summary>
+        /// <param name="logicalFile">The C64 logical file number.</param>
+        /// <returns>True when the operation succeeds; otherwise, false.</returns>
         public bool Close(byte logicalFile)
         {
             if (!logicalChannels.TryGetValue(logicalFile, out byte channel))
@@ -130,6 +141,8 @@ namespace C64
         }
 
         /// <summary>Selects an IEC logical file for input.</summary>
+        /// <param name="logicalFile">The C64 logical file number.</param>
+        /// <returns>True when the operation succeeds; otherwise, false.</returns>
         public bool Chkin(byte logicalFile)
         {
             if (!logicalChannels.TryGetValue(logicalFile, out byte channel))
@@ -142,6 +155,8 @@ namespace C64
         }
 
         /// <summary>Selects an IEC logical file for output.</summary>
+        /// <param name="logicalFile">The C64 logical file number.</param>
+        /// <returns>True when the operation succeeds; otherwise, false.</returns>
         public bool Chkout(byte logicalFile)
         {
             if (!logicalChannels.TryGetValue(logicalFile, out byte channel))
@@ -167,6 +182,7 @@ namespace C64
         public bool HasInputChannel => currentInputChannel.HasValue;
 
         /// <summary>Reads a byte from the active IEC input channel.</summary>
+        /// <returns>The byte value produced by the operation.</returns>
         public byte Chrin()
         {
             if (!currentInputChannel.HasValue)
@@ -176,6 +192,8 @@ namespace C64
         }
 
         /// <summary>Writes a byte to the active IEC output channel.</summary>
+        /// <param name="value">The value supplied to the operation.</param>
+        /// <returns>True when the operation succeeds; otherwise, false.</returns>
         public bool Chrout(byte value)
         {
             if (!currentOutputChannel.HasValue)
@@ -197,6 +215,8 @@ namespace C64
         }
 
         /// <summary>Builds external cia2 port a.</summary>
+        /// <param name="baseExternal">The external CIA2 port value before IEC line bits are applied.</param>
+        /// <returns>The byte value produced by the operation.</returns>
         public byte BuildExternalCia2PortA(byte baseExternal)
         {
             bool dataHigh = hostDataRelease && devDataRelease;
@@ -212,6 +232,7 @@ namespace C64
         }
 
         /// <summary>Sets the current IEC talker device.</summary>
+        /// <param name="dev">The IEC device number.</param>
         public void Talk(byte dev)
         {
             currentTalker = NormalizeDevice(dev);
@@ -222,6 +243,7 @@ namespace C64
         }
 
         /// <summary>Sets the current IEC listener device.</summary>
+        /// <param name="dev">The IEC device number.</param>
         public void Listen(byte dev)
         {
             currentListener = NormalizeDevice(dev);
@@ -233,6 +255,7 @@ namespace C64
         }
 
         /// <summary>Sends an IEC secondary address.</summary>
+        /// <param name="sa">The IEC secondary address.</param>
         public void Second(byte sa)
         {
             listenSecondary = (byte)(sa & 0x0F);
@@ -240,6 +263,7 @@ namespace C64
         }
 
         /// <summary>Sets the IEC talk secondary address.</summary>
+        /// <param name="sa">The IEC secondary address.</param>
         public void Tksa(byte sa)
         {
             talkSecondary = (byte)(sa & 0x0F);
@@ -247,6 +271,7 @@ namespace C64
         }
 
         /// <summary>Sends one byte on the IEC command path.</summary>
+        /// <param name="value">The value supplied to the operation.</param>
         public void Ciout(byte value)
         {
             if (currentListener != 8)
@@ -255,6 +280,7 @@ namespace C64
         }
 
         /// <summary>Receives one byte from the IEC talker.</summary>
+        /// <returns>The byte value produced by the operation.</returns>
         public byte Acptr()
         {
             if (currentTalker != 8)
@@ -297,6 +323,8 @@ namespace C64
         }
 
         /// <summary>Reads channel byte.</summary>
+        /// <param name="channel">The IEC channel number.</param>
+        /// <returns>The byte value produced by the operation.</returns>
         private byte ReadChannelByte(byte channel)
         {
             if (channel == 15)
@@ -320,6 +348,9 @@ namespace C64
         }
 
         /// <summary>Attempts to load from drive.</summary>
+        /// <param name="prg">Receives the PRG bytes when the load succeeds.</param>
+        /// <param name="resolvedName">Receives the resolved C64 filename when the operation succeeds.</param>
+        /// <returns>True when the operation succeeds; otherwise, false.</returns>
         public bool TryLoadFromDrive(out byte[] prg, out string resolvedName)
         {
             string? requested = pendingFilename;
@@ -331,6 +362,10 @@ namespace C64
         }
 
         /// <summary>Attempts to load from drive.</summary>
+        /// <param name="requestedName">The C64 filename requested by the caller, or null to select a default.</param>
+        /// <param name="prg">Receives the PRG bytes when the load succeeds.</param>
+        /// <param name="resolvedName">Receives the resolved C64 filename when the operation succeeds.</param>
+        /// <returns>True when the operation succeeds; otherwise, false.</returns>
         public bool TryLoadFromDrive(string? requestedName, out byte[] prg, out string resolvedName)
         {
             bool ok = drive.TryLoadPrg(requestedName, out prg, out resolvedName);
@@ -340,6 +375,7 @@ namespace C64
         }
 
         /// <summary>Prepares talk buffer.</summary>
+        /// <param name="channel">The IEC channel number.</param>
         private void PrepareTalkBuffer(byte channel)
         {
             talkQueue.Clear();
@@ -375,6 +411,7 @@ namespace C64
         /// <summary>
         /// Executes supported 1541 command-channel operations and updates drive status for unsupported commands.
         /// </summary>
+        /// <param name="command">The drive command string to execute.</param>
         private void ExecuteDriveCommand(string command)
         {
             string normalized = command.Trim().Trim('"', '\'').ToUpperInvariant();
@@ -401,6 +438,7 @@ namespace C64
         }
 
         /// <summary>Executes block read.</summary>
+        /// <param name="args">The command argument text to parse.</param>
         private void ExecuteBlockRead(string args)
         {
             int[] values = ParseDriveCommandNumbers(args);
@@ -425,6 +463,7 @@ namespace C64
         }
 
         /// <summary>Executes buffer pointer.</summary>
+        /// <param name="args">The command argument text to parse.</param>
         private void ExecuteBufferPointer(string args)
         {
             int[] values = ParseDriveCommandNumbers(args);
@@ -439,6 +478,8 @@ namespace C64
         }
 
         /// <summary>Parses numeric arguments from a drive command.</summary>
+        /// <param name="args">The command argument text to parse.</param>
+        /// <returns>The numeric arguments parsed from the drive command.</returns>
         private static int[] ParseDriveCommandNumbers(string args)
         {
             string[] parts = args.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
@@ -452,12 +493,18 @@ namespace C64
         }
 
         /// <summary>Sets drive ok.</summary>
+        /// <param name="track">The disk track number.</param>
+        /// <param name="sector">The disk sector number.</param>
         private void SetDriveOk(int track = 0, int sector = 0)
         {
             SetDriveStatus(0, "OK", track, sector);
         }
 
         /// <summary>Sets drive status.</summary>
+        /// <param name="code">The Commodore DOS status code.</param>
+        /// <param name="message">The Commodore DOS status message.</param>
+        /// <param name="track">The disk track number.</param>
+        /// <param name="sector">The disk sector number.</param>
         private void SetDriveStatus(int code, string message, int track, int sector)
         {
             driveStatus = $"{code:00}, {message},{track:00},{sector:00}";
@@ -465,6 +512,8 @@ namespace C64
         }
 
         /// <summary>Decodes petscii.</summary>
+        /// <param name="bytes">The PETSCII bytes to decode.</param>
+        /// <returns>The string value produced by the operation.</returns>
         private static string DecodePetscii(List<byte> bytes)
         {
             var sb = new StringBuilder(bytes.Count);
@@ -479,6 +528,8 @@ namespace C64
         }
 
         /// <summary>Normalizes device.</summary>
+        /// <param name="dev">The IEC device number.</param>
+        /// <returns>The byte value produced by the operation.</returns>
         private static byte NormalizeDevice(byte dev)
         {
             return (byte)(dev & 0x1F);
@@ -492,6 +543,7 @@ namespace C64
             private readonly byte[] data;
 
             /// <summary>Initializes a new DirectChannel instance.</summary>
+            /// <param name="data">The bytes exposed through the direct channel.</param>
             public DirectChannel(byte[] data)
             {
                 this.data = data;
@@ -501,6 +553,7 @@ namespace C64
             public int Position { get; set; }
 
             /// <summary>Reads byte.</summary>
+            /// <returns>The byte value produced by the operation.</returns>
             public byte ReadByte()
             {
                 if (Position < 0 || Position >= data.Length)

@@ -21,6 +21,7 @@ namespace C64
         private int _currentIndex = 0;  // Default to index 0
 
         /// <summary>Initializes a new AudioDeviceSelector instance.</summary>
+        /// <param name="devices">The audio device names to show in the picker.</param>
         public AudioDeviceSelector(List<string> devices)
         {
             _devices = devices;
@@ -100,6 +101,7 @@ namespace C64
         }
 
         /// <summary>Accepts the item at the selected index.</summary>
+        /// <param name="index">The item index to select.</param>
         private void Select(int index)
         {
             _selectedDeviceName = _devices[index];

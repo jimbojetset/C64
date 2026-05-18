@@ -16,6 +16,7 @@ namespace C64
         public string? AttachedPath => image?.SourcePath;
 
         /// <summary>Attaches a D64 disk image.</summary>
+        /// <param name="path">The path of the file to use.</param>
         public void AttachD64(string path)
         {
             image = D64Image.Load(path);
@@ -30,12 +31,17 @@ namespace C64
         }
 
         /// <summary>Lists PRG files on the attached media.</summary>
+        /// <returns>The available file names.</returns>
         public IReadOnlyList<string> ListFiles()
         {
             return image?.ListPrgFiles() ?? Array.Empty<string>();
         }
 
         /// <summary>Attempts to load prg.</summary>
+        /// <param name="requestedName">The C64 filename requested by the caller, or null to select a default.</param>
+        /// <param name="prg">Receives the PRG bytes when the load succeeds.</param>
+        /// <param name="resolvedName">Receives the resolved C64 filename when the operation succeeds.</param>
+        /// <returns>True when the operation succeeds; otherwise, false.</returns>
         public bool TryLoadPrg(string? requestedName, out byte[] prg, out string resolvedName)
         {
             prg = Array.Empty<byte>();
@@ -66,6 +72,10 @@ namespace C64
         }
 
         /// <summary>Attempts to read sector.</summary>
+        /// <param name="track">The disk track number.</param>
+        /// <param name="sector">The disk sector number.</param>
+        /// <param name="sectorBytes">Receives the sector bytes when the read succeeds.</param>
+        /// <returns>True when the operation succeeds; otherwise, false.</returns>
         public bool TryReadSector(int track, int sector, out byte[] sectorBytes)
         {
             sectorBytes = Array.Empty<byte>();
@@ -73,6 +83,8 @@ namespace C64
         }
 
         /// <summary>Determines whether a load name requests the disk directory.</summary>
+        /// <param name="requestedName">The C64 filename requested by the caller, or null to select a default.</param>
+        /// <returns>True when the operation succeeds; otherwise, false.</returns>
         private static bool IsDirectoryRequest(string? requestedName)
         {
             if (string.IsNullOrWhiteSpace(requestedName))

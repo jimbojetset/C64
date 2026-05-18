@@ -44,6 +44,8 @@ namespace C64.CPU
         }
 
         /// <summary>Sets flags from byte.</summary>
+        /// <param name="flags">The packed processor status bits to apply.</param>
+        /// <param name="bits">The status bits that are allowed to change.</param>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void SetFlagsFromByte(byte flags, byte bits = 0xFF)
         {

@@ -32,6 +32,13 @@ namespace C64
 
         private bool _disposed;
 
+        /// <summary>
+        /// Creates the ImGui renderer, input bindings, font texture, and OpenGL buffers used by the emulator overlays.
+        /// The initial window size seeds ImGui display metrics until the SDL window reports a resize.
+        /// </summary>
+        /// <param name="gl">The OpenGL binding used to create ImGui resources.</param>
+        /// <param name="width">The initial framebuffer width in pixels.</param>
+        /// <param name="height">The initial framebuffer height in pixels.</param>
         public ImGuiController(GL gl, int width, int height)
         {
             _gl = gl;
@@ -130,6 +137,9 @@ namespace C64
         }
 
         /// <summary>Compiles shader.</summary>
+        /// <param name="type">The OpenGL shader or PNG chunk type.</param>
+        /// <param name="source">The shader source code to compile.</param>
+        /// <returns>The numeric value produced by the operation.</returns>
         private uint CompileShader(ShaderType type, string source)
         {
             uint shader = _gl.CreateShader(type);
@@ -168,6 +178,7 @@ namespace C64
         }
 
         /// <summary>Processes event.</summary>
+        /// <param name="e">The SDL event to process.</param>
         public void ProcessEvent(SDL_Event e)
         {
             var io = ImGui.GetIO();
@@ -225,6 +236,7 @@ namespace C64
         }
 
         /// <summary>Updates modifiers.</summary>
+        /// <param name="io">The ImGui IO state to update.</param>
         private void UpdateModifiers(ImGuiIOPtr io)
         {
             SDL_Keymod mod = SDL_GetModState();
@@ -235,6 +247,8 @@ namespace C64
         }
 
         /// <summary>Maps an SDL key code to an ImGui key.</summary>
+        /// <param name="key">The SDL key code to translate.</param>
+        /// <returns>The ImGui key corresponding to the SDL key code.</returns>
         private ImGuiKey TranslateKey(SDL_Keycode key)
         {
             return key switch
@@ -297,6 +311,7 @@ namespace C64
         }
 
         /// <summary>Begins a new ImGui frame.</summary>
+        /// <param name="deltaTime">The elapsed frame time in seconds.</param>
         public void NewFrame(float deltaTime)
         {
             var io = ImGui.GetIO();
@@ -307,6 +322,8 @@ namespace C64
         }
 
         /// <summary>Updates ImGui dimensions after a window resize.</summary>
+        /// <param name="width">The width in pixels.</param>
+        /// <param name="height">The height in pixels.</param>
         public void WindowResized(int width, int height)
         {
             _windowWidth = width;

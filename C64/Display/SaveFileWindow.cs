@@ -13,6 +13,8 @@ namespace C64
     {
 
         /// <summary>Shows the picker window and returns the selected value.</summary>
+        /// <param name="defaultFilename">The filename initially offered to the user.</param>
+        /// <returns>The selected or resolved string value, or null when no value is available.</returns>
         public static string? Prompt(string defaultFilename)
         {
             if (SDL_InitSubSystem(SDL_INIT_VIDEO) != 0)

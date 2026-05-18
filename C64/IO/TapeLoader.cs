@@ -23,6 +23,8 @@ namespace C64
         // ?? T64 ??????????????????????????????????????????????????????????????
 
         /// <summary>Parses a T64 tape-archive and returns all usable program entries.</summary>
+        /// <param name="raw">The raw bytes to decode.</param>
+        /// <returns>The decoded tape entries.</returns>
         public static List<TapeEntry> ReadT64(byte[] raw)
         {
             // T64 layout:
@@ -88,6 +90,10 @@ namespace C64
         }
 
         /// <summary>Decodes petscii name.</summary>
+        /// <param name="src">The source byte buffer to read from.</param>
+        /// <param name="offset">The starting offset within the buffer.</param>
+        /// <param name="length">The number of bytes to load.</param>
+        /// <returns>The string value produced by the operation.</returns>
         private static string DecodePetsciiName(byte[] src, int offset, int length)
         {
             var sb = new StringBuilder(length);

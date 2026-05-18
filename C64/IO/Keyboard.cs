@@ -57,6 +57,7 @@ namespace C64
         public Action? OnSelectAudioDevice { get; set; }
 
         /// <summary>Initializes a new Keyboard instance.</summary>
+        /// <param name="cpu">The CPU instance connected to this component.</param>
         public Keyboard(CPU_6510 cpu)
         {
             this.cpu = cpu;
@@ -79,6 +80,9 @@ namespace C64
         /// values and returns the resulting active-low column byte, exactly as the
         /// real CIA-1 does.
         /// </summary>
+        /// <param name="rowLatch">The CIA row latch value used for keyboard scanning.</param>
+        /// <param name="rowDdr">The CIA row data direction register used for keyboard scanning.</param>
+        /// <returns>The byte value produced by the operation.</returns>
         public byte ScanMatrix(byte rowLatch, byte rowDdr)
         {
             byte activeRows = (byte)(~rowLatch & rowDdr);
@@ -134,6 +138,8 @@ namespace C64
         /// Handles a single SDL event.
         /// Returns <c>true</c> if the emulator should quit.
         /// </summary>
+        /// <param name="ev">The SDL event to process.</param>
+        /// <returns>True when the operation succeeds; otherwise, false.</returns>
         public bool HandleSdlEvent(SDL_Event ev)
         {
             switch (ev.type)
@@ -170,6 +176,8 @@ namespace C64
         // ?? Private implementation ????????????????????????????????????????????
 
         /// <summary>Handles key down.</summary>
+        /// <param name="ke">The SDL keyboard event to process.</param>
+        /// <returns>True when the operation succeeds; otherwise, false.</returns>
         private bool HandleKeyDown(SDL_KeyboardEvent ke)
         {
             if (ke.repeat != 0) return false;
@@ -250,6 +258,7 @@ namespace C64
         }
 
         /// <summary>Handles key up.</summary>
+        /// <param name="ke">The SDL keyboard event to process.</param>
         private void HandleKeyUp(SDL_KeyboardEvent ke)
         {
             byte jmask = JoystickMaskFromKey(ke.keysym.sym);
@@ -260,6 +269,8 @@ namespace C64
         }
 
         /// <summary>Updates keyboard state.</summary>
+        /// <param name="sym">The SDL key code to update.</param>
+        /// <param name="pressed">Whether the key or button is currently pressed.</param>
         private void UpdateKeyboardState(SDL_Keycode sym, bool pressed)
         {
             switch (sym)
@@ -389,6 +400,9 @@ namespace C64
         }
 
         /// <summary>Sets matrix key.</summary>
+        /// <param name="row">The matrix row or image row to process.</param>
+        /// <param name="column">The matrix column to update.</param>
+        /// <param name="pressed">Whether the key or button is currently pressed.</param>
         private void SetMatrixKey(int row, int column, bool pressed)
         {
             byte mask = (byte)(1 << column);
@@ -417,6 +431,7 @@ namespace C64
         }
 
         /// <summary>Opens controller.</summary>
+        /// <param name="deviceIndex">The SDL controller device index.</param>
         private void OpenController(int deviceIndex)
         {
             CloseController();
@@ -451,6 +466,7 @@ namespace C64
         }
 
         /// <summary>Handles controller added.</summary>
+        /// <param name="ev">The SDL event to process.</param>
         private void HandleControllerAdded(SDL_ControllerDeviceEvent ev)
         {
             if (gameController == IntPtr.Zero && SDL_IsGameController(ev.which) != SDL_bool.SDL_FALSE)
@@ -458,6 +474,7 @@ namespace C64
         }
 
         /// <summary>Handles controller removed.</summary>
+        /// <param name="ev">The SDL event to process.</param>
         private void HandleControllerRemoved(SDL_ControllerDeviceEvent ev)
         {
             if (ev.which != gameControllerInstanceId)
@@ -468,6 +485,7 @@ namespace C64
         }
 
         /// <summary>Handles controller button.</summary>
+        /// <param name="ev">The SDL event to process.</param>
         private void HandleControllerButton(SDL_ControllerButtonEvent ev)
         {
             if (ev.which != gameControllerInstanceId)
@@ -486,6 +504,7 @@ namespace C64
         }
 
         /// <summary>Handles controller axis.</summary>
+        /// <param name="ev">The SDL event to process.</param>
         private void HandleControllerAxis(SDL_ControllerAxisEvent ev)
         {
             if (ev.which != gameControllerInstanceId)
