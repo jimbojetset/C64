@@ -229,7 +229,9 @@ namespace C64
             };
             keyboard.OnToggleMute = ToggleMute;
             keyboard.OnTogglePause = TogglePause;
+            keyboard.OnToggleJoystickPort = ToggleJoystickPort;
             keyboard.OnSelectAudioDevice = SelectAudioDevice;
+            display.JoystickPortOverlay = keyboard.ActiveJoystickPort;
 
             byte[] kernal = cpu.memory.GetBankedROM(Memory.BankSlot.Kernal)!;
             kernal[0xFCF5 - 0xE000] = 0xEA;
@@ -945,7 +947,10 @@ namespace C64
                     // SID readback registers are mirrored across $D400-$D7FF.
                     // We only provide meaningful values for $19-$1C (POT/POT/OSC3/ENV3).
                     if (addr >= 0xD400 && addr <= 0xD7FF)
-                        return sound.ReadRegister((int)((addr - 0xD400) & 0x1F));
+                    {
+                        int sidRegister = (int)((addr - 0xD400) & 0x1F);
+                        return sound.ReadRegister(sidRegister);
+                    }
                     return fallback;
             }
         }
@@ -975,6 +980,7 @@ namespace C64
         private byte ReadCia1PortB()
         {
             byte external = keyboard.ScanMatrix(cia1PortA, cia1Ddra);
+            external &= keyboard.Joystick1;
             return MergeCiaPortRead(cia1PortB, cia1Ddrb, external);
         }
 
@@ -2394,6 +2400,7 @@ namespace C64
             display.BeginReset();
 
             keyboard.Reset();
+            display.JoystickPortOverlay = keyboard.ActiveJoystickPort;
             reu.Reset();
             iecBus.SetHostLooseProgramPresent(!string.IsNullOrWhiteSpace(lastHostLoadedFile));
 
@@ -2428,6 +2435,13 @@ namespace C64
         private void TogglePause()
         {
             SetPaused(!IsPaused);
+        }
+
+        /// <summary>Toggles keyboard and controller joystick input between C64 joystick ports and keyboard-only mode.</summary>
+        private void ToggleJoystickPort()
+        {
+            int port = keyboard.ToggleJoystickPort();
+            display.JoystickPortOverlay = port;
         }
 
         /// <summary>Selects audio device.</summary>

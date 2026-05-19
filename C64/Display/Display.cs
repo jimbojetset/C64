@@ -16,7 +16,6 @@ using C64.CPU;
 using Silk.NET.OpenGL;
 using System.Diagnostics;
 using System.IO.Compression;
-using System.Threading;
 using static SDL2.SDL;
 
 namespace C64
@@ -32,13 +31,16 @@ namespace C64
 
         public const int FrameW = 384;
         public const int FrameH = 272;
-        private const int MonitorImageW = 688;
-        private const int MonitorImageH = 701;
-        private const int MonitorScreenX = 90;
-        private const int MonitorScreenY = 83;
-        private const int MonitorScreenW = 508;
-        private const int MonitorScreenH = 423;
+        private const int MonitorImageW = 873;
+        private const int MonitorImageH = 913;
+        private const int MonitorScreenX = 181;
+        private const int MonitorScreenY = 81;
+        private const int MonitorScreenW = 509;
+        private const int MonitorScreenH = 426;
         private const double MonitorScreenOverscan = 1.08;
+        private const int StatusOverlayScale = 4;
+        private const int StatusOverlayW = 64;
+        private const int StatusOverlayH = 192;
         private const int FramePlayfieldX = (FrameW - ScreenW) / 2;
         private const int FramePlayfieldY = (FrameH - ScreenH) / 2;
         private const int FrameFirstRasterLine = VisibleTop - FramePlayfieldY;
@@ -77,6 +79,7 @@ namespace C64
         private byte[] renderBuf = new byte[FrameW * FrameH * 4];
         private byte[] displayBuf = new byte[FrameW * FrameH * 4];
         private byte[] presentationBuf = new byte[FrameW * FrameH * 4];
+        private byte[] statusOverlayBuf = new byte[StatusOverlayW * StatusOverlayH * 4];
         private readonly object swapLock = new object();
 
         private readonly bool[] fgLine = new bool[ScreenW];
@@ -90,6 +93,7 @@ namespace C64
         private IntPtr glContext;
         private GL? gl;
         private uint frameTexture;
+        private uint statusOverlayTexture;
         private uint monitorTexture;
         private uint presentVao;
         private uint presentVbo;
@@ -107,6 +111,9 @@ namespace C64
         private volatile bool resyncPending;
         private volatile bool muteOverlayVisible;
         private volatile bool pausedOverlayVisible;
+        private volatile int joystickPortOverlay;
+        private string? temporaryMessage;
+        private long temporaryMessageTicks;
         private long driveActivityTicks;
         private int rasterCycleInLine;
         private readonly bool[] busStealMask = new bool[CyclesPerRasterLine];
@@ -179,6 +186,13 @@ namespace C64
         {
             get => pausedOverlayVisible;
             set => pausedOverlayVisible = value;
+        }
+
+        /// <summary>Gets or sets the joystick port shown by the top-left status overlay, or 0 when joystick mapping is disabled.</summary>
+        public int JoystickPortOverlay
+        {
+            get => joystickPortOverlay;
+            set => joystickPortOverlay = value == 0 ? 0 : value == 1 ? 1 : 2;
         }
 
         /// <summary>Pulses drive activity.</summary>
@@ -327,8 +341,12 @@ namespace C64
 
             if (pausedOverlayVisible)
                 DrawPausedOverlay();
+            DrawTemporaryMessageOverlay();
+
+            Array.Clear(statusOverlayBuf, 0, statusOverlayBuf.Length);
             if (muteOverlayVisible)
                 DrawMuteOverlay();
+            DrawJoystickPortOverlay();
             DrawDriveActivityOverlay();
             PresentFrame();
         }
@@ -360,7 +378,7 @@ namespace C64
 
                 void main()
                 {
-                    if (EffectMode == 0)
+                    if (EffectMode == 0 || EffectMode == 2)
                     {
                         Out_Color = texture(Texture, Frag_UV);
                         return;
@@ -381,7 +399,8 @@ namespace C64
                     vec4 color = texture(Texture, sampleUv);
 
                     float vignette = 1.0 - clamp(r2 * 0.12, 0.0, 0.22);
-                    float scanline = 1.0 - 0.045 * step(0.5, fract(gl_FragCoord.y * 0.5));
+                    float scaledScreenY = sampleUv.y * OutputSize.y;
+                    float scanline = 1.0 - 0.15 * step(0.5, fract(scaledScreenY * 0.5));
                     color.rgb *= vignette * scanline;
 
                     Out_Color = vec4(color.rgb, 1.0);
@@ -411,6 +430,14 @@ namespace C64
             glApi.TexImage2D(TextureTarget.Texture2D, 0, InternalFormat.Rgba, FrameW, FrameH, 0, PixelFormat.Bgra, PixelType.UnsignedByte, null);
             glApi.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMinFilter, (int)TextureMinFilter.Linear);
             glApi.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMagFilter, (int)TextureMagFilter.Linear);
+            glApi.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureWrapS, (int)TextureWrapMode.ClampToEdge);
+            glApi.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureWrapT, (int)TextureWrapMode.ClampToEdge);
+
+            statusOverlayTexture = glApi.GenTexture();
+            glApi.BindTexture(TextureTarget.Texture2D, statusOverlayTexture);
+            glApi.TexImage2D(TextureTarget.Texture2D, 0, InternalFormat.Rgba, StatusOverlayW, StatusOverlayH, 0, PixelFormat.Bgra, PixelType.UnsignedByte, null);
+            glApi.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMinFilter, (int)TextureMinFilter.Nearest);
+            glApi.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMagFilter, (int)TextureMagFilter.Nearest);
             glApi.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureWrapS, (int)TextureWrapMode.ClampToEdge);
             glApi.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureWrapT, (int)TextureWrapMode.ClampToEdge);
 
@@ -647,6 +674,12 @@ namespace C64
                 glApi.TexSubImage2D(TextureTarget.Texture2D, 0, 0, 0, FrameW, FrameH, PixelFormat.Bgra, PixelType.UnsignedByte, p);
             }
 
+            fixed (byte* p = statusOverlayBuf)
+            {
+                glApi.BindTexture(TextureTarget.Texture2D, statusOverlayTexture);
+                glApi.TexSubImage2D(TextureTarget.Texture2D, 0, 0, 0, StatusOverlayW, StatusOverlayH, PixelFormat.Bgra, PixelType.UnsignedByte, p);
+            }
+
             glApi.Viewport(0, 0, (uint)Math.Max(1, windowW), (uint)Math.Max(1, windowH));
             glApi.Disable(EnableCap.Blend);
             glApi.ClearColor(0f, 0f, 0f, 1f);
@@ -666,6 +699,7 @@ namespace C64
             int sh = (int)Math.Round(screenH);
             DrawPresentationQuad(frameTexture, sx, sy, sw, sh, effectMode: 1);
             DrawPresentationQuad(monitorTexture, mx, my, mw, mh, effectMode: 0);
+            DrawPresentationQuad(statusOverlayTexture, 12, Math.Max(0, windowH - StatusOverlayH - 12), StatusOverlayW, StatusOverlayH, effectMode: 2);
 
             SDL_GL_SwapWindow(window);
         }
@@ -682,7 +716,7 @@ namespace C64
             GL glApi = gl ?? throw new InvalidOperationException("OpenGL API is not initialized.");
 
             glApi.Viewport(x, y, (uint)Math.Max(1, w), (uint)Math.Max(1, h));
-            if (effectMode == 1 || effectMode == 0)
+            if (effectMode == 1 || effectMode == 0 || effectMode == 2)
             {
                 glApi.Enable(EnableCap.Blend);
                 glApi.BlendFunc(BlendingFactor.SrcAlpha, BlendingFactor.OneMinusSrcAlpha);
@@ -732,6 +766,30 @@ namespace C64
             DrawBlockTextCentered("PAUSED", 1);
         }
 
+        /// <summary>Shows a centered status message for a short duration.</summary>
+        /// <param name="text">The text to write.</param>
+        /// <param name="durationMs">The duration in milliseconds.</param>
+        public void ShowTemporaryMessage(string text, int durationMs)
+        {
+            temporaryMessage = text;
+            long durationTicks = durationMs * Stopwatch.Frequency / 1000L;
+            Interlocked.Exchange(ref temporaryMessageTicks, Stopwatch.GetTimestamp() + durationTicks);
+        }
+
+        /// <summary>Draws the active temporary status message while it has time remaining.</summary>
+        private void DrawTemporaryMessageOverlay()
+        {
+            long expires = Interlocked.Read(ref temporaryMessageTicks);
+            if (expires == 0 || Stopwatch.GetTimestamp() > expires)
+                return;
+
+            string? text = temporaryMessage;
+            if (string.IsNullOrWhiteSpace(text))
+                return;
+
+            DrawBlockTextCentered(text, 1);
+        }
+
         /// <summary>Draws block text centered.</summary>
         /// <param name="text">The text to write.</param>
         /// <param name="scale">The integer pixel scale used for block text.</param>
@@ -774,9 +832,18 @@ namespace C64
                 'A' => new byte[] { 0x0E, 0x11, 0x11, 0x1F, 0x11, 0x11, 0x11 },
                 'D' => new byte[] { 0x1E, 0x11, 0x11, 0x11, 0x11, 0x11, 0x1E },
                 'E' => new byte[] { 0x1F, 0x10, 0x10, 0x1E, 0x10, 0x10, 0x1F },
+                'F' => new byte[] { 0x1F, 0x10, 0x10, 0x1E, 0x10, 0x10, 0x10 },
+                'J' => new byte[] { 0x01, 0x01, 0x01, 0x01, 0x11, 0x11, 0x0E },
+                'O' => new byte[] { 0x0E, 0x11, 0x11, 0x11, 0x11, 0x11, 0x0E },
                 'P' => new byte[] { 0x1E, 0x11, 0x11, 0x1E, 0x10, 0x10, 0x10 },
+                'R' => new byte[] { 0x1E, 0x11, 0x11, 0x1E, 0x14, 0x12, 0x11 },
                 'S' => new byte[] { 0x0F, 0x10, 0x10, 0x0E, 0x01, 0x01, 0x1E },
+                'T' => new byte[] { 0x1F, 0x04, 0x04, 0x04, 0x04, 0x04, 0x04 },
                 'U' => new byte[] { 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x0E },
+                'Y' => new byte[] { 0x11, 0x11, 0x0A, 0x04, 0x04, 0x04, 0x04 },
+                '1' => new byte[] { 0x04, 0x0C, 0x04, 0x04, 0x04, 0x04, 0x0E },
+                '2' => new byte[] { 0x0E, 0x11, 0x01, 0x02, 0x04, 0x08, 0x1F },
+                ' ' => new byte[] { 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 },
                 _ => new byte[] { 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 },
             };
         }
@@ -784,17 +851,39 @@ namespace C64
         /// <summary>Draws mute overlay.</summary>
         private void DrawMuteOverlay()
         {
-            const int x = 5;
-            const int y = FrameH - 12;
+            const int x = 2;
+            const int y = 2;
+            const byte textAlpha = 180;
 
-            BlendRect(x, y + 4, 2, 3, 230, 230, 230, 150);
+            BlendStatusLine(x + 2, y + 1, x + 6, y + 7, 255, 80, 80, textAlpha);
+            BlendStatusLine(x + 6, y + 1, x + 2, y + 7, 255, 80, 80, textAlpha);
+        }
 
-            BlendLine(x + 2, y + 4, x + 5, y + 1, 230, 230, 230, 150);
-            BlendLine(x + 2, y + 6, x + 5, y + 9, 230, 230, 230, 150);
-            BlendLine(x + 5, y + 1, x + 5, y + 9, 230, 230, 230, 150);
+        /// <summary>Draws the joystick port status glyph in the top-left overlay column.</summary>
+        private void DrawJoystickPortOverlay()
+        {
+            const int x = 2;
+            const int y = 18;
+            const byte textAlpha = 180;
 
-            BlendLine(x + 1, y + 2, x + 7, y + 8, 255, 80, 80, 165);
-            BlendLine(x + 7, y + 2, x + 1, y + 8, 255, 80, 80, 165);
+            if (joystickPortOverlay == 0)
+            {
+                BlendStatusLine(x + 2, y + 1, x + 6, y + 7, 255, 80, 80, textAlpha);
+                BlendStatusLine(x + 6, y + 1, x + 2, y + 7, 255, 80, 80, textAlpha);
+            }
+            else if (joystickPortOverlay == 1)
+            {
+                BlendStatusLine(x + 4, y + 1, x + 4, y + 7, 255, 80, 80, textAlpha);
+                BlendStatusLine(x + 2, y + 3, x + 4, y + 1, 255, 80, 80, textAlpha);
+                BlendStatusLine(x + 2, y + 7, x + 6, y + 7, 255, 80, 80, textAlpha);
+            }
+            else
+            {
+                BlendStatusLine(x + 2, y + 1, x + 6, y + 1, 255, 80, 80, textAlpha);
+                BlendStatusLine(x + 6, y + 1, x + 6, y + 3, 255, 80, 80, textAlpha);
+                BlendStatusLine(x + 6, y + 3, x + 2, y + 7, 255, 80, 80, textAlpha);
+                BlendStatusLine(x + 2, y + 7, x + 6, y + 7, 255, 80, 80, textAlpha);
+            }
         }
 
         /// <summary>Draws drive activity overlay.</summary>
@@ -809,14 +898,50 @@ namespace C64
                 return;
 
             byte alpha = (byte)Math.Max(45, 145 - (int)(elapsedMs * 100.0 / 180.0));
-            const int x = 16;
-            const int y = FrameH - 8;
+            const int x = 5;
+            const int y = 34;
 
-            BlendRect(x, y, 4, 4, 95, 255, 125, alpha);
-            BlendPixel(x - 1, y + 1, 95, 255, 125, alpha);
-            BlendPixel(x + 4, y + 1, 95, 255, 125, alpha);
-            BlendPixel(x - 1, y + 2, 95, 255, 125, alpha);
-            BlendPixel(x + 4, y + 2, 95, 255, 125, alpha);
+            BlendStatusRect(x, y, 2, 2, 95, 255, 125, alpha);
+        }
+
+        /// <summary>Draws a scaled rectangle into the monitor-space status overlay.</summary>
+        /// <param name="x">The X coordinate in unscaled status glyph pixels.</param>
+        /// <param name="y">The Y coordinate in unscaled status glyph pixels.</param>
+        /// <param name="w">The width in unscaled status glyph pixels.</param>
+        /// <param name="h">The height in unscaled status glyph pixels.</param>
+        /// <param name="r">The red channel value.</param>
+        /// <param name="g">The green channel value.</param>
+        /// <param name="b">The blue channel value.</param>
+        /// <param name="a">The alpha channel value.</param>
+        private void BlendStatusRect(int x, int y, int w, int h, byte r, byte g, byte b, byte a)
+        {
+            BlendRect(
+                x * StatusOverlayScale,
+                y * StatusOverlayScale,
+                w * StatusOverlayScale,
+                h * StatusOverlayScale,
+                r, g, b, a,
+                statusOverlayBuf);
+        }
+
+        /// <summary>Draws a scaled line into the monitor-space status overlay.</summary>
+        /// <param name="x0">The starting X coordinate in unscaled status glyph pixels.</param>
+        /// <param name="y0">The starting Y coordinate in unscaled status glyph pixels.</param>
+        /// <param name="x1">The ending X coordinate in unscaled status glyph pixels.</param>
+        /// <param name="y1">The ending Y coordinate in unscaled status glyph pixels.</param>
+        /// <param name="r">The red channel value.</param>
+        /// <param name="g">The green channel value.</param>
+        /// <param name="b">The blue channel value.</param>
+        /// <param name="a">The alpha channel value.</param>
+        private void BlendStatusLine(int x0, int y0, int x1, int y1, byte r, byte g, byte b, byte a)
+        {
+            BlendLine(
+                x0 * StatusOverlayScale,
+                y0 * StatusOverlayScale,
+                x1 * StatusOverlayScale,
+                y1 * StatusOverlayScale,
+                r, g, b, a,
+                statusOverlayBuf);
         }
 
         /// <summary>Blends rect.</summary>
@@ -828,16 +953,18 @@ namespace C64
         /// <param name="g">The green channel value.</param>
         /// <param name="b">The blue channel value.</param>
         /// <param name="a">The alpha channel value.</param>
-        private void BlendRect(int x, int y, int w, int h, byte r, byte g, byte b, byte a)
+        /// <param name="target">The optional BGRA buffer to receive the blended pixels.</param>
+        private void BlendRect(int x, int y, int w, int h, byte r, byte g, byte b, byte a, byte[]? target = null)
         {
-            int x0 = Math.Clamp(x, 0, FrameW);
-            int y0 = Math.Clamp(y, 0, FrameH);
-            int x1 = Math.Clamp(x + w, 0, FrameW);
-            int y1 = Math.Clamp(y + h, 0, FrameH);
+            (int targetW, int targetH) = GetBlendTargetSize(target);
+            int x0 = Math.Clamp(x, 0, targetW);
+            int y0 = Math.Clamp(y, 0, targetH);
+            int x1 = Math.Clamp(x + w, 0, targetW);
+            int y1 = Math.Clamp(y + h, 0, targetH);
 
             for (int py = y0; py < y1; py++)
                 for (int px = x0; px < x1; px++)
-                    BlendPixel(px, py, r, g, b, a);
+                    BlendPixel(px, py, r, g, b, a, target);
         }
 
         /// <summary>Blends line.</summary>
@@ -849,7 +976,8 @@ namespace C64
         /// <param name="g">The green channel value.</param>
         /// <param name="b">The blue channel value.</param>
         /// <param name="a">The alpha channel value.</param>
-        private void BlendLine(int x0, int y0, int x1, int y1, byte r, byte g, byte b, byte a)
+        /// <param name="target">The optional BGRA buffer to receive the blended pixels.</param>
+        private void BlendLine(int x0, int y0, int x1, int y1, byte r, byte g, byte b, byte a, byte[]? target = null)
         {
             int dx = Math.Abs(x1 - x0);
             int sx = x0 < x1 ? 1 : -1;
@@ -859,7 +987,7 @@ namespace C64
 
             while (true)
             {
-                BlendPixel(x0, y0, r, g, b, a);
+                BlendPixel(x0, y0, r, g, b, a, target);
                 if (x0 == x1 && y0 == y1)
                     break;
 
@@ -884,17 +1012,39 @@ namespace C64
         /// <param name="g">The green channel value.</param>
         /// <param name="b">The blue channel value.</param>
         /// <param name="a">The alpha channel value.</param>
-        private void BlendPixel(int x, int y, byte r, byte g, byte b, byte a)
+        /// <param name="target">The optional BGRA buffer to receive the blended pixel.</param>
+        private void BlendPixel(int x, int y, byte r, byte g, byte b, byte a, byte[]? target = null)
         {
-            if (x < 0 || x >= FrameW || y < 0 || y >= FrameH)
+            (int targetW, int targetH) = GetBlendTargetSize(target);
+            if (x < 0 || x >= targetW || y < 0 || y >= targetH)
                 return;
 
-            int p = (y * FrameW + x) * 4;
+            byte[] buffer = target ?? presentationBuf;
+            int p = (y * targetW + x) * 4;
+            if (ReferenceEquals(buffer, statusOverlayBuf))
+            {
+                buffer[p] = b;
+                buffer[p + 1] = g;
+                buffer[p + 2] = r;
+                buffer[p + 3] = Math.Max(buffer[p + 3], a);
+                return;
+            }
+
             int invA = 255 - a;
-            presentationBuf[p] = (byte)((b * a + presentationBuf[p] * invA) / 255);
-            presentationBuf[p + 1] = (byte)((g * a + presentationBuf[p + 1] * invA) / 255);
-            presentationBuf[p + 2] = (byte)((r * a + presentationBuf[p + 2] * invA) / 255);
-            presentationBuf[p + 3] = 0xFF;
+            buffer[p] = (byte)((b * a + buffer[p] * invA) / 255);
+            buffer[p + 1] = (byte)((g * a + buffer[p + 1] * invA) / 255);
+            buffer[p + 2] = (byte)((r * a + buffer[p + 2] * invA) / 255);
+            buffer[p + 3] = 0xFF;
+        }
+
+        /// <summary>Gets the pixel dimensions for a blend target buffer.</summary>
+        /// <param name="target">The optional BGRA buffer to inspect.</param>
+        /// <returns>The target width and height in pixels.</returns>
+        private (int Width, int Height) GetBlendTargetSize(byte[]? target)
+        {
+            return ReferenceEquals(target, statusOverlayBuf)
+                ? (StatusOverlayW, StatusOverlayH)
+                : (FrameW, FrameH);
         }
 
         /// <summary>Releases resources owned by this instance.</summary>
@@ -905,6 +1055,7 @@ namespace C64
                 if (presentVao != 0) { gl.DeleteVertexArray(presentVao); presentVao = 0; }
                 if (presentVbo != 0) { gl.DeleteBuffer(presentVbo); presentVbo = 0; }
                 if (frameTexture != 0) { gl.DeleteTexture(frameTexture); frameTexture = 0; }
+                if (statusOverlayTexture != 0) { gl.DeleteTexture(statusOverlayTexture); statusOverlayTexture = 0; }
                 if (monitorTexture != 0) { gl.DeleteTexture(monitorTexture); monitorTexture = 0; }
                 if (presentShader != 0) { gl.DeleteProgram(presentShader); presentShader = 0; }
             }
