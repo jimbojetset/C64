@@ -62,7 +62,7 @@ namespace C64
             var files = new List<string>();
             foreach (var e in ReadDirectoryEntries())
             {
-                if (!IsLoadableFileType(e.FileType)) // Accept PRG-like files
+                if (!IsLoadableFileType(e.FileType)) /// Accept PRG-like files
                     continue;
                 files.Add(e.Name);
             }
@@ -95,12 +95,12 @@ namespace C64
             string wanted = NormalizeName(requestedName ?? string.Empty);
             if (string.IsNullOrEmpty(wanted) || wanted == "*")
             {
-                // CBM DOS: empty name or "*" means the first file on the disk.
+                /// CBM DOS: empty name or "*" means the first file on the disk.
                 selected = entries.FirstOrDefault(e => IsLoadableFileType(e.FileType));
             }
             else if (wanted.EndsWith("*", StringComparison.Ordinal))
             {
-                // Prefix wildcard, e.g. LOAD"ELI*",8
+                /// Prefix wildcard, e.g. LOAD"ELI*",8
                 string prefix = wanted.Substring(0, wanted.Length - 1);
                 selected = entries.FirstOrDefault(e => IsLoadableFileType(e.FileType) && NormalizeName(e.Name).StartsWith(prefix, StringComparison.Ordinal));
             }

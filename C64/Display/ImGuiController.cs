@@ -57,7 +57,7 @@ namespace C64
             _windowWidth = width;
             _windowHeight = height;
 
-            // Create ImGui context
+            /// Create ImGui context
             IntPtr context = ImGui.CreateContext();
             ImGui.SetCurrentContext(context);
 
@@ -70,14 +70,14 @@ namespace C64
                 io.NativePtr->IniFilename = null;
             }
 
-            // Create device objects (shaders, buffers, fonts)
+            /// Create device objects (shaders, buffers, fonts)
             CreateDeviceObjects();
         }
 
         /// <summary>Creates device objects.</summary>
         private unsafe void CreateDeviceObjects()
         {
-            // Create shaders
+            /// Create shaders
             string vertexShaderSource = @"
                 #version 330 core
                 layout (location = 0) in vec2 Position;
@@ -123,7 +123,7 @@ namespace C64
             _attribLocationVtxUV = (uint)_gl.GetAttribLocation(_shaderProgram, "UV");
             _attribLocationVtxColor = (uint)_gl.GetAttribLocation(_shaderProgram, "Color");
 
-            // Create buffers
+            /// Create buffers
             _vao = _gl.GenVertexArray();
             _vbo = _gl.GenBuffer();
             _ebo = _gl.GenBuffer();
@@ -132,7 +132,7 @@ namespace C64
             _gl.BindBuffer(BufferTargetARB.ArrayBuffer, _vbo);
             _gl.BindBuffer(BufferTargetARB.ElementArrayBuffer, _ebo);
 
-            // Vertex attributes
+            /// Vertex attributes
             _gl.EnableVertexAttribArray(_attribLocationVtxPos);
             _gl.EnableVertexAttribArray(_attribLocationVtxUV);
             _gl.EnableVertexAttribArray(_attribLocationVtxColor);
@@ -144,7 +144,7 @@ namespace C64
 
             _gl.BindVertexArray(0);
 
-            // Create font texture
+            /// Create font texture
             CreateFontTexture();
         }
 
@@ -173,7 +173,7 @@ namespace C64
         {
             var io = ImGui.GetIO();
 
-            // Build font atlas
+            /// Build font atlas
             io.Fonts.GetTexDataAsRGBA32(out IntPtr pixels, out int width, out int height, out int bytesPerPixel);
 
             _fontTexture = _gl.GenTexture();
@@ -351,7 +351,7 @@ namespace C64
             if (drawData.CmdListsCount == 0)
                 return;
 
-            // Backup GL state
+            /// Backup GL state
             _gl.GetInteger(GetPName.CurrentProgram, out int lastProgram);
             _gl.GetInteger(GetPName.TextureBinding2D, out int lastTexture);
             _gl.GetInteger(GetPName.ArrayBufferBinding, out int lastArrayBuffer);
@@ -361,7 +361,7 @@ namespace C64
             bool lastEnableDepthTest = _gl.IsEnabled(EnableCap.DepthTest);
             bool lastEnableScissorTest = _gl.IsEnabled(EnableCap.ScissorTest);
 
-            // Setup render state
+            /// Setup render state
             _gl.Enable(EnableCap.Blend);
             _gl.BlendEquation(BlendEquationModeEXT.FuncAdd);
             _gl.BlendFuncSeparate(BlendingFactor.SrcAlpha, BlendingFactor.OneMinusSrcAlpha, BlendingFactor.One, BlendingFactor.OneMinusSrcAlpha);
@@ -369,7 +369,7 @@ namespace C64
             _gl.Disable(EnableCap.DepthTest);
             _gl.Enable(EnableCap.ScissorTest);
 
-            // Setup orthographic projection matrix
+            /// Setup orthographic projection matrix
             float L = drawData.DisplayPos.X;
             float R = drawData.DisplayPos.X + drawData.DisplaySize.X;
             float T = drawData.DisplayPos.Y;
@@ -396,7 +396,7 @@ namespace C64
             {
                 var cmdList = drawData.CmdLists[n];
 
-                // Upload vertex/index buffers
+                /// Upload vertex/index buffers
                 _gl.BindBuffer(BufferTargetARB.ArrayBuffer, _vbo);
                 _gl.BufferData(BufferTargetARB.ArrayBuffer, (nuint)(cmdList.VtxBuffer.Size * Unsafe.SizeOf<ImDrawVert>()), (void*)cmdList.VtxBuffer.Data, BufferUsageARB.StreamDraw);
 
@@ -409,7 +409,7 @@ namespace C64
 
                     if (pcmd.UserCallback != IntPtr.Zero)
                     {
-                        // User callback - not implemented
+                        /// User callback - not implemented
                     }
                     else
                     {
@@ -429,7 +429,7 @@ namespace C64
                 }
             }
 
-            // Restore GL state
+            /// Restore GL state
             _gl.UseProgram((uint)lastProgram);
             _gl.BindTexture(TextureTarget.Texture2D, (uint)lastTexture);
             _gl.BindVertexArray((uint)lastVertexArray);

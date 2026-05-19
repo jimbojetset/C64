@@ -82,7 +82,7 @@ namespace C64
                     continue;
                 }
 
-                // TAP units are 8 CPU cycles.
+                /// TAP units are 8 CPU cycles.
                 pulseCycles.Add(Math.Max(1, units * 8));
             }
 
@@ -109,7 +109,7 @@ namespace C64
             MotorOn = on;
         }
 
-        // Returns true when READ line toggled during this step.
+        /// Returns true when READ line toggled during this step.
 
         /// <summary>Advances the device by the specified CPU cycles.</summary>
         /// <param name="cycles">The number of emulated CPU cycles to advance.</param>

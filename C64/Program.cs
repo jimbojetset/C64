@@ -67,9 +67,9 @@ namespace C64
             {
                 candidates = new[]
                 {
-                    "/opt/homebrew/lib/libSDL2.dylib",      // Apple Silicon Homebrew
+                    "/opt/homebrew/lib/libSDL2.dylib",      /// Apple Silicon Homebrew
                     "/opt/homebrew/opt/sdl2/lib/libSDL2.dylib",
-                    "/usr/local/lib/libSDL2.dylib",         // Intel Homebrew / manual install
+                    "/usr/local/lib/libSDL2.dylib",         /// Intel Homebrew / manual install
                     "/usr/local/opt/sdl2/lib/libSDL2.dylib",
                     "libSDL2.dylib",
                 };
@@ -102,12 +102,12 @@ namespace C64
     /// </summary>
     internal sealed class C64Emulator : IDisposable
     {
-        // --- Constants ---
+        /// --- Constants ---
         private const int Clock_PAL = 985248;
 
         private const int KeyboardDrainPeriodCycles = 5000;
 
-        // --- Non-trace fields restored ---
+        /// --- Non-trace fields restored ---
         private bool lastDatasetteReadHigh;
 
         private readonly System.Threading.CancellationTokenSource cts;
@@ -324,9 +324,9 @@ namespace C64
             m[0xDC0E] = 0x00;
             m[0xDC0F] = 0x00;
 
-            m[0x0281] = 0x00; m[0x0282] = 0x08; // MEMSTR = $0800
-            m[0x0283] = 0x00; m[0x0284] = 0xA0; // MEMSIZ = $A000
-            m[0x0288] = 0x04;                   // screen page = $0400
+            m[0x0281] = 0x00; m[0x0282] = 0x08; /// MEMSTR = $0800
+            m[0x0283] = 0x00; m[0x0284] = 0xA0; /// MEMSIZ = $A000
+            m[0x0288] = 0x04;                   /// screen page = $0400
 
             m[0xDC00] = 0xFF;
             m[0xDC01] = 0xFF;
@@ -387,14 +387,14 @@ namespace C64
             m[0xDD0E] = 0x00;
             m[0xDD0F] = 0x00;
 
-            m[0xD011] = 0x1B; // DEN, RSEL, YSCROLL=3
-            m[0xD016] = 0xC8; // (top bits), CSEL, XSCROLL=0
-            m[0xD018] = 0x14; // screen $0400, char ROM shadow $1000
-            m[0xD020] = 0x0E; // border  = light blue
-            m[0xD021] = 0x06; // bg 0    = blue
-            m[0xD022] = 0x01; // bg 1    = white
-            m[0xD023] = 0x02; // bg 2    = red
-            m[0xD024] = 0x03; // bg 3    = cyan
+            m[0xD011] = 0x1B; /// DEN, RSEL, YSCROLL=3
+            m[0xD016] = 0xC8; /// (top bits), CSEL, XSCROLL=0
+            m[0xD018] = 0x14; /// screen $0400, char ROM shadow $1000
+            m[0xD020] = 0x0E; /// border  = light blue
+            m[0xD021] = 0x06; /// bg 0    = blue
+            m[0xD022] = 0x01; /// bg 1    = white
+            m[0xD023] = 0x02; /// bg 2    = red
+            m[0xD024] = 0x03; /// bg 3    = cyan
 
             m[0xD015] = 0x00;
             m[0xD017] = 0x00;
@@ -766,9 +766,9 @@ namespace C64
                 return true;
             }
 
-            // SID registers are mirrored across $D400-$D7FF in 32-byte blocks.
-            // Accept mirrored writes so routines using alternate SID mirrors
-            // (common in some games/effects code) are not lost.
+            /// SID registers are mirrored across $D400-$D7FF in 32-byte blocks.
+            /// Accept mirrored writes so routines using alternate SID mirrors
+            /// (common in some games/effects code) are not lost.
             if (addr >= 0xD400 && addr <= 0xD7FF)
             {
                 int sidReg = (int)((addr - 0xD400) & 0x1F);
@@ -799,13 +799,13 @@ namespace C64
         {
             return addr switch
             {
-                >= 0xD000 and <= 0xD010 => true, // sprite positions and X high bits
-                0xD015 => true,                  // sprite enable
-                0xD017 => true,                  // sprite Y expansion
-                0xD01B => true,                  // sprite/background priority
-                0xD01C => true,                  // sprite multicolor enable
-                0xD01D => true,                  // sprite X expansion
-                >= 0xD020 and <= 0xD02E => true, // border/background/sprite colors
+                >= 0xD000 and <= 0xD010 => true, /// sprite positions and X high bits
+                0xD015 => true,                  /// sprite enable
+                0xD017 => true,                  /// sprite Y expansion
+                0xD01B => true,                  /// sprite/background priority
+                0xD01C => true,                  /// sprite multicolor enable
+                0xD01D => true,                  /// sprite X expansion
+                >= 0xD020 and <= 0xD02E => true, /// border/background/sprite colors
                 _ => false
             };
         }
@@ -971,8 +971,8 @@ namespace C64
                     if (addr >= 0xDF00 && addr <= 0xDFFF)
                         return reu.Read((int)addr);
 
-                    // SID readback registers are mirrored across $D400-$D7FF.
-                    // We only provide meaningful values for $19-$1C (POT/POT/OSC3/ENV3).
+                    /// SID readback registers are mirrored across $D400-$D7FF.
+                    /// We only provide meaningful values for $19-$1C (POT/POT/OSC3/ENV3).
                     if (addr >= 0xD400 && addr <= 0xD7FF)
                     {
                         int sidRegister = (int)((addr - 0xD400) & 0x1F);
@@ -987,8 +987,8 @@ namespace C64
         /// <returns>The byte value produced by the operation.</returns>
         private static byte NormalizeCiaControlWrite(byte value)
         {
-            // Bit 4 force-loads the timer latch into the counter and then
-            // reads back clear; other control bits remain latched.
+            /// Bit 4 force-loads the timer latch into the counter and then
+            /// reads back clear; other control bits remain latched.
             return (byte)(value & 0xEF);
         }
 
@@ -1023,8 +1023,8 @@ namespace C64
             return (byte)(outBits | inBits);
         }
 
-        // External serial/user-port model entry points. CNT rising edges drive
-        // serial input mode and timer CNT-counting modes.
+        /// External serial/user-port model entry points. CNT rising edges drive
+        /// serial input mode and timer CNT-counting modes.
 
         /// <summary>Sets cia1 serial pins.</summary>
         /// <param name="spHigh">Whether the serial SP line is high.</param>
@@ -1074,7 +1074,7 @@ namespace C64
         {
             cia1CntPulseBudget++;
 
-            // Serial input mode (CRA bit 6 clear): sample SP on CNT rising edges.
+            /// Serial input mode (CRA bit 6 clear): sample SP on CNT rising edges.
             if ((cia1Cra & 0x40) != 0)
                 return;
 
@@ -1149,7 +1149,7 @@ namespace C64
                 cia1SerialShiftReg <<= 1;
                 cia1SerialBitsRemaining--;
 
-                // Output mode drives CNT pulses for each shifted bit.
+                /// Output mode drives CNT pulses for each shifted bit.
                 if (cia1SerialBitsRemaining == 0)
                 {
                     cia1SerialOutputActive = false;
@@ -1255,12 +1255,12 @@ namespace C64
             byte todMinutes,
             byte todHours)
         {
-            // CIA TOD reads latch on HOURS (reg 3) and release on TENTHS (reg 0).
-            // The latch captures all four registers atomically to prevent torn reads
-            // when TOD simultaneously advances during multi-byte read sequence.
+            /// CIA TOD reads latch on HOURS (reg 3) and release on TENTHS (reg 0).
+            /// The latch captures all four registers atomically to prevent torn reads
+            /// when TOD simultaneously advances during multi-byte read sequence.
             if (reg == 3 && !latched)
             {
-                // Atomically snapshot all TOD registers when HOURS is read
+                /// Atomically snapshot all TOD registers when HOURS is read
                 latchTenths = todTenths;
                 latchSeconds = todSeconds;
                 latchMinutes = todMinutes;
@@ -1500,13 +1500,13 @@ namespace C64
                 bool cntHighObserved = cia1CntInHigh || cia1CntHighSeen;
                 cia1CntHighSeen = false;
 
-                // When timer A is in external count mode (CRA bit 5 = 1), count external PA6 pulses
-                // instead of system cycles. The prescaler behavior must detect rising edges on PA6.
-                // Current port A bit 6 state affects timer A clock source selection.
+                /// When timer A is in external count mode (CRA bit 5 = 1), count external PA6 pulses
+                /// instead of system cycles. The prescaler behavior must detect rising edges on PA6.
+                /// Current port A bit 6 state affects timer A clock source selection.
                 bool pa6Current = (cia1PortA & 0x40) != 0;
                 if ((cia1Cra & 0x20) != 0 && pa6Current != cia1Pa6PrescalerPrevState)
                 {
-                    // Rising edge on PA6 (external clock) advances timer A
+                    /// Rising edge on PA6 (external clock) advances timer A
                     if (pa6Current)
                         cntPulses++;
                 }
@@ -1662,8 +1662,8 @@ namespace C64
                 cpu.InitiateNMI(0xFFFA);
         }
 
-        // Drive CIA state directly from executed CPU cycles so timer and IRQ/NMI
-        // behavior follows CPU progression instead of coarse host wall-clock ticks.
+        /// Drive CIA state directly from executed CPU cycles so timer and IRQ/NMI
+        /// behavior follows CPU progression instead of coarse host wall-clock ticks.
 
         /// <summary>
         /// Steps peripherals after CPU execution, including VIC raster timing, CIA timers/TOD, REU DMA, datasette pulses, and keyboard queue draining.
@@ -1698,14 +1698,14 @@ namespace C64
                 lastDatasetteReadHigh = datasette.ReadHigh;
             }
 
-            // Keep a simple sense bit mirror on processor-port bit 4.
+            /// Keep a simple sense bit mirror on processor-port bit 4.
             if (datasette.SenseHigh)
                 cpu.memory.memory[0x0001] |= 0x10;
             else
                 cpu.memory.memory[0x0001] &= 0xEF;
 
-            // Reflect IEC data/clock line levels onto CIA2 SP/CNT pins so
-            // external clock/input timer modes observe real bus transitions.
+            /// Reflect IEC data/clock line levels onto CIA2 SP/CNT pins so
+            /// external clock/input timer modes observe real bus transitions.
             byte iecExternal = iecBus.BuildExternalCia2PortA(0xFF);
             bool iecDataHigh = (iecExternal & 0x20) != 0;
             bool iecClockHigh = (iecExternal & 0x10) != 0;
@@ -1731,11 +1731,11 @@ namespace C64
             ulong pc = cpu.registers.PC;
             switch (pc)
             {
-                case 0xFFC0: // OPEN
+                case 0xFFC0: /// OPEN
                     HandleKernalOpenTrap();
                     break;
 
-                case 0xFFC3: // CLOSE
+                case 0xFFC3: /// CLOSE
                     if (iecBus.Close(cpu.registers.A))
                     {
                         cpu.registers.Flags.C = false;
@@ -1743,7 +1743,7 @@ namespace C64
                     }
                     break;
 
-                case 0xFFC6: // CHKIN
+                case 0xFFC6: /// CHKIN
                     if (iecBus.Chkin(cpu.registers.X))
                     {
                         cpu.registers.Flags.C = false;
@@ -1751,7 +1751,7 @@ namespace C64
                     }
                     break;
 
-                case 0xFFC9: // CHKOUT
+                case 0xFFC9: /// CHKOUT
                     if (iecBus.Chkout(cpu.registers.X))
                     {
                         cpu.registers.Flags.C = false;
@@ -1759,7 +1759,7 @@ namespace C64
                     }
                     break;
 
-                case 0xFFCC: // CLRCHN
+                case 0xFFCC: /// CLRCHN
                     if (iecBus.HasActiveChannel)
                     {
                         iecBus.FlushOutput();
@@ -1769,7 +1769,7 @@ namespace C64
                     }
                     break;
 
-                case 0xFFCF: // CHRIN
+                case 0xFFCF: /// CHRIN
                     if (iecBus.HasInputChannel)
                     {
                         cpu.registers.A = iecBus.Chrin();
@@ -1778,7 +1778,7 @@ namespace C64
                     }
                     break;
 
-                case 0xFFD2: // CHROUT
+                case 0xFFD2: /// CHROUT
                     if (iecBus.Chrout(cpu.registers.A))
                     {
                         cpu.registers.Flags.C = false;
@@ -1786,49 +1786,49 @@ namespace C64
                     }
                     break;
 
-                case 0xFFB1: // LISTEN
+                case 0xFFB1: /// LISTEN
                     iecBus.Listen(cpu.registers.A);
                     cpu.registers.Flags.C = false;
                     ReturnFromKernelTrap();
                     break;
 
-                case 0xFFB4: // TALK
+                case 0xFFB4: /// TALK
                     iecBus.Talk(cpu.registers.A);
                     cpu.registers.Flags.C = false;
                     ReturnFromKernelTrap();
                     break;
 
-                case 0xFF93: // SECOND
+                case 0xFF93: /// SECOND
                     iecBus.Second(cpu.registers.A);
                     cpu.registers.Flags.C = false;
                     ReturnFromKernelTrap();
                     break;
 
-                case 0xFF96: // TKSA
+                case 0xFF96: /// TKSA
                     iecBus.Tksa(cpu.registers.A);
                     cpu.registers.Flags.C = false;
                     ReturnFromKernelTrap();
                     break;
 
-                case 0xFFA8: // CIOUT
+                case 0xFFA8: /// CIOUT
                     iecBus.Ciout(cpu.registers.A);
                     cpu.registers.Flags.C = false;
                     ReturnFromKernelTrap();
                     break;
 
-                case 0xFFA5: // ACPTR
+                case 0xFFA5: /// ACPTR
                     cpu.registers.A = iecBus.Acptr();
                     cpu.registers.Flags.C = false;
                     ReturnFromKernelTrap();
                     break;
 
-                case 0xFFAE: // UNLSN
+                case 0xFFAE: /// UNLSN
                     iecBus.Unlisten();
                     cpu.registers.Flags.C = false;
                     ReturnFromKernelTrap();
                     break;
 
-                case 0xFFAB: // UNTLK
+                case 0xFFAB: /// UNTLK
                     iecBus.Untalk();
                     cpu.registers.Flags.C = false;
                     ReturnFromKernelTrap();
@@ -1867,15 +1867,15 @@ namespace C64
         /// </summary>
         private void TryHandleKernalLoadTrap()
         {
-            // KERNAL LOAD entry. Trap after JSR has transferred PC to $FFD5.
+            /// KERNAL LOAD entry. Trap after JSR has transferred PC to $FFD5.
             if (cpu.registers.PC != 0xFFD5)
                 return;
 
             byte[] mem = cpu.memory.memory;
 
-            // KERNAL parameter block used by SETLFS/SETNAM:
-            //   $B7 filename length
-            //   $BB/$BC filename pointer
+            /// KERNAL parameter block used by SETLFS/SETNAM:
+            ///   $B7 filename length
+            ///   $BB/$BC filename pointer
             byte nameLen = mem[0x00B7];
             ushort namePtr = (ushort)(mem[0x00BB] | (mem[0x00BC] << 8));
             byte secondaryAddress = mem[0x00B9];
@@ -1920,8 +1920,8 @@ namespace C64
                     cpu.registers.Y = (byte)(end >> 8);
                     cpu.registers.A = 0x00;
                     cpu.registers.Flags.C = false;
-                    // Mirror end address into KERNAL/BASIC scratch ($AE/$AF) and
-                    // clear IEC STATUS so BASIC's READST after LOAD sees success.
+                    /// Mirror end address into KERNAL/BASIC scratch ($AE/$AF) and
+                    /// clear IEC STATUS so BASIC's READST after LOAD sees success.
                     cpu.memory.WriteByte(0x00AE, (byte)(end & 0xFF));
                     cpu.memory.WriteByte(0x00AF, (byte)(end >> 8));
                     cpu.memory.WriteByte(0x0090, 0x00);
@@ -1940,7 +1940,7 @@ namespace C64
             string? resolved = ResolveKernelLoadPath(requestedName);
             if (resolved is null)
             {
-                cpu.registers.A = 0x04; // FILE NOT FOUND
+                cpu.registers.A = 0x04; /// FILE NOT FOUND
                 cpu.registers.Flags.C = true;
                 ReturnFromKernelTrap();
                 return;
@@ -1952,7 +1952,7 @@ namespace C64
                     ? LoadT64FromLoadCommand(resolved, requestedName)
                     : LoadPrgFromLoadCommand(resolved, requestedName, loadOverride);
 
-                // LOAD returns end address in X/Y and C clear on success.
+                /// LOAD returns end address in X/Y and C clear on success.
                 cpu.registers.X = (byte)(end & 0xFF);
                 cpu.registers.Y = (byte)(end >> 8);
                 cpu.registers.A = 0x00;
@@ -1965,7 +1965,7 @@ namespace C64
             }
             catch
             {
-                cpu.registers.A = 0x1F; // generic LOAD error
+                cpu.registers.A = 0x1F; /// generic LOAD error
                 cpu.registers.Flags.C = true;
             }
 
@@ -1977,8 +1977,8 @@ namespace C64
         /// </summary>
         private void TryHandleKernalSaveTrap()
         {
-            // KERNAL SAVE entry. A points to a zero-page word containing the
-            // start address; X/Y contain the exclusive end address.
+            /// KERNAL SAVE entry. A points to a zero-page word containing the
+            /// start address; X/Y contain the exclusive end address.
             if (cpu.registers.PC != 0xFFD8)
                 return;
 
@@ -1986,7 +1986,7 @@ namespace C64
             string? requestedName = ReadKernalFilename();
             if (string.IsNullOrWhiteSpace(requestedName))
             {
-                cpu.registers.A = 0x08; // missing file name
+                cpu.registers.A = 0x08; /// missing file name
                 cpu.registers.Flags.C = true;
                 ReturnFromKernelTrap();
                 return;
@@ -2192,7 +2192,7 @@ namespace C64
                 return null;
             }
 
-            // LOAD"",x reuses the most recent host-backed file when available.
+            /// LOAD"",x reuses the most recent host-backed file when available.
             if (!string.IsNullOrWhiteSpace(lastHostLoadedFile) && File.Exists(lastHostLoadedFile))
                 return lastHostLoadedFile;
 
@@ -2342,9 +2342,9 @@ namespace C64
             display.Start(token);
             sound.Start(token);
 
-            // Run the exact same reset path used by Ctrl+R after all worker
-            // threads are alive. This avoids startup-only races where the
-            // display can remain in reset on first launch.
+            /// Run the exact same reset path used by Ctrl+R after all worker
+            /// threads are alive. This avoids startup-only races where the
+            /// display can remain in reset on first launch.
             HardReset();
 
             var startupWait = Stopwatch.StartNew();
@@ -2366,7 +2366,7 @@ namespace C64
 
             bool quit = false;
             uint nextDraw = SDL_GetTicks();
-            const uint drawIntervalMs = 16; // ~60 Hz upper bound; vsync paces actual present
+            const uint drawIntervalMs = 16; /// ~60 Hz upper bound; vsync paces actual present
 
             while (!quit)
             {
@@ -2527,17 +2527,17 @@ namespace C64
         {
             HardReset();
 
-            // Wait until reset is complete and BASIC reaches READY.
-            // Fixed wall-clock delays are brittle across host speeds/builds.
+            /// Wait until reset is complete and BASIC reaches READY.
+            /// Fixed wall-clock delays are brittle across host speeds/builds.
             await WaitForReadyPromptAsync(timeoutMs: 6000).ConfigureAwait(false);
 
             DoLoad(path);
 
-            // Small settle so directly loaded files have fully landed in memory
-            // before BASIC tokenises RUN.
+            /// Small settle so directly loaded files have fully landed in memory
+            /// before BASIC tokenises RUN.
             await Task.Delay(50).ConfigureAwait(false);
 
-            // Disk images attach media first, then use the C64 LOAD command.
+            /// Disk images attach media first, then use the C64 LOAD command.
             string ext = Path.GetExtension(path).ToLowerInvariant();
             if (ext == ".d64")
             {
@@ -2586,10 +2586,10 @@ namespace C64
             }
 
             //await TypePetsciiLikeHumanAsync(
-            //    new byte[] { (byte)'R', (byte)'U', (byte)'N', 0x0D },
-            //    minInterKeyMs: 110,
-            //    maxInterKeyMs: 220,
-            //    enterExtraMs: 120).ConfigureAwait(false);
+            ///    new byte[] { (byte)'R', (byte)'U', (byte)'N', 0x0D },
+            ///    minInterKeyMs: 110,
+            ///    maxInterKeyMs: 220,
+            ///    enterExtraMs: 120).ConfigureAwait(false);
         }
 
         /// <summary>Types petscii like human async.</summary>
@@ -2642,8 +2642,8 @@ namespace C64
         /// <returns>True when the operation succeeds; otherwise, false.</returns>
         private bool HasReadyPromptOnScreen()
         {
-            // C64 screen RAM stores screen codes, not ASCII.
-            // READY. in upper-case screen code sequence.
+            /// C64 screen RAM stores screen codes, not ASCII.
+            /// READY. in upper-case screen code sequence.
             ReadOnlySpan<byte> ready = stackalloc byte[] { 18, 5, 1, 4, 25, 46 };
             byte[] mem = cpu.memory.memory;
             const int start = 0x0400;
@@ -2848,7 +2848,7 @@ namespace C64
                     byte pet = AsciiCharToPetscii(ch);
                     if (pet != 0) keyboard.EnqueuePetscii(pet);
                 }
-                keyboard.EnqueuePetscii(0x0D); // RETURN
+                keyboard.EnqueuePetscii(0x0D); /// RETURN
             }
         }
 

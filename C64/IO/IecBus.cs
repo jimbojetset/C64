@@ -25,7 +25,7 @@ namespace C64
         private static readonly bool LowLevelEnabled =
             string.Equals(Environment.GetEnvironmentVariable("C64_IEC_LOWLEVEL"), "1", StringComparison.Ordinal);
 
-        // Open-collector line model; true = released/high, false = driven low.
+        /// Open-collector line model; true = released/high, false = driven low.
         private bool hostDataRelease = true;
 
         private bool hostClockRelease = true;
@@ -54,7 +54,7 @@ namespace C64
         private bool prevHostAtnRelease = true;
         private int lowLevelDataHoldTicks;
         private int lowLevelClockHoldTicks;
-        private int lowLevelBytePhase;  // 0=handshake, 1-8=bit0-7, cycles for next byte
+        private int lowLevelBytePhase;  /// 0=handshake, 1-8=bit0-7, cycles for next byte
         private byte lowLevelCurrentByte;
 
         /// <summary>Initializes a new IecBus instance.</summary>
@@ -72,7 +72,7 @@ namespace C64
         /// <param name="dd02">The CIA2 port A data direction register value.</param>
         public void UpdateHostCia2PortA(byte dd00, byte dd02)
         {
-            // CIA2 port A IEC lines (active-low) on bits 5:DATA, 4:CLOCK, 3:ATN.
+            /// CIA2 port A IEC lines (active-low) on bits 5:DATA, 4:CLOCK, 3:ATN.
             bool outData = (dd02 & 0x20) != 0;
             bool outClock = (dd02 & 0x10) != 0;
             bool outAtn = (dd02 & 0x08) != 0;
@@ -405,7 +405,7 @@ namespace C64
             if (directChannels.ContainsKey(channel))
                 return;
 
-            // Secondary addr for LOAD/TALK data channels typically includes low nibble channel.
+            /// Secondary addr for LOAD/TALK data channels typically includes low nibble channel.
             if (!drive.TryLoadPrg(pendingFilename, out byte[] prg, out _))
                 return;
 
@@ -604,44 +604,44 @@ namespace C64
             bool atnFalling = prevHostAtnRelease && !hostAtnRelease;
             bool clockRising = !prevHostClockRelease && hostClockRelease;
 
-            // Device presence pulse on ATN assert.
+            /// Device presence pulse on ATN assert.
             if (atnFalling)
             {
                 lowLevelClockHoldTicks = Math.Max(lowLevelClockHoldTicks, 10);
                 lowLevelBytePhase = 0;
-                lowLevelCurrentByte = 0xA5;  // Dummy byte for byte-phase testing
+                lowLevelCurrentByte = 0xA5;  /// Dummy byte for byte-phase testing
             }
 
-            // While ATN is asserted, we're in presence/handshake or byte-phase
+            /// While ATN is asserted, we're in presence/handshake or byte-phase
             if (!hostAtnRelease)
             {
-                // Device keeps DATA pulled low continuously (ready signal while ATN held)
+                /// Device keeps DATA pulled low continuously (ready signal while ATN held)
                 lowLevelDataHoldTicks = 10;
 
-                // Activate byte-phase immediately on ATN assert
+                /// Activate byte-phase immediately on ATN assert
                 if (lowLevelBytePhase == 0)
                     lowLevelBytePhase = 1;
 
-                // Byte-phase: respond to CLOCK strobes with data bits (ATN still held low)
+                /// Byte-phase: respond to CLOCK strobes with data bits (ATN still held low)
                 if (lowLevelBytePhase >= 1 && clockRising)
                 {
                     int bitIndex = (lowLevelBytePhase - 1) % 8;
                     bool bitValue = ((lowLevelCurrentByte >> bitIndex) & 1) != 0;
 
-                    // Pull DATA low if bit is 0, release if bit is 1
+                    /// Pull DATA low if bit is 0, release if bit is 1
                     if (!bitValue)
                         lowLevelDataHoldTicks = Math.Max(lowLevelDataHoldTicks, 5);
 
                     lowLevelBytePhase++;
 
-                    // After 8 bits, reset for next byte (or signal completion)
+                    /// After 8 bits, reset for next byte (or signal completion)
                     if ((lowLevelBytePhase - 1) % 8 == 7)
-                        lowLevelBytePhase = 1;  // Ready for next byte
+                        lowLevelBytePhase = 1;  /// Ready for next byte
                 }
             }
             else
             {
-                // ATN released: reset to handshake mode
+                /// ATN released: reset to handshake mode
                 lowLevelBytePhase = 0;
             }
 

@@ -29,7 +29,7 @@ namespace C64
 
         private readonly ConcurrentQueue<byte> keyQueue = new ConcurrentQueue<byte>();
 
-        // C64 keyboard matrix: 8 rows, each column bit is active-low.
+        /// C64 keyboard matrix: 8 rows, each column bit is active-low.
         private readonly byte[] keyboardMatrix = { 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF };
 
         private volatile byte keyboardJoystick = 0xFF;
@@ -43,7 +43,7 @@ namespace C64
         private bool shiftLockActive;
         private const short ControllerDeadZone = 12000;
 
-        // ?? Callbacks wired by C64Emulator after construction ?????????????????
+        /// ?? Callbacks wired by C64Emulator after construction ?????????????????
 
         /// <summary>Invoked when F12 / Ctrl+R is pressed.</summary>
         public Action? OnHardReset { get; set; }
@@ -79,7 +79,7 @@ namespace C64
             this.cpu = cpu;
         }
 
-        // ?? Public API ????????????????????????????????????????????????????????
+        /// ?? Public API ????????????????????????????????????????????????????????
 
         /// <summary>Gets the selected joystick port number used by keyboard joystick mapping, or 0 when keyboard mapping is disabled.</summary>
         public int ActiveJoystickPort => activeJoystickPort;
@@ -231,7 +231,7 @@ namespace C64
             CloseController();
         }
 
-        // ?? Private implementation ????????????????????????????????????????????
+        /// ?? Private implementation ????????????????????????????????????????????
 
         /// <summary>Handles key down.</summary>
         /// <param name="ke">The SDL keyboard event to process.</param>
@@ -252,7 +252,7 @@ namespace C64
                 return false;
             }
 
-            // C64 SHIFT LOCK on a modern keyboard.
+            /// C64 SHIFT LOCK on a modern keyboard.
             if (sym == SDL_Keycode.SDLK_CAPSLOCK)
             {
                 shiftLockActive = !shiftLockActive;
@@ -267,8 +267,8 @@ namespace C64
                 return false;
             }
 
-            // Let common text-entry punctuation land in the BASIC input buffer
-            // as the character the user typed on the host keyboard.
+            /// Let common text-entry punctuation land in the BASIC input buffer
+            /// as the character the user typed on the host keyboard.
             if (!ctrl && !alt && sym == SDL_Keycode.SDLK_8 && shift)
             {
                 keyQueue.Enqueue((byte)'*');
@@ -342,13 +342,13 @@ namespace C64
 
                 case SDL_Keycode.SDLK_LCTRL:
                     if (activeJoystickPort == 0)
-                        SetMatrixKey(7, 2, pressed); // C64 CTRL key
+                        SetMatrixKey(7, 2, pressed); /// C64 CTRL key
                     return;
 
                 case SDL_Keycode.SDLK_RCTRL:
-                    return; // joystick-only to avoid game keyboard side-effects
+                    return; /// joystick-only to avoid game keyboard side-effects
                 case SDL_Keycode.SDLK_RALT:
-                    SetMatrixKey(7, 5, pressed); // COMMODORE (C=)
+                    SetMatrixKey(7, 5, pressed); /// COMMODORE (C=)
                     return;
 
                 case SDL_Keycode.SDLK_RETURN:
@@ -357,7 +357,7 @@ namespace C64
                     return;
 
                 case SDL_Keycode.SDLK_ESCAPE:
-                    SetMatrixKey(7, 7, pressed); // RUN/STOP
+                    SetMatrixKey(7, 7, pressed); /// RUN/STOP
                     return;
 
                 case SDL_Keycode.SDLK_BACKSPACE:
@@ -366,11 +366,11 @@ namespace C64
                     return;
 
                 case SDL_Keycode.SDLK_INSERT:
-                    SetMatrixKey(0, 0, pressed); // INST/DEL shares key
+                    SetMatrixKey(0, 0, pressed); /// INST/DEL shares key
                     return;
 
                 case SDL_Keycode.SDLK_HOME:
-                    SetMatrixKey(6, 6, pressed); // CLR/HOME
+                    SetMatrixKey(6, 6, pressed); /// CLR/HOME
                     return;
 
                 case SDL_Keycode.SDLK_SPACE:
@@ -479,9 +479,9 @@ namespace C64
                 case SDL_Keycode.SDLK_COMMA: SetMatrixKey(5, 7, pressed); return;
                 case SDL_Keycode.SDLK_PERIOD: SetMatrixKey(5, 4, pressed); return;
                 case SDL_Keycode.SDLK_SLASH: SetMatrixKey(6, 7, pressed); return;
-                // UK punctuation mode: host ';:' key targets C64 ':' key.
+                /// UK punctuation mode: host ';:' key targets C64 ':' key.
                 case SDL_Keycode.SDLK_SEMICOLON: SetMatrixKey(5, 5, pressed); return;
-                // UK punctuation mode: host ''@' key targets C64 ';' key.
+                /// UK punctuation mode: host ''@' key targets C64 ';' key.
                 case SDL_Keycode.SDLK_QUOTE: SetMatrixKey(6, 2, pressed); return;
                 case SDL_Keycode.SDLK_LEFTBRACKET: SetMatrixKey(6, 0, pressed); return;
                 case SDL_Keycode.SDLK_RIGHTBRACKET: SetMatrixKey(6, 3, pressed); return;
@@ -660,8 +660,8 @@ namespace C64
             SDL_Keycode.SDLK_DOWN => 0x02,
             SDL_Keycode.SDLK_LEFT => 0x04,
             SDL_Keycode.SDLK_RIGHT => 0x08,
-            SDL_Keycode.SDLK_RCTRL => 0x10, // fire
-            SDL_Keycode.SDLK_LCTRL => 0x10, // fire
+            SDL_Keycode.SDLK_RCTRL => 0x10, /// fire
+            SDL_Keycode.SDLK_LCTRL => 0x10, /// fire
             _ => 0
         };
     }

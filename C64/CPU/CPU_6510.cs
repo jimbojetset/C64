@@ -120,8 +120,8 @@ namespace C64.CPU
             Interlocked.Exchange(ref totalCycles, 0);
         }
 
-        // Keep CPU pacing in small cycle chunks so raster IRQ-driven effects
-        // are not serviced in large bursts.
+        /// Keep CPU pacing in small cycle chunks so raster IRQ-driven effects
+        /// are not serviced in large bursts.
         private const int SliceCycles = 64;
 
         /// <summary>Runs the main emulator loop.</summary>
@@ -969,11 +969,11 @@ namespace C64.CPU
 
                 #region Illegal / undocumented opcodes
 
-                // C64 game code uses these heavily (LAX, DCP, SLO, ISC, SAX,
-                // etc.) for tighter inner loops. Without them we silently
-                // skip the instruction and the game's logic drifts off.
+                /// C64 game code uses these heavily (LAX, DCP, SLO, ISC, SAX,
+                /// etc.) for tighter inner loops. Without them we silently
+                /// skip the instruction and the game's logic drifts off.
 
-                // ---- LAX: load A and X from memory together. ----
+                /// ---- LAX: load A and X from memory together. ----
                 case 0xA3: LAX(X_Indexed_Zero_Page_Indirect()); cyclesThisOperation += 6; break;
                 case 0xA7: LAX(Zero_Page()); cyclesThisOperation += 3; break;
                 case 0xAF: LAX(Absolute()); cyclesThisOperation += 4; break;
@@ -981,13 +981,13 @@ namespace C64.CPU
                 case 0xB7: LAX(Y_Indexed_Zero_Page()); cyclesThisOperation += 4; break;
                 case 0xBF: LAX(Y_Indexed_Absolute()); cyclesThisOperation += 4; break;
 
-                // ---- SAX: store (A AND X) - no flags affected. ----
+                /// ---- SAX: store (A AND X) - no flags affected. ----
                 case 0x83: SAX(X_Indexed_Zero_Page_Indirect()); cyclesThisOperation += 6; break;
                 case 0x87: SAX(Zero_Page()); cyclesThisOperation += 3; break;
                 case 0x8F: SAX(Absolute()); cyclesThisOperation += 4; break;
                 case 0x97: SAX(Y_Indexed_Zero_Page()); cyclesThisOperation += 4; break;
 
-                // ---- DCP: DEC memory, CMP result with A. ----
+                /// ---- DCP: DEC memory, CMP result with A. ----
                 case 0xC3: DCP(X_Indexed_Zero_Page_Indirect()); cyclesThisOperation += 8; break;
                 case 0xC7: DCP(Zero_Page()); cyclesThisOperation += 5; break;
                 case 0xCF: DCP(Absolute()); cyclesThisOperation += 6; break;
@@ -996,7 +996,7 @@ namespace C64.CPU
                 case 0xDB: DCP(Y_Indexed_Absolute(false)); cyclesThisOperation += 7; break;
                 case 0xDF: DCP(X_Indexed_Absolute(false)); cyclesThisOperation += 7; break;
 
-                // ---- ISC/ISB: INC memory, SBC result from A. ----
+                /// ---- ISC/ISB: INC memory, SBC result from A. ----
                 case 0xE3: ISC(X_Indexed_Zero_Page_Indirect()); cyclesThisOperation += 8; break;
                 case 0xE7: ISC(Zero_Page()); cyclesThisOperation += 5; break;
                 case 0xEF: ISC(Absolute()); cyclesThisOperation += 6; break;
@@ -1005,7 +1005,7 @@ namespace C64.CPU
                 case 0xFB: ISC(Y_Indexed_Absolute(false)); cyclesThisOperation += 7; break;
                 case 0xFF: ISC(X_Indexed_Absolute(false)); cyclesThisOperation += 7; break;
 
-                // ---- SLO: ASL memory, ORA result into A. ----
+                /// ---- SLO: ASL memory, ORA result into A. ----
                 case 0x03: SLO(X_Indexed_Zero_Page_Indirect()); cyclesThisOperation += 8; break;
                 case 0x07: SLO(Zero_Page()); cyclesThisOperation += 5; break;
                 case 0x0F: SLO(Absolute()); cyclesThisOperation += 6; break;
@@ -1014,7 +1014,7 @@ namespace C64.CPU
                 case 0x1B: SLO(Y_Indexed_Absolute(false)); cyclesThisOperation += 7; break;
                 case 0x1F: SLO(X_Indexed_Absolute(false)); cyclesThisOperation += 7; break;
 
-                // ---- SRE: LSR memory, EOR result into A. ----
+                /// ---- SRE: LSR memory, EOR result into A. ----
                 case 0x43: SRE(X_Indexed_Zero_Page_Indirect()); cyclesThisOperation += 8; break;
                 case 0x47: SRE(Zero_Page()); cyclesThisOperation += 5; break;
                 case 0x4F: SRE(Absolute()); cyclesThisOperation += 6; break;
@@ -1023,7 +1023,7 @@ namespace C64.CPU
                 case 0x5B: SRE(Y_Indexed_Absolute(false)); cyclesThisOperation += 7; break;
                 case 0x5F: SRE(X_Indexed_Absolute(false)); cyclesThisOperation += 7; break;
 
-                // ---- RLA: ROL memory, AND result into A. ----
+                /// ---- RLA: ROL memory, AND result into A. ----
                 case 0x23: RLA(X_Indexed_Zero_Page_Indirect()); cyclesThisOperation += 8; break;
                 case 0x27: RLA(Zero_Page()); cyclesThisOperation += 5; break;
                 case 0x2F: RLA(Absolute()); cyclesThisOperation += 6; break;
@@ -1032,7 +1032,7 @@ namespace C64.CPU
                 case 0x3B: RLA(Y_Indexed_Absolute(false)); cyclesThisOperation += 7; break;
                 case 0x3F: RLA(X_Indexed_Absolute(false)); cyclesThisOperation += 7; break;
 
-                // ---- RRA: ROR memory, ADC result with A. ----
+                /// ---- RRA: ROR memory, ADC result with A. ----
                 case 0x63: RRA(X_Indexed_Zero_Page_Indirect()); cyclesThisOperation += 8; break;
                 case 0x67: RRA(Zero_Page()); cyclesThisOperation += 5; break;
                 case 0x6F: RRA(Absolute()); cyclesThisOperation += 6; break;
@@ -1041,8 +1041,8 @@ namespace C64.CPU
                 case 0x7B: RRA(Y_Indexed_Absolute(false)); cyclesThisOperation += 7; break;
                 case 0x7F: RRA(X_Indexed_Absolute(false)); cyclesThisOperation += 7; break;
 
-                // ---- Multi-byte NOPs. They consume their operand bytes
-                // so PC advances correctly; flags unaffected. ----
+                /// ---- Multi-byte NOPs. They consume their operand bytes
+                /// so PC advances correctly; flags unaffected. ----
                 case 0x1A:
                 case 0x3A:
                 case 0x5A:
@@ -1077,7 +1077,7 @@ namespace C64.CPU
                 case 0xFC:
                     X_Indexed_Absolute(); cyclesThisOperation += 4; break;
 
-                // ---- Immediate-only logic ops. ----
+                /// ---- Immediate-only logic ops. ----
                 case 0x0B: case 0x2B: ANC_IM(); cyclesThisOperation += 2; break;
                 case 0x4B: ALR_IM(); cyclesThisOperation += 2; break;
                 case 0x6B: ARR_IM(); cyclesThisOperation += 2; break;
@@ -1087,15 +1087,15 @@ namespace C64.CPU
                 case 0xCB: AXS_IM(); cyclesThisOperation += 2; break;
                 case 0xEB: SBCI();   /* duplicate of $E9 SBC #imm */ break;
 
-                // ---- Store-high variants used by some packed/cracked code. ----
+                /// ---- Store-high variants used by some packed/cracked code. ----
                 case 0x93: AHX_IY(); cyclesThisOperation += 6; break;
                 case 0x9B: TAS_AY(); cyclesThisOperation += 5; break;
                 case 0x9C: SHY_AX(); cyclesThisOperation += 5; break;
                 case 0x9E: SHX_AY(); cyclesThisOperation += 5; break;
                 case 0x9F: AHX_AY(); cyclesThisOperation += 5; break;
 
-                // ---- JAM / KIL: real CPU halts until reset. Keep the CPU
-                // thread alive so a later reset request can recover.
+                /// ---- JAM / KIL: real CPU halts until reset. Keep the CPU
+                /// thread alive so a later reset request can recover.
                 case 0x02:
                 case 0x12:
                 case 0x22:
@@ -1215,8 +1215,8 @@ namespace C64.CPU
             ADC(v);
         }
 
-        // ANC: AND with immediate, then copy bit 7 (N) into C. Used in
-        // some bit-test routines as a faster "AND # / BMI" pair.
+        /// ANC: AND with immediate, then copy bit 7 (N) into C. Used in
+        /// some bit-test routines as a faster "AND # / BMI" pair.
 
         /// <summary>Executes the ANC instruction using immediate addressing.</summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -1227,7 +1227,7 @@ namespace C64.CPU
             registers.Flags.C = registers.Flags.N;
         }
 
-        // ALR: AND with immediate, then LSR A.
+        /// ALR: AND with immediate, then LSR A.
 
         /// <summary>Executes the ALR instruction using immediate addressing.</summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -1239,8 +1239,8 @@ namespace C64.CPU
             Set_FlagsNZ(registers.A);
         }
 
-        // ARR: AND with immediate, then ROR A. Has unusual flag effects:
-        // C = bit 6 of result; V = bit 6 XOR bit 5 of result.
+        /// ARR: AND with immediate, then ROR A. Has unusual flag effects:
+        /// C = bit 6 of result; V = bit 6 XOR bit 5 of result.
 
         /// <summary>Executes the ARR instruction using immediate addressing.</summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -1254,7 +1254,7 @@ namespace C64.CPU
             registers.Flags.V = ((r ^ (r << 1)) & 0x40) != 0;
         }
 
-        // AXS: X = (A AND X) - immediate. No borrow input; C set normally.
+        /// AXS: X = (A AND X) - immediate. No borrow input; C set normally.
 
         /// <summary>Executes the AXS instruction using immediate addressing.</summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -1266,8 +1266,8 @@ namespace C64.CPU
             Set_FlagsNZ(registers.X);
         }
 
-        // XAA / ANE (unstable on real silicon). Common practical approximation:
-        // A = X AND immediate.
+        /// XAA / ANE (unstable on real silicon). Common practical approximation:
+        /// A = X AND immediate.
 
         /// <summary>Executes the XAA instruction using immediate addressing.</summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -1277,7 +1277,7 @@ namespace C64.CPU
             Set_FlagsNZ(registers.A);
         }
 
-        // LAX immediate unofficial variant.
+        /// LAX immediate unofficial variant.
 
         /// <summary>Executes the LAX instruction using immediate addressing.</summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -1301,16 +1301,16 @@ namespace C64.CPU
             Set_FlagsNZ(v);
         }
 
-        // AHX stores (A AND X AND (high_byte_of_effective_address + 1)).
-        // With page-boundary crossing addressing modes, the actual address calculation
-        // may wrap differently than expected. The high-byte formula captures this subtlety.
+        /// AHX stores (A AND X AND (high_byte_of_effective_address + 1)).
+        /// With page-boundary crossing addressing modes, the actual address calculation
+        /// may wrap differently than expected. The high-byte formula captures this subtlety.
 
         /// <summary>Executes the AHX instruction using indirect Y-indexed addressing.</summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private void AHX_IY()
         {
             ulong addr = Zero_Page_Indirect_Y_Indexed(false);
-            // Undocumented behavior: high byte of address + 1 becomes a mask
+            /// Undocumented behavior: high byte of address + 1 becomes a mask
             byte m = (byte)(((addr >> 8) + 1) & 0xFF);
             WriteByteToMemory(addr, (byte)(registers.A & registers.X & m));
         }
@@ -1320,7 +1320,7 @@ namespace C64.CPU
         private void AHX_AY()
         {
             ulong addr = Y_Indexed_Absolute(false);
-            // When Y crossing causes page boundary, this high-byte mask reflects actual page
+            /// When Y crossing causes page boundary, this high-byte mask reflects actual page
             byte m = (byte)(((addr >> 8) + 1) & 0xFF);
             WriteByteToMemory(addr, (byte)(registers.A & registers.X & m));
         }
@@ -3006,9 +3006,9 @@ namespace C64.CPU
         private void BRK()
         {
             IncrementProgramCounter();
-            // BRK pushes the status byte with both B (bit 4) and the
-            // always-1 reserved bit (bit 5) set. RTI/PLP later restore
-            // these unchanged - they exist only on the stack.
+            /// BRK pushes the status byte with both B (bit 4) and the
+            /// always-1 reserved bit (bit 5) set. RTI/PLP later restore
+            /// these unchanged - they exist only on the stack.
             PushByteToStack((byte)((registers.PC >> 8) & 0xFF));
             PushByteToStack((byte)(registers.PC & 0xFF));
             PushByteToStack((byte)(registers.P | 0x30));
@@ -3021,11 +3021,11 @@ namespace C64.CPU
         /// <param name="value">The value supplied to the operation.</param>
         private void Branch(ulong value)
         {
-            // Branch offset is a signed 8-bit value; cast handles both directions.
+            /// Branch offset is a signed 8-bit value; cast handles both directions.
             ulong oldPc = registers.PC;
             int offset = (sbyte)(byte)value;
             registers.PC = (ulong)((long)registers.PC + offset) & 0xFFFF;
-            // Taken branch costs +1 cycle, plus +1 on page cross.
+            /// Taken branch costs +1 cycle, plus +1 on page cross.
             cyclesThisOperation += 1;
             if (CrossBoundary(oldPc, registers.PC))
                 cyclesThisOperation += 1;
@@ -3099,7 +3099,7 @@ namespace C64.CPU
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private void IncrementProgramCounter(ulong value = 1)
         {
-            // Mask is branch-free and equivalent to wrapping the 16-bit PC.
+            /// Mask is branch-free and equivalent to wrapping the 16-bit PC.
             registers.PC = (registers.PC + value) & 0xFFFF;
         }
 
@@ -3165,7 +3165,7 @@ namespace C64.CPU
         {
             PushByteToStack((byte)((registers.PC >> 8) & 0xFF));
             PushByteToStack((byte)(registers.PC & 0xFF));
-            // NMI push uses the same bit pattern as IRQ.
+            /// NMI push uses the same bit pattern as IRQ.
             PushByteToStack((byte)((registers.P & 0xEF) | 0x20));
             registers.Flags.I = true;
             registers.PC = (ushort)(ReadByteFromMemory(value) | (ReadByteFromMemory(value + 1) << 8));
@@ -3178,9 +3178,9 @@ namespace C64.CPU
         {
             PushByteToStack((byte)((registers.PC >> 8) & 0xFF));
             PushByteToStack((byte)(registers.PC & 0xFF));
-            // IRQ push: B bit (4) clear, reserved bit (5) set. The KERNAL
-            // IRQ handler tests this exact bit on the stack to decide
-            // whether to dispatch via $0314 (IRQ) or $0316 (BRK).
+            /// IRQ push: B bit (4) clear, reserved bit (5) set. The KERNAL
+            /// IRQ handler tests this exact bit on the stack to decide
+            /// whether to dispatch via $0314 (IRQ) or $0316 (BRK).
             PushByteToStack((byte)((registers.P & 0xEF) | 0x20));
             registers.Flags.I = true;
             registers.PC = (ushort)(ReadByteFromMemory(value) | (ReadByteFromMemory(value + 1) << 8));

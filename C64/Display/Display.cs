@@ -53,22 +53,22 @@ namespace C64
 
         private static readonly int[] C64Palette =
         {
-            unchecked((int)0xFF000000), //  0 BLACK
-            unchecked((int)0xFFFFFFFF), //  1 WHITE
-            unchecked((int)0xFF68372B), //  2 RED
-            unchecked((int)0xFF70A4B2), //  3 CYAN
-            unchecked((int)0xFF6F3D86), //  4 PURPLE
-            unchecked((int)0xFF588D43), //  5 GREEN
-            unchecked((int)0xFF352879), //  6 BLUE
-            unchecked((int)0xFFB8C76F), //  7 YELLOW
-            unchecked((int)0xFF6F4F25), //  8 ORANGE
-            unchecked((int)0xFF433900), //  9 BROWN
-            unchecked((int)0xFF9A6759), // 10 LIGHT RED
-            unchecked((int)0xFF444444), // 11 DARK GREY
-            unchecked((int)0xFF6C6C6C), // 12 MEDIUM GREY
-            unchecked((int)0xFF9AD284), // 13 LIGHT GREEN
-            unchecked((int)0xFF6C5EB5), // 14 LIGHT BLUE
-            unchecked((int)0xFF959595), // 15 LIGHT GREY
+            unchecked((int)0xFF000000), ///  0 BLACK
+            unchecked((int)0xFFFFFFFF), ///  1 WHITE
+            unchecked((int)0xFF68372B), ///  2 RED
+            unchecked((int)0xFF70A4B2), ///  3 CYAN
+            unchecked((int)0xFF6F3D86), ///  4 PURPLE
+            unchecked((int)0xFF588D43), ///  5 GREEN
+            unchecked((int)0xFF352879), ///  6 BLUE
+            unchecked((int)0xFFB8C76F), ///  7 YELLOW
+            unchecked((int)0xFF6F4F25), ///  8 ORANGE
+            unchecked((int)0xFF433900), ///  9 BROWN
+            unchecked((int)0xFF9A6759), /// 10 LIGHT RED
+            unchecked((int)0xFF444444), /// 11 DARK GREY
+            unchecked((int)0xFF6C6C6C), /// 12 MEDIUM GREY
+            unchecked((int)0xFF9AD284), /// 13 LIGHT GREEN
+            unchecked((int)0xFF6C5EB5), /// 14 LIGHT BLUE
+            unchecked((int)0xFF959595), /// 15 LIGHT GREY
         };
 
         private readonly CPU_6510 cpu;
@@ -86,7 +86,7 @@ namespace C64
 
         private byte[] cachedScreenRow = new byte[40];
         private byte[][] cachedBitmapRows = new byte[8][];
-        private int[] cachedBitmapRowNum = new int[8];  // Track which row number each cache came from
+        private int[] cachedBitmapRowNum = new int[8];  /// Track which row number each cache came from
 
         private IntPtr window;
         private IntPtr glContext;
@@ -242,7 +242,7 @@ namespace C64
             Array.Clear(busStealMask, 0, busStealMask.Length);
             ClearRasterWriteEvents();
             ClearFramebuffers();
-            // Invalidate bitmap row cache on reset
+            /// Invalidate bitmap row cache on reset
             for (int i = 0; i < cachedBitmapRowNum.Length; i++)
                 cachedBitmapRowNum[i] = -1;
             isResetting = false;
@@ -322,7 +322,7 @@ namespace C64
             }
             catch
             {
-                // Fallback to direct file load if anything goes wrong inspecting memory.
+                /// Fallback to direct file load if anything goes wrong inspecting memory.
                 return File.ReadAllBytes(Path.Combine("ROMS", "characters.bin"));
             }
 
@@ -598,7 +598,7 @@ namespace C64
                     break;
                 }
 
-                offset += length + 4; // data + CRC
+                offset += length + 4; /// data + CRC
             }
 
             if (width <= 0 || height <= 0 || bitDepth != 8 || colorType != 6)
@@ -1173,15 +1173,15 @@ namespace C64
 
             bool den = (mem[0xD011] & 0x10) != 0;
             int yScroll = mem[0xD011] & 0x07;
-            // Badline detection: DEN=1, line in 0x30-0xF7, and raster line & 0x07 == fine Y scroll
-            // When badline condition is true, VIC steals cycles during character/sprite data fetch
+            /// Badline detection: DEN=1, line in 0x30-0xF7, and raster line & 0x07 == fine Y scroll
+            /// When badline condition is true, VIC steals cycles during character/sprite data fetch
             bool badline = den && line >= 0x30 && line <= 0xF7 && ((line & 0x07) == yScroll);
             if (badline)
             {
-                // Character matrix fetch on badlines: VIC access $2400-$3FFF (or banked equivalent)
-                // Steals cycles 15-54 (40 cycles) during 63-cycle PAL line for character data + color lookups
-                // Precise cycle windows based on documented C64 behavior:
-                // - Cycles 15-54: character/color RAM fetch and graphics data prefetch
+                /// Character matrix fetch on badlines: VIC access $2400-$3FFF (or banked equivalent)
+                /// Steals cycles 15-54 (40 cycles) during 63-cycle PAL line for character data + color lookups
+                /// Precise cycle windows based on documented C64 behavior:
+                /// - Cycles 15-54: character/color RAM fetch and graphics data prefetch
                 for (int c = 15; c <= 54 && c < mask.Length; c++)
                     mask[c] = true;
             }
@@ -1199,10 +1199,10 @@ namespace C64
                 int spriteRow = line - spriteY - 1;
                 if (spriteRow >= 0 && spriteRow < height)
                 {
-                    // Approximate VIC-II sprite pointer/data DMA slots. This
-                    // is still not a full BA/AEC sequencer, but it places the
-                    // steals in the late-line sprite fetch window instead of
-                    // at cycle 0, which is closer for raster-sensitive code.
+                    /// Approximate VIC-II sprite pointer/data DMA slots. This
+                    /// is still not a full BA/AEC sequencer, but it places the
+                    /// steals in the late-line sprite fetch window instead of
+                    /// at cycle 0, which is closer for raster-sensitive code.
                     int baseCycle = 55 + s;
                     if (baseCycle < mask.Length)
                         mask[baseCycle] = true;
@@ -1263,9 +1263,9 @@ namespace C64
                     if (IsSpriteRasterRegister(vicAddress))
                         return evt.OldValue;
 
-                    // If a raster split writes before the visible playfield starts,
-                    // use the new value for this line. Late writes still keep the
-                    // old value so they don't repaint pixels that were already drawn.
+                    /// If a raster split writes before the visible playfield starts,
+                    /// use the new value for this line. Late writes still keep the
+                    /// old value so they don't repaint pixels that were already drawn.
                     return RasterCycleToFrameX(evt.Cycle) <= FramePlayfieldX
                         ? evt.NewValue
                         : evt.OldValue;
@@ -1353,8 +1353,8 @@ namespace C64
 
             int playY = line - VisibleTop;
             int fineY = d011 & 0x07;
-            // VisibleTop is calibrated around the normal C64 text baseline (yscroll=3).
-            // Apply only the delta from that baseline so we don't wrap/crop the 25x8 matrix.
+            /// VisibleTop is calibrated around the normal C64 text baseline (yscroll=3).
+            /// Apply only the delta from that baseline so we don't wrap/crop the 25x8 matrix.
             int fineYOffset = fineY - 3;
             int scrolledY = playY - fineYOffset;
             int row = scrolledY >> 3;
@@ -1470,7 +1470,7 @@ namespace C64
         /// <returns>The numeric value produced by the operation.</returns>
         private static int GetVicBankBase(byte dd00, byte dd02)
         {
-            // CIA2 port A controls VIC bank on PA0/PA1. Input bits read high.
+            /// CIA2 port A controls VIC bank on PA0/PA1. Input bits read high.
             byte effectivePortA = (byte)((dd00 & dd02) | (~dd02 & 0xFF));
             int sel = effectivePortA & 0x03;
             return (3 - sel) * 0x4000;
@@ -1640,7 +1640,7 @@ namespace C64
         {
             byte borderIdx = (byte)(cpu.memory.memory[0xD020] & 0x0F);
 
-            // RSEL=0 selects 24-row display: 4px inner border at top and bottom.
+            /// RSEL=0 selects 24-row display: 4px inner border at top and bottom.
             bool row25 = (d011 & 0x08) != 0;
             int firstVisibleY = row25 ? 0 : 4;
             int lastVisibleYExclusive = row25 ? ScreenH : (ScreenH - 4);
@@ -1652,7 +1652,7 @@ namespace C64
                 return;
             }
 
-            // CSEL=0 selects 38-column display: 7px inner border on each side.
+            /// CSEL=0 selects 38-column display: 7px inner border on each side.
             bool col40 = (d016 & 0x08) != 0;
             if (!col40)
             {
@@ -1824,7 +1824,7 @@ namespace C64
             for (int col = 0; col < 40; col++)
             {
                 byte code = cachedScreenRow[col];
-                // Color RAM provides the foreground color; upper code bits select bg0-bg3.
+                /// Color RAM provides the foreground color; upper code bits select bg0-bg3.
                 int fgC = C64Palette[colorRow[col] & 0x0F];
                 int bgIdx = (code >> 6) & 0x03;
                 int bgColor = bgC[bgIdx];
@@ -2117,31 +2117,31 @@ namespace C64
         {
             using (var fs = File.Create(path))
             {
-                // PNG signature
+                /// PNG signature
                 fs.Write(new byte[] { 137, 80, 78, 71, 13, 10, 26, 10 });
 
-                // IHDR
+                /// IHDR
                 byte[] ihdr = new byte[13];
                 WriteUInt32BigEndian(ihdr, 0, (uint)width);
                 WriteUInt32BigEndian(ihdr, 4, (uint)height);
-                ihdr[8] = 8;  // Bit depth
-                ihdr[9] = 6;  // Color type RGBA
-                ihdr[10] = 0; // Compression method
-                ihdr[11] = 0; // Filter method
-                ihdr[12] = 0; // Interlace method
+                ihdr[8] = 8;  /// Bit depth
+                ihdr[9] = 6;  /// Color type RGBA
+                ihdr[10] = 0; /// Compression method
+                ihdr[11] = 0; /// Filter method
+                ihdr[12] = 0; /// Interlace method
                 WritePngChunk(fs, "IHDR", ihdr);
 
-                // Prepare raw scanlines: one filter byte (0) + RGBA pixels per row.
+                /// Prepare raw scanlines: one filter byte (0) + RGBA pixels per row.
                 int stride = width * 4;
                 byte[] raw = new byte[height * (stride + 1)];
                 int dst = 0;
                 for (int y = 0; y < height; y++)
                 {
-                    raw[dst++] = 0; // Filter: None
+                    raw[dst++] = 0; /// Filter: None
                     for (int x = 0; x < width; x++)
                     {
                         int idx = (y * width + x) * 4;
-                        // Internal buffer is BGRA; PNG needs RGBA.
+                        /// Internal buffer is BGRA; PNG needs RGBA.
                         raw[dst++] = argbData[idx + 2];
                         raw[dst++] = argbData[idx + 1];
                         raw[dst++] = argbData[idx];

@@ -19,22 +19,22 @@ namespace C64.CPU
     public class Registers
     {
         /// <summary>Gets or sets the CPU program counter.</summary>
-        public ulong PC { get; set; } // Program Counter
+        public ulong PC { get; set; } /// Program Counter
 
         /// <summary>Gets or sets the CPU stack pointer.</summary>
-        public byte S { get; set; } // Stack Pointer
+        public byte S { get; set; } /// Stack Pointer
 
         public byte P
         { get { return Flags.GetFlagsAsByte(); } set { Flags.SetFlagsFromByte(value); } }// Processor Status
 
         /// <summary>Gets or sets the CPU accumulator.</summary>
-        public byte A { get; set; } // Accumulator
+        public byte A { get; set; } /// Accumulator
 
         /// <summary>Gets or sets the CPU X register.</summary>
-        public byte X { get; set; } // X Index Register
+        public byte X { get; set; } /// X Index Register
 
         /// <summary>Gets or sets the CPU Y register.</summary>
-        public byte Y { get; set; } // Y Index Register
+        public byte Y { get; set; } /// Y Index Register
 
         public Flags Flags = new Flags();
 

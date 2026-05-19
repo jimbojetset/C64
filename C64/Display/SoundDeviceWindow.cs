@@ -37,7 +37,7 @@ namespace C64
                 return null;
             }
 
-            // Request a core-profile OpenGL 3.3 context (matches ImGuiController).
+            /// Request a core-profile OpenGL 3.3 context (matches ImGuiController).
             SDL_GL_SetAttribute(SDL_GLattr.SDL_GL_CONTEXT_MAJOR_VERSION, 3);
             SDL_GL_SetAttribute(SDL_GLattr.SDL_GL_CONTEXT_MINOR_VERSION, 3);
             SDL_GL_SetAttribute(SDL_GLattr.SDL_GL_CONTEXT_PROFILE_MASK,
@@ -71,7 +71,7 @@ namespace C64
             }
 
             SDL_GL_MakeCurrent(win, glCtx);
-            SDL_GL_SetSwapInterval(1); // vsync
+            SDL_GL_SetSwapInterval(1); /// vsync
 
             GL gl = GL.GetApi(name => SDL_GL_GetProcAddress(name));
 
@@ -149,7 +149,7 @@ namespace C64
                 SDL_GL_DeleteContext(glCtx);
                 SDL_DestroyWindow(win);
 
-                // Drain residual events so they don't leak into the emulator loop.
+                /// Drain residual events so they don't leak into the emulator loop.
                 while (SDL_PollEvent(out _) != 0) { }
             }
 

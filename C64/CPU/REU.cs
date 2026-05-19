@@ -34,31 +34,31 @@ namespace C64
     /// </summary>
     internal sealed class REU : IDisposable
     {
-        // REU RAM configurations: 128KB, 256KB, or 512KB
+        /// REU RAM configurations: 128KB, 256KB, or 512KB
         private byte[] _reuRam;
 
         private int _reuSizeKb;
 
-        // Control registers
-        private int _reuAddrReg;      // 17-bit REU address (combines $DF00, $DF01, $DF02)
+        /// Control registers
+        private int _reuAddrReg;      /// 17-bit REU address (combines $DF00, $DF01, $DF02)
 
-        private int _cpuAddrReg;      // 16-bit CPU address (combines $DF03, $DF04)
-        private int _transferLen;     // 16-bit transfer length (combines $DF05, $DF06)
-        private byte _cmdReg;         // $DF07: command and status
-        private byte _irqReg;         // $DF09: interrupt control
+        private int _cpuAddrReg;      /// 16-bit CPU address (combines $DF03, $DF04)
+        private int _transferLen;     /// 16-bit transfer length (combines $DF05, $DF06)
+        private byte _cmdReg;         /// $DF07: command and status
+        private byte _irqReg;         /// $DF09: interrupt control
 
-        // DMA state machine
+        /// DMA state machine
         private bool _dmaActive;
 
         private int _dmaBytesRemaining;
-        private int _dmaDirection;    // 0 = to CPU, 1 = to REU
+        private int _dmaDirection;    /// 0 = to CPU, 1 = to REU
         private int _dmaBytesSinceLastCycle = 0;
         private bool _addressWrap;
 
-        // Interrupt signaling
+        /// Interrupt signaling
 
         /// <summary>Gets or sets the callback invoked for irq request.</summary>
-        public Action? OnIrqRequest { get; set; }  // Called when REU needs to raise IRQ
+        public Action? OnIrqRequest { get; set; }  /// Called when REU needs to raise IRQ
 
         /// <summary>Initializes a new REU instance.</summary>
         /// <param name="sizeKb">The REU capacity in kilobytes.</param>
@@ -89,7 +89,7 @@ namespace C64
         /// <returns>The byte value produced by the operation.</returns>
         public byte Read(int addr)
         {
-            // REU control register reads
+            /// REU control register reads
             switch (addr & 0xFF)
             {
                 case 0x00: return (byte)(_reuAddrReg & 0xFF);
@@ -100,10 +100,10 @@ namespace C64
                 case 0x05: return (byte)(_transferLen & 0xFF);
                 case 0x06: return (byte)((_transferLen >> 8) & 0xFF);
                 case 0x07:
-                    // Status register: return current state
+                    /// Status register: return current state
                     byte status = _cmdReg;
-                    if (_addressWrap) status |= 0x40;           // Address wrap flag
-                    if (!_dmaActive && (_cmdReg & 0x20) != 0) status |= 0x20;  // Complete flag
+                    if (_addressWrap) status |= 0x40;           /// Address wrap flag
+                    if (!_dmaActive && (_cmdReg & 0x20) != 0) status |= 0x20;  /// Complete flag
                     return status;
 
                 case 0x09: return _irqReg;
@@ -147,8 +147,8 @@ namespace C64
                     break;
 
                 case 0x07:
-                    _cmdReg = (byte)(value & 0xF7);  // Bit 3 is reserved
-                    if ((value & 0x02) != 0)  // Execute DMA
+                    _cmdReg = (byte)(value & 0xF7);  /// Bit 3 is reserved
+                    if ((value & 0x02) != 0)  /// Execute DMA
                     {
                         StartDmaTransfer();
                     }
@@ -163,14 +163,14 @@ namespace C64
         /// <summary>Starts an REU DMA transfer from the command register.</summary>
         private void StartDmaTransfer()
         {
-            if (_transferLen == 0) _transferLen = 65536;  // 0 means 64KB transfer
+            if (_transferLen == 0) _transferLen = 65536;  /// 0 means 64KB transfer
 
             _dmaActive = true;
             _dmaBytesRemaining = _transferLen;
-            _dmaDirection = (_cmdReg & 0x01);  // 0 = to CPU, 1 = to REU
+            _dmaDirection = (_cmdReg & 0x01);  /// 0 = to CPU, 1 = to REU
             _dmaBytesSinceLastCycle = 0;
             _addressWrap = false;
-            _cmdReg &= 0xDF;  // Clear complete flag
+            _cmdReg &= 0xDF;  /// Clear complete flag
         }
 
         /// <summary>
@@ -185,17 +185,17 @@ namespace C64
 
             _dmaBytesSinceLastCycle += cycles;
 
-            // Transfer 1 byte per 2 cycles (roughly 500KB/s at 1MHz)
+            /// Transfer 1 byte per 2 cycles (roughly 500KB/s at 1MHz)
             while (_dmaBytesSinceLastCycle >= 2 && _dmaBytesRemaining > 0)
             {
                 _dmaBytesSinceLastCycle -= 2;
 
-                if (_dmaDirection == 0)  // To CPU RAM
+                if (_dmaDirection == 0)  /// To CPU RAM
                 {
                     byte data = ReadReuByte(_reuAddrReg);
                     memory.WriteByte((ulong)_cpuAddrReg, data);
                 }
-                else  // To REU RAM
+                else  /// To REU RAM
                 {
                     byte data = memory.ReadByte((ulong)_cpuAddrReg);
                     WriteReuByte(_reuAddrReg, data);
@@ -219,9 +219,9 @@ namespace C64
                 if (_dmaBytesRemaining == 0)
                 {
                     _dmaActive = false;
-                    _cmdReg |= 0x20;  // Set complete flag
+                    _cmdReg |= 0x20;  /// Set complete flag
 
-                    // Signal IRQ if enabled
+                    /// Signal IRQ if enabled
                     if ((_irqReg & 0x80) != 0)
                     {
                         OnIrqRequest?.Invoke();
@@ -251,7 +251,7 @@ namespace C64
         /// <summary>Releases resources owned by this instance.</summary>
         public void Dispose()
         {
-            // No unmanaged resources
+            /// No unmanaged resources
         }
     }
 }

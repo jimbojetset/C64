@@ -30,7 +30,7 @@ namespace C64
         private bool _completed;
         private string? _selectedDeviceName;
 
-        private int _currentIndex = 0;  // Default to index 0
+        private int _currentIndex = 0;  /// Default to index 0
 
         /// <summary>Initializes a new AudioDeviceSelector instance.</summary>
         /// <param name="devices">The audio device names to show in the picker.</param>
@@ -79,12 +79,12 @@ namespace C64
                         return;
                     }
 
-                    // Set keyboard focus to the first (default) item on first frame
+                    /// Set keyboard focus to the first (default) item on first frame
                     if (i == 0)
                         ImGui.SetItemDefaultFocus();
                 }
 
-                // Number-key selection (matches the previous command-line behaviour).
+                /// Number-key selection (matches the previous command-line behaviour).
                 int maxKey = Math.Min(10, _devices.Count);
                 for (int i = 0; i < maxKey; i++)
                 {
@@ -96,13 +96,13 @@ namespace C64
                         break;
                     }
                 }
-                // Up/Down arrow keys to navigate selection
+                /// Up/Down arrow keys to navigate selection
                 if (ImGui.IsKeyPressed(ImGuiKey.UpArrow, false) && _currentIndex > 0)
                     _currentIndex--;
                 if (ImGui.IsKeyPressed(ImGuiKey.DownArrow, false) && _currentIndex < _devices.Count - 1)
                     _currentIndex++;
 
-                // Enter to confirm the current selection
+                /// Enter to confirm the current selection
                 if (ImGui.IsKeyPressed(ImGuiKey.Enter, false))
                 {
                     Select(_currentIndex);
