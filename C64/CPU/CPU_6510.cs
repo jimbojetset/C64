@@ -51,12 +51,20 @@ namespace C64.CPU
 
         private readonly ConcurrentQueue<ulong> IRQ_Buffer = new ConcurrentQueue<ulong>();
         private readonly ConcurrentQueue<ulong> NMI_Buffer = new ConcurrentQueue<ulong>();
+        private int irqLineAsserted;
 
         /// <summary>Queues an IRQ request for the CPU.</summary>
         /// <param name="value">The value supplied to the operation.</param>
         public void InitiateIRQ(ulong value)
         {
             IRQ_Buffer.Enqueue(value);
+        }
+
+        /// <summary>Sets the level-sensitive IRQ input line for device cores that hold IRQ active until acknowledged.</summary>
+        /// <param name="asserted">Whether the IRQ line is currently asserted.</param>
+        public void SetIrqLine(bool asserted)
+        {
+            Volatile.Write(ref irqLineAsserted, asserted ? 1 : 0);
         }
 
         /// <summary>Queues an NMI request for the CPU.</summary>
@@ -196,6 +204,8 @@ namespace C64.CPU
                             else
                                 ProcessIRQ();
                         }
+                        if (!registers.Flags.I && Volatile.Read(ref irqLineAsserted) != 0)
+                            ProcessIRQ();
                         int beforeCycles = cyclesThisOperation;
                         Execute(GetNextByteInstruction());
                         int deltaCycles = cyclesThisOperation - beforeCycles;
@@ -1130,6 +1140,16 @@ namespace C64.CPU
         public int StepInstruction()
         {
             int beforeCycles = cyclesThisOperation;
+            while (!registers.Flags.I && IRQ_Buffer.TryDequeue(out ulong irqValue))
+            {
+                if (irqValue != 0xFFFE)
+                    ProcessIRQ(irqValue);
+                else
+                    ProcessIRQ();
+            }
+            if (!registers.Flags.I && Volatile.Read(ref irqLineAsserted) != 0)
+                ProcessIRQ();
+
             Execute(GetNextByteInstruction());
             int elapsed = cyclesThisOperation - beforeCycles;
             if (elapsed > 0)

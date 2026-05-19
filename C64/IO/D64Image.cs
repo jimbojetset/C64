@@ -192,6 +192,17 @@ namespace C64
             return true;
         }
 
+        /// <summary>Gets the number of sectors present on a D64 track.</summary>
+        /// <param name="track">The one-based disk track number.</param>
+        /// <returns>The sector count for the track, or 0 when the track is outside the image geometry.</returns>
+        public static int GetSectorCount(int track)
+        {
+            if (track <= 0 || track >= SectorsPerTrack.Length)
+                return 0;
+
+            return SectorsPerTrack[track];
+        }
+
         /// <summary>Reads directory entries.</summary>
         /// <returns>The directory entries decoded from the D64 image.</returns>
         private List<DirectoryEntry> ReadDirectoryEntries()
