@@ -12,11 +12,8 @@
 //              rights holders. This emulator is for educational purposes only.
 // ============================================================================
 
-using System;
-
 namespace C64
 {
-
     /// <summary>
     /// CMD REU (RAM Expansion Unit) emulator.
     /// Provides 128KB–512KB of additional RAM accessible via DMA transfers.
@@ -39,10 +36,12 @@ namespace C64
     {
         // REU RAM configurations: 128KB, 256KB, or 512KB
         private byte[] _reuRam;
+
         private int _reuSizeKb;
 
         // Control registers
         private int _reuAddrReg;      // 17-bit REU address (combines $DF00, $DF01, $DF02)
+
         private int _cpuAddrReg;      // 16-bit CPU address (combines $DF03, $DF04)
         private int _transferLen;     // 16-bit transfer length (combines $DF05, $DF06)
         private byte _cmdReg;         // $DF07: command and status
@@ -50,6 +49,7 @@ namespace C64
 
         // DMA state machine
         private bool _dmaActive;
+
         private int _dmaBytesRemaining;
         private int _dmaDirection;    // 0 = to CPU, 1 = to REU
         private int _dmaBytesSinceLastCycle = 0;
@@ -105,6 +105,7 @@ namespace C64
                     if (_addressWrap) status |= 0x40;           // Address wrap flag
                     if (!_dmaActive && (_cmdReg & 0x20) != 0) status |= 0x20;  // Complete flag
                     return status;
+
                 case 0x09: return _irqReg;
                 default: return 0;
             }
@@ -120,24 +121,31 @@ namespace C64
                 case 0x00:
                     _reuAddrReg = (_reuAddrReg & 0xFF00) | value;
                     break;
+
                 case 0x01:
                     _reuAddrReg = (_reuAddrReg & 0x00FF) | ((value & 0xFF) << 8);
                     break;
+
                 case 0x02:
                     _reuAddrReg = (_reuAddrReg & 0xFFFF) | ((value & 0x7F) << 16);
                     break;
+
                 case 0x03:
                     _cpuAddrReg = (_cpuAddrReg & 0xFF00) | value;
                     break;
+
                 case 0x04:
                     _cpuAddrReg = (_cpuAddrReg & 0x00FF) | ((value & 0xFF) << 8);
                     break;
+
                 case 0x05:
                     _transferLen = (_transferLen & 0xFF00) | value;
                     break;
+
                 case 0x06:
                     _transferLen = (_transferLen & 0x00FF) | ((value & 0xFF) << 8);
                     break;
+
                 case 0x07:
                     _cmdReg = (byte)(value & 0xF7);  // Bit 3 is reserved
                     if ((value & 0x02) != 0)  // Execute DMA
@@ -145,6 +153,7 @@ namespace C64
                         StartDmaTransfer();
                     }
                     break;
+
                 case 0x09:
                     _irqReg = (byte)(value & 0xF0);
                     break;

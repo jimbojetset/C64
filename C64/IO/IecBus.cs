@@ -15,18 +15,19 @@ using System.Text;
 
 namespace C64
 {
-
     /// <summary>
     /// Emulates the high-level IEC bus commands and a lightweight low-level responder for the virtual 1541 drive path.
     /// </summary>
     internal sealed class IecBus
     {
         private readonly VirtualDrive1541 drive;
+
         private static readonly bool LowLevelEnabled =
             string.Equals(Environment.GetEnvironmentVariable("C64_IEC_LOWLEVEL"), "1", StringComparison.Ordinal);
 
         // Open-collector line model; true = released/high, false = driven low.
         private bool hostDataRelease = true;
+
         private bool hostClockRelease = true;
         private bool hostAtnRelease = true;
 

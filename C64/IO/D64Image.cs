@@ -15,7 +15,6 @@ using System.Text;
 
 namespace C64
 {
-
     /// <summary>
     /// Parses a D64 disk image and exposes directory, PRG loading, disk-name, and raw sector access helpers.
     /// </summary>

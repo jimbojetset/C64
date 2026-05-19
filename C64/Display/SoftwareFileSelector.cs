@@ -11,12 +11,11 @@
 //              rights holders. This emulator is for educational purposes only.
 // ============================================================================
 
-using System.Numerics;
 using ImGuiNET;
+using System.Numerics;
 
 namespace C64
 {
-
     /// <summary>
     /// Modal ImGui popup that lets the user choose a loadable file from the
     /// bundled Software directory.

@@ -20,7 +20,6 @@ using static SDL2.SDL;
 
 namespace C64
 {
-
     /// <summary>
     /// Handles ImGui initialization, input processing, and rendering with SDL2 + OpenGL
     /// </summary>
@@ -459,5 +458,4 @@ namespace C64
             GC.SuppressFinalize(this);
         }
     }
-
 }

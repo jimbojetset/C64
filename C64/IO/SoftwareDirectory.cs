@@ -13,13 +13,11 @@
 
 namespace C64
 {
-
     /// <summary>
     /// Locates the bundled software directory from the current working directory or nearby repository paths.
     /// </summary>
     internal static class SoftwareDirectory
     {
-
         /// <summary>Finds the bundled software directory.</summary>
         /// <returns>The selected or resolved string value, or null when no value is available.</returns>
         public static string? Find()

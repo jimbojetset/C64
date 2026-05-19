@@ -13,19 +13,19 @@
 
 namespace C64.CPU
 {
-
     /// <summary>
     /// Holds the CPU register set and maps the processor status byte through the structured flag model.
     /// </summary>
     public class Registers
     {
-
         /// <summary>Gets or sets the CPU program counter.</summary>
         public ulong PC { get; set; } // Program Counter
 
         /// <summary>Gets or sets the CPU stack pointer.</summary>
         public byte S { get; set; } // Stack Pointer
-        public byte P { get { return Flags.GetFlagsAsByte(); } set { Flags.SetFlagsFromByte(value); } }// Processor Status
+
+        public byte P
+        { get { return Flags.GetFlagsAsByte(); } set { Flags.SetFlagsFromByte(value); } }// Processor Status
 
         /// <summary>Gets or sets the CPU accumulator.</summary>
         public byte A { get; set; } // Accumulator
@@ -35,6 +35,7 @@ namespace C64.CPU
 
         /// <summary>Gets or sets the CPU Y register.</summary>
         public byte Y { get; set; } // Y Index Register
+
         public Flags Flags = new Flags();
 
         /// <summary>Initializes a new Registers instance.</summary>

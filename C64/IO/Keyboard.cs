@@ -11,13 +11,12 @@
 //              rights holders. This emulator is for educational purposes only.
 // ============================================================================
 
-using System.Collections.Concurrent;
 using C64.CPU;
+using System.Collections.Concurrent;
 using static SDL2.SDL;
 
 namespace C64
 {
-
     /// <summary>
     /// Standalone keyboard and joystick port 2 controller.
     /// Owns the C64 keyboard matrix, the PETSCII key queue, and the
@@ -199,22 +198,28 @@ namespace C64
             {
                 case SDL_EventType.SDL_KEYDOWN:
                     return HandleKeyDown(ev.key);
+
                 case SDL_EventType.SDL_KEYUP:
                     HandleKeyUp(ev.key);
                     return false;
+
                 case SDL_EventType.SDL_CONTROLLERDEVICEADDED:
                     HandleControllerAdded(ev.cdevice);
                     return false;
+
                 case SDL_EventType.SDL_CONTROLLERDEVICEREMOVED:
                     HandleControllerRemoved(ev.cdevice);
                     return false;
+
                 case SDL_EventType.SDL_CONTROLLERBUTTONDOWN:
                 case SDL_EventType.SDL_CONTROLLERBUTTONUP:
                     HandleControllerButton(ev.cbutton);
                     return false;
+
                 case SDL_EventType.SDL_CONTROLLERAXISMOTION:
                     HandleControllerAxis(ev.caxis);
                     return false;
+
                 default:
                     return false;
             }
@@ -334,47 +339,60 @@ namespace C64
                     SetMatrixKey(1, 7, pressed);
                     SetMatrixKey(6, 4, pressed);
                     return;
+
                 case SDL_Keycode.SDLK_LCTRL:
                     if (activeJoystickPort == 0)
                         SetMatrixKey(7, 2, pressed); // C64 CTRL key
                     return;
+
                 case SDL_Keycode.SDLK_RCTRL:
                     return; // joystick-only to avoid game keyboard side-effects
                 case SDL_Keycode.SDLK_RALT:
                     SetMatrixKey(7, 5, pressed); // COMMODORE (C=)
                     return;
+
                 case SDL_Keycode.SDLK_RETURN:
                 case SDL_Keycode.SDLK_KP_ENTER:
                     SetMatrixKey(0, 1, pressed);
                     return;
+
                 case SDL_Keycode.SDLK_ESCAPE:
                     SetMatrixKey(7, 7, pressed); // RUN/STOP
                     return;
+
                 case SDL_Keycode.SDLK_BACKSPACE:
                 case SDL_Keycode.SDLK_DELETE:
                     SetMatrixKey(0, 0, pressed);
                     return;
+
                 case SDL_Keycode.SDLK_INSERT:
                     SetMatrixKey(0, 0, pressed); // INST/DEL shares key
                     return;
+
                 case SDL_Keycode.SDLK_HOME:
                     SetMatrixKey(6, 6, pressed); // CLR/HOME
                     return;
+
                 case SDL_Keycode.SDLK_SPACE:
                     SetMatrixKey(7, 4, pressed);
                     return;
+
                 case SDL_Keycode.SDLK_F1:
                     SetMatrixKey(0, 4, pressed);
                     return;
+
                 case SDL_Keycode.SDLK_F3:
                     SetMatrixKey(0, 5, pressed);
                     return;
+
                 case SDL_Keycode.SDLK_F5:
                     SetMatrixKey(0, 6, pressed);
                     return;
+
                 case SDL_Keycode.SDLK_F7:
                     SetMatrixKey(0, 3, pressed);
                     return;
+
                 case SDL_Keycode.SDLK_LEFT:
                     if (activeJoystickPort == 0)
                     {
@@ -383,10 +401,12 @@ namespace C64
                         SetMatrixKey(0, 2, pressed);
                     }
                     return;
+
                 case SDL_Keycode.SDLK_RIGHT:
                     if (activeJoystickPort == 0)
                         SetMatrixKey(0, 2, pressed);
                     return;
+
                 case SDL_Keycode.SDLK_UP:
                     if (activeJoystickPort == 0)
                     {
@@ -395,6 +415,7 @@ namespace C64
                         SetMatrixKey(0, 7, pressed);
                     }
                     return;
+
                 case SDL_Keycode.SDLK_DOWN:
                     if (activeJoystickPort == 0)
                         SetMatrixKey(0, 7, pressed);

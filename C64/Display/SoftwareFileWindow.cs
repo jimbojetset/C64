@@ -11,20 +11,18 @@
 //              rights holders. This emulator is for educational purposes only.
 // ============================================================================
 
-using System.Diagnostics;
 using Silk.NET.OpenGL;
+using System.Diagnostics;
 using static SDL2.SDL;
 
 namespace C64
 {
-
     /// <summary>
     /// Hosts an SDL2 + OpenGL window long enough to run an ImGui software
     /// selection modal, then returns the selected file path.
     /// </summary>
     internal static class SoftwareFileWindow
     {
-
         /// <summary>Shows the picker window and returns the selected value.</summary>
         /// <returns>The selected or resolved string value, or null when no value is available.</returns>
         public static string? Prompt()

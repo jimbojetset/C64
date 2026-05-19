@@ -11,13 +11,12 @@
 //              rights holders. This emulator is for educational purposes only.
 // ============================================================================
 
-using System.Diagnostics;
 using Silk.NET.OpenGL;
+using System.Diagnostics;
 using static SDL2.SDL;
 
 namespace C64
 {
-
     /// <summary>
     /// Hosts an SDL2 + OpenGL window long enough to run an ImGui
     /// <see cref="AudioDeviceSelector"/> modal, then disposes everything and
@@ -25,7 +24,6 @@ namespace C64
     /// </summary>
     internal static class SoundDeviceWindow
     {
-
         /// <summary>Shows the picker window and returns the selected value.</summary>
         /// <param name="devices">The audio device names to show in the picker.</param>
         /// <returns>The selected or resolved string value, or null when no value is available.</returns>
@@ -47,7 +45,7 @@ namespace C64
             SDL_GL_SetAttribute(SDL_GLattr.SDL_GL_DOUBLEBUFFER, 1);
             SDL_GL_SetAttribute(SDL_GLattr.SDL_GL_DEPTH_SIZE, 24);
 
-            const int Width  = 520;
+            const int Width = 520;
             const int Height = 360;
 
             IntPtr win = SDL_CreateWindow(
@@ -122,8 +120,8 @@ namespace C64
                         }
                     }
 
-                    double now   = sw.Elapsed.TotalSeconds;
-                    float  delta = (float)(now - last);
+                    double now = sw.Elapsed.TotalSeconds;
+                    float delta = (float)(now - last);
                     last = now;
 
                     controller.NewFrame(delta);

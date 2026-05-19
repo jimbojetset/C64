@@ -12,12 +12,10 @@
 //              rights holders. This emulator is for educational purposes only.
 // ============================================================================
 
-using System;
 using System.Runtime.CompilerServices;
 
 namespace C64.CPU
 {
-
     /// <summary>
     /// Models the C64 address space, including RAM-under-ROM, 6510 banking, I/O hooks, color RAM behavior, and VIC-visible reads.
     /// </summary>
@@ -44,6 +42,7 @@ namespace C64.CPU
         // corrupting the ROM image. Reads then select between ROM and
         // RAM based on the current bank state.
         private byte[]? basicRom;   // $A000-$BFFF (8 KiB)
+
         private byte[]? kernalRom;  // $E000-$FFFF (8 KiB)
         private byte[]? charRom;    // $D000-$DFFF (4 KiB)
 
@@ -60,7 +59,8 @@ namespace C64.CPU
         // Slot identifiers for LoadBankedROM.
 
         /// <summary>Defines values for Bank Slot.</summary>
-        public enum BankSlot { Basic, Kernal, Char }
+        public enum BankSlot
+        { Basic, Kernal, Char }
 
         // Optional write hook for the I/O range $D000-$DFFF. Returning true
         // tells WriteByte to suppress the actual store (useful for ACK
@@ -138,11 +138,13 @@ namespace C64.CPU
                         throw new InvalidDataException($"BASIC ROM must be 8 KiB (got {data.Length}).");
                     basicRom = data;
                     break;
+
                 case BankSlot.Kernal:
                     if (data.Length != 0x2000)
                         throw new InvalidDataException($"KERNAL ROM must be 8 KiB (got {data.Length}).");
                     kernalRom = data;
                     break;
+
                 case BankSlot.Char:
                     if (data.Length != 0x1000)
                         throw new InvalidDataException($"Character ROM must be 4 KiB (got {data.Length}).");
@@ -377,7 +379,6 @@ namespace C64.CPU
     /// </summary>
     internal class ROM
     {
-
         /// <summary>Gets or sets the ROM start address.</summary>
         public int StartAddr { get; set; }
 

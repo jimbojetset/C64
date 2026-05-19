@@ -11,12 +11,11 @@
 //              rights holders. This emulator is for educational purposes only.
 // ============================================================================
 
-using System.Numerics;
 using ImGuiNET;
+using System.Numerics;
 
 namespace C64
 {
-
     /// <summary>
     /// Modal ImGui popup that prompts the user to choose an audio output device.
     /// Selection is made by clicking an entry, using arrow keys plus Enter, or

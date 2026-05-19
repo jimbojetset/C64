@@ -20,7 +20,6 @@ using static SDL2.SDL;
 
 namespace C64
 {
-
     /// <summary>
     /// Emulates enough VIC-II display behavior to render C64 frames, track raster timing, handle sprite/text/bitmap modes, and present through SDL/OpenGL.
     /// </summary>
@@ -125,7 +124,6 @@ namespace C64
         /// </summary>
         private readonly struct RasterWriteEvent
         {
-
             /// <summary>Initializes a captured raster write event.</summary>
             /// <param name="cycle">The raster cycle where the write occurred.</param>
             /// <param name="address">The VIC register address that was written.</param>
@@ -139,17 +137,17 @@ namespace C64
                 NewValue = newValue;
             }
 
-        /// <summary>Gets the raster cycle where the write occurred.</summary>
-        public int Cycle { get; }
+            /// <summary>Gets the raster cycle where the write occurred.</summary>
+            public int Cycle { get; }
 
-        /// <summary>Gets the VIC register address that was written.</summary>
-        public ushort Address { get; }
+            /// <summary>Gets the VIC register address that was written.</summary>
+            public ushort Address { get; }
 
-        /// <summary>Gets the register value before the raster write.</summary>
-        public byte OldValue { get; }
+            /// <summary>Gets the register value before the raster write.</summary>
+            public byte OldValue { get; }
 
-        /// <summary>Gets the register value after the raster write.</summary>
-        public byte NewValue { get; }
+            /// <summary>Gets the register value after the raster write.</summary>
+            public byte NewValue { get; }
         }
 
         /// <summary>Initializes a captured raster write event.</summary>
@@ -295,13 +293,43 @@ namespace C64
             gl = GL.GetApi(name => SDL_GL_GetProcAddress(name));
             CreatePresentationObjects();
 
-            charRom = File.ReadAllBytes(Path.Combine("ROMS", "characters.bin"));
+            charRom = LoadCharROM();
+
             windowTitleDirty = true;
             ApplyPendingWindowTitle();
         }
 
+        /// <summary>
+        // Prefer a char ROM provided by the memory backend (BankedROM) if available.
+        /// </summary>
+        /// <returns>byte array containing char ROM data</returns>
+        private byte[] LoadCharROM()
+        {
+            try
+            {
+                var memObj = cpu.memory;
+                var prop = memObj.GetType().GetProperty("CharRom");
+                if (prop != null)
+                {
+                    var val = prop.GetValue(memObj) as byte[];
+                    if (val != null && val.Length > 0)
+                    {
+                        return val;
+                    }
+                }
+                return File.ReadAllBytes(Path.Combine("ROMS", "characters.bin"));
+            }
+            catch
+            {
+                // Fallback to direct file load if anything goes wrong inspecting memory.
+                return File.ReadAllBytes(Path.Combine("ROMS", "characters.bin"));
+            }
+
+        }
+
         /// <summary>Starts this component.</summary>
-        public void Start(CancellationToken token) { }
+        public void Start(CancellationToken token)
+        { }
 
         /// <summary>Sets loaded file in title.</summary>
         /// <param name="filePath">The path of the file to load.</param>

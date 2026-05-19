@@ -20,14 +20,12 @@ using System.Runtime.Versioning;
 
 namespace C64.CPU
 {
-
     /// <summary>
     /// Emulates the MOS 6510 CPU core, including opcode dispatch, interrupt processing, reset handling, cycle accounting, and pacing.
     /// The C64 host wires this core to memory banking and device callbacks through its public memory and cycle hooks.
     /// </summary>
     public class CPU_6510
     {
-
         /// <summary>Requests high-resolution Windows timer scheduling.</summary>
         [DllImport("winmm.dll", EntryPoint = "timeBeginPeriod")]
         [SupportedOSPlatform("windows")]
@@ -43,7 +41,6 @@ namespace C64.CPU
         public Registers registers = new Registers();
 
         public Memory memory = new Memory(0x10000);
-
 
         private bool running = true;
         private bool paused;
@@ -263,539 +260,715 @@ namespace C64.CPU
                 #region Documented Opcodes
 
                 #region NOP
+
                 case 0xEA:
                     cyclesThisOperation += 2;
                     break;
-                #endregion
+
+                #endregion NOP
 
                 #region LD*
+
                 case 0xA9:
                     LDA_IM();
                     break;
+
                 case 0xAD:
                     LDA_AB();
                     break;
+
                 case 0xBD:
                     LDA_ABX();
                     break;
+
                 case 0xB9:
                     LDA_ABY();
                     break;
+
                 case 0xA5:
                     LDA_ZP();
                     break;
+
                 case 0xB5:
                     LDA_ZPX();
                     break;
+
                 case 0xA1:
                     LDA_ZPIX();
                     break;
+
                 case 0xB1:
                     LDA_ZPIY();
                     break;
+
                 case 0xA2:
                     LDX_IM();
                     break;
+
                 case 0xAE:
                     LDX_AB();
                     break;
+
                 case 0xBE:
                     LDX_ABY();
                     break;
+
                 case 0xA6:
                     LDX_ZP();
                     break;
+
                 case 0xB6:
                     LDX_ZPY();
                     break;
+
                 case 0xA0:
                     LDY_IM();
                     break;
+
                 case 0xAC:
                     LDY_AB();
                     break;
+
                 case 0xBC:
                     LDY_ABX();
                     break;
+
                 case 0xA4:
                     LDY_ZP();
                     break;
+
                 case 0xB4:
                     LDY_ZPX();
                     break;
-                #endregion
+
+                #endregion LD*
 
                 #region ST*
+
                 case 0x8E:
                     STX_AB();
                     break;
+
                 case 0x86:
                     STX_ZP();
                     break;
+
                 case 0x96:
                     STX_ZPY();
                     break;
+
                 case 0x8C:
                     STY_AB();
                     break;
+
                 case 0x84:
                     STY_ZP();
                     break;
+
                 case 0x94:
                     STY_ZPX();
                     break;
+
                 case 0x8D:
                     STA_AB();
                     break;
+
                 case 0x9D:
                     STA_ABX();
                     break;
+
                 case 0x99:
                     STA_ABY();
                     break;
+
                 case 0x85:
                     STA_ZP();
                     break;
+
                 case 0x95:
                     STA_ZPX();
                     break;
+
                 case 0x81:
                     STA_ZPIX();
                     break;
+
                 case 0x91:
                     STA_ZPIY();
                     break;
-                #endregion
+
+                #endregion ST*
 
                 #region T**
+
                 case 0xAA:
                     TAX();
                     break;
+
                 case 0xA8:
                     TAY();
                     break;
+
                 case 0xBA:
                     TSX();
                     break;
+
                 case 0x8A:
                     TXA();
                     break;
+
                 case 0x9A:
                     TXS();
                     break;
+
                 case 0x98:
                     TYA();
                     break;
-                #endregion
+
+                #endregion T**
 
                 #region SE*
+
                 case 0x38:
                     SEC();
                     break;
+
                 case 0xF8:
                     SED();
                     break;
+
                 case 0x78:
                     SEI();
                     break;
-                #endregion
+
+                #endregion SE*
 
                 #region PH*
+
                 case 0x48:
                     PHA();
                     break;
+
                 case 0x08:
                     PHP();
                     break;
-                #endregion
+
+                #endregion PH*
 
                 #region PL*
+
                 case 0x68:
                     PLA();
                     break;
+
                 case 0x28:
                     PLP();
                     break;
-                #endregion
+
+                #endregion PL*
 
                 #region CL*
+
                 case 0x18:
                     CLC();
                     break;
+
                 case 0xD8:
                     CLD();
                     break;
+
                 case 0x58:
                     CLI();
                     break;
+
                 case 0xB8:
                     CLV();
                     break;
 
-                #endregion
+                #endregion CL*
 
                 #region DE*
+
                 case 0xCE:
                     DECA();
                     break;
+
                 case 0xDE:
                     DECXA();
                     break;
+
                 case 0xC6:
                     DECZP();
                     break;
+
                 case 0xD6:
                     DECXZP();
                     break;
+
                 case 0xCA:
                     DEX();
                     break;
+
                 case 0x88:
                     DEY();
                     break;
-                #endregion
+
+                #endregion DE*
 
                 #region IN*
+
                 case 0xEE:
                     INCA();
                     break;
+
                 case 0xFE:
                     INCXA();
                     break;
+
                 case 0xE6:
                     INCZP();
                     break;
+
                 case 0xF6:
                     INCXZP();
                     break;
+
                 case 0xE8:
                     INX();
                     break;
+
                 case 0xC8:
                     INY();
                     break;
-                #endregion
+
+                #endregion IN*
 
                 #region CM*
+
                 case 0xC9:
                     CMPI();
                     break;
+
                 case 0xCD:
                     CMPA();
                     break;
+
                 case 0xDD:
                     CMPXA();
                     break;
+
                 case 0xD9:
                     CMPYA();
                     break;
+
                 case 0xC5:
                     CMPZ();
                     break;
+
                 case 0xD5:
                     CMPXZ();
                     break;
+
                 case 0xC1:
                     CMPXZI();
                     break;
+
                 case 0xD1:
                     CMPYZI();
                     break;
-                #endregion
+
+                #endregion CM*
 
                 #region CPX
+
                 case 0xE0:
                     CPXI();
                     break;
+
                 case 0xEC:
                     CPXA();
                     break;
+
                 case 0xE4:
                     CPXZ();
                     break;
-                #endregion
+
+                #endregion CPX
 
                 #region CPY
+
                 case 0xC0:
                     CPYI();
                     break;
+
                 case 0xCC:
                     CPYA();
                     break;
+
                 case 0xC4:
                     CPYZ();
                     break;
-                #endregion
+
+                #endregion CPY
 
                 #region ADC
+
                 case 0x69:
                     ADCI();
                     break;
+
                 case 0x6D:
                     ADCA();
                     break;
+
                 case 0x7D:
                     ADCXA();
                     break;
+
                 case 0x79:
                     ADCYA();
                     break;
+
                 case 0x65:
                     ADCZ();
                     break;
+
                 case 0x75:
                     ADCXZ();
                     break;
+
                 case 0x61:
                     ADCXZI();
                     break;
+
                 case 0x71:
                     ADCYZI();
                     break;
-                #endregion
+
+                #endregion ADC
 
                 #region SBC
+
                 case 0xE9:
                     SBCI();
                     break;
+
                 case 0xED:
                     SBCA();
                     break;
+
                 case 0xFD:
                     SBCXA();
                     break;
+
                 case 0xF9:
                     SBCYA();
                     break;
+
                 case 0xE5:
                     SBCZ();
                     break;
+
                 case 0xF5:
                     SBCXZ();
                     break;
+
                 case 0xE1:
                     SBCXZI();
                     break;
+
                 case 0xF1:
                     SBCYZI();
                     break;
-                #endregion
+
+                #endregion SBC
 
                 #region EOR
+
                 case 0x49:
                     EORI();
                     break;
+
                 case 0x4D:
                     EORA();
                     break;
+
                 case 0x5D:
                     EORXA();
                     break;
+
                 case 0x59:
                     EORYA();
                     break;
+
                 case 0x45:
                     EORZ();
                     break;
+
                 case 0x55:
                     EORXZ();
                     break;
+
                 case 0x41:
                     EORXZI();
                     break;
+
                 case 0x51:
                     EORYZI();
                     break;
-                #endregion
+
+                #endregion EOR
 
                 #region ORA
+
                 case 0x09:
                     ORAI();
                     break;
+
                 case 0x0D:
                     ORAA();
                     break;
+
                 case 0x1D:
                     ORAXA();
                     break;
+
                 case 0x19:
                     ORAYA();
                     break;
+
                 case 0x05:
                     ORAZ();
                     break;
+
                 case 0x15:
                     ORAXZ();
                     break;
+
                 case 0x01:
                     ORAXZI();
                     break;
+
                 case 0x11:
                     ORAYZI();
                     break;
-                #endregion
+
+                #endregion ORA
 
                 #region AND
+
                 case 0x29:
                     ANDI();
                     break;
+
                 case 0x2D:
                     ANDA();
                     break;
+
                 case 0x3D:
                     ANDXA();
                     break;
+
                 case 0x39:
                     ANDYA();
                     break;
+
                 case 0x25:
                     ANDZ();
                     break;
+
                 case 0x35:
                     ANDXZ();
                     break;
+
                 case 0x21:
                     ANDXZI();
                     break;
+
                 case 0x31:
                     ANDYZI();
                     break;
-                #endregion
+
+                #endregion AND
 
                 #region BIT
+
                 case 0x2C:
                     BITA();
                     break;
+
                 case 0x24:
                     BITZ();
                     break;
-                #endregion
+
+                #endregion BIT
 
                 #region ASL
+
                 case 0x0A:
                     ASLAC();
                     break;
+
                 case 0x0E:
                     ASLA();
                     break;
+
                 case 0x1E:
                     ASLXA();
                     break;
+
                 case 0x06:
                     ASLZ();
                     break;
+
                 case 0x16:
                     ASLXZ();
                     break;
-                #endregion
+
+                #endregion ASL
 
                 #region LSR
+
                 case 0x4A:
                     LSRAC();
                     break;
+
                 case 0x4E:
                     LSRA();
                     break;
+
                 case 0x5E:
                     LSRXA();
                     break;
+
                 case 0x46:
                     LSRZ();
                     break;
+
                 case 0x56:
                     LSRXZ();
                     break;
-                #endregion
+
+                #endregion LSR
 
                 #region ROL
+
                 case 0x2A:
                     ROLAC();
                     break;
+
                 case 0x2E:
                     ROLA();
                     break;
+
                 case 0x3E:
                     ROLXA();
                     break;
+
                 case 0x26:
                     ROLZ();
                     break;
+
                 case 0x36:
                     ROLXZ();
                     break;
-                #endregion
+
+                #endregion ROL
 
                 #region ROR
 
                 case 0x6A:
                     RORAC();
                     break;
+
                 case 0x6E:
                     RORA();
                     break;
+
                 case 0x7E:
                     RORXA();
                     break;
+
                 case 0x66:
                     RORZ();
                     break;
+
                 case 0x76:
                     RORXZ();
                     break;
-                #endregion
+
+                #endregion ROR
 
                 #region BRANCH
+
                 case 0x90:
                     BCC();
                     break;
+
                 case 0xB0:
                     BCS();
                     break;
+
                 case 0xF0:
                     BEQ();
                     break;
+
                 case 0x30:
                     BMI();
                     break;
+
                 case 0xd0:
                     BNE();
                     break;
+
                 case 0x10:
                     BPL();
                     break;
+
                 case 0x50:
                     BVC();
                     break;
+
                 case 0x70:
                     BVS();
                     break;
+
                 case 0x00:
                     BRK();
                     break;
-                #endregion
+
+                #endregion BRANCH
 
                 #region J**
+
                 case 0x4C:
                     JMPA();
                     break;
+
                 case 0x6C:
                     JMPAI();
                     break;
+
                 case 0x20:
                     JSRA();
                     break;
-                #endregion
+
+                #endregion J**
 
                 #region RT*
+
                 case 0x40:
                     RTI();
                     break;
+
                 case 0x60:
                     RTS();
                     break;
-                #endregion
+
+                #endregion RT*
 
                 #region Illegal / undocumented opcodes
+
                 // C64 game code uses these heavily (LAX, DCP, SLO, ISC, SAX,
                 // etc.) for tighter inner loops. Without them we silently
                 // skip the instruction and the game's logic drifts off.
@@ -936,11 +1109,13 @@ namespace C64.CPU
                 case 0xD2:
                 case 0xF2:
                     jammed = true; cyclesThisOperation += 2; break;
-                #endregion
+
+                #endregion Illegal / undocumented opcodes
 
                 default:
                     throw new InvalidOperationException($"Unhandled opcode ${opcode:X2} at ${((registers.PC - 1) & 0xFFFF):X4}");
-                #endregion
+
+                    #endregion Documented Opcodes
             }
         }
 
@@ -1178,7 +1353,8 @@ namespace C64.CPU
             byte m = (byte)(((addr >> 8) + 1) & 0xFF);
             WriteByteToMemory(addr, (byte)(registers.X & m));
         }
-        #endregion
+
+        #endregion Illegal opcode helpers
 
         #region Addressing Modes
 
@@ -1309,7 +1485,8 @@ namespace C64.CPU
             registers.Flags.Z = (value == 0);
             registers.Flags.N = ((value & 0x80) != 0);
         }
-        #endregion
+
+        #endregion Addressing Modes
 
         #region Documented Opcodes
 
@@ -1458,7 +1635,8 @@ namespace C64.CPU
             Set_FlagsNZ(registers.Y);
             cyclesThisOperation += 4;
         }
-        #endregion
+
+        #endregion LD*
 
         #region ST*
 
@@ -1552,7 +1730,8 @@ namespace C64.CPU
             WriteByteToMemory(X_Indexed_Zero_Page(), registers.Y);
             cyclesThisOperation += 4;
         }
-        #endregion
+
+        #endregion ST*
 
         #region T**
 
@@ -1602,7 +1781,8 @@ namespace C64.CPU
             Set_FlagsNZ(registers.A);
             cyclesThisOperation += 2;
         }
-        #endregion
+
+        #endregion T**
 
         #region SE*
 
@@ -1626,7 +1806,8 @@ namespace C64.CPU
             registers.Flags.I = true;
             cyclesThisOperation += 2;
         }
-        #endregion
+
+        #endregion SE*
 
         #region PH*
 
@@ -1646,7 +1827,8 @@ namespace C64.CPU
             PushByteToStack(addr);
             cyclesThisOperation += 3;
         }
-        #endregion
+
+        #endregion PH*
 
         #region PL*
 
@@ -1665,7 +1847,8 @@ namespace C64.CPU
             registers.Flags.SetFlagsFromByte(value, 0xCF); //ignore bits 5 & 6
             cyclesThisOperation += 4;
         }
-        #endregion
+
+        #endregion PL*
 
         #region CL*
 
@@ -1696,7 +1879,8 @@ namespace C64.CPU
             registers.Flags.V = false;
             cyclesThisOperation += 2;
         }
-        #endregion
+
+        #endregion CL*
 
         #region DE*
 
@@ -1761,7 +1945,8 @@ namespace C64.CPU
             Set_FlagsNZ(value2);
             cyclesThisOperation += 2;
         }
-        #endregion
+
+        #endregion DE*
 
         #region IN*
 
@@ -1826,7 +2011,8 @@ namespace C64.CPU
             Set_FlagsNZ(value1);
             cyclesThisOperation += 2;
         }
-        #endregion
+
+        #endregion IN*
 
         #region CM*
 
@@ -1909,7 +2095,8 @@ namespace C64.CPU
             Set_FlagsNZ(value2);
             cyclesThisOperation += 5;
         }
-        #endregion
+
+        #endregion CM*
 
         #region CPX
 
@@ -1942,7 +2129,8 @@ namespace C64.CPU
             Set_FlagsNZ(value);
             cyclesThisOperation += 3;
         }
-        #endregion
+
+        #endregion CPX
 
         #region CPY
 
@@ -1975,7 +2163,8 @@ namespace C64.CPU
             Set_FlagsNZ(value);
             cyclesThisOperation += 3;
         }
-        #endregion
+
+        #endregion CPY
 
         #region ADC
 
@@ -2073,7 +2262,8 @@ namespace C64.CPU
                 Set_FlagsNZ(registers.A);
             }
         }
-        #endregion
+
+        #endregion ADC
 
         #region SBC
 
@@ -2170,7 +2360,8 @@ namespace C64.CPU
                 Set_FlagsNZ(registers.A);
             }
         }
-        #endregion
+
+        #endregion SBC
 
         #region EOR
 
@@ -2253,7 +2444,8 @@ namespace C64.CPU
             Set_FlagsNZ(value);
             cyclesThisOperation += 5;
         }
-        #endregion
+
+        #endregion EOR
 
         #region ORA
 
@@ -2336,7 +2528,8 @@ namespace C64.CPU
             Set_FlagsNZ(value);
             cyclesThisOperation += 5;
         }
-        #endregion
+
+        #endregion ORA
 
         #region AND
 
@@ -2419,7 +2612,8 @@ namespace C64.CPU
             Set_FlagsNZ(value);
             cyclesThisOperation += 5;
         }
-        #endregion
+
+        #endregion AND
 
         #region BIT
 
@@ -2444,7 +2638,8 @@ namespace C64.CPU
             registers.Flags.Z = (value == 0);
             cyclesThisOperation += 3;
         }
-        #endregion
+
+        #endregion BIT
 
         #region ASL
 
@@ -2511,7 +2706,8 @@ namespace C64.CPU
             WriteByteToMemory(addr, value2);
             cyclesThisOperation += 6;
         }
-        #endregion
+
+        #endregion ASL
 
         #region LSR
 
@@ -2580,7 +2776,8 @@ namespace C64.CPU
             WriteByteToMemory(addr, value2);
             cyclesThisOperation += 6;
         }
-        #endregion
+
+        #endregion LSR
 
         #region ROL
 
@@ -2647,7 +2844,8 @@ namespace C64.CPU
             WriteByteToMemory(addr, value2);
             cyclesThisOperation += 6;
         }
-        #endregion
+
+        #endregion ROL
 
         #region ROR
 
@@ -2719,7 +2917,8 @@ namespace C64.CPU
             WriteByteToMemory(addr, value2);
             cyclesThisOperation += 6;
         }
-        #endregion
+
+        #endregion ROR
 
         #region BRANCH
 
@@ -2831,7 +3030,8 @@ namespace C64.CPU
             if (CrossBoundary(oldPc, registers.PC))
                 cyclesThisOperation += 1;
         }
-        #endregion
+
+        #endregion BRANCH
 
         #region J**
 
@@ -2864,7 +3064,8 @@ namespace C64.CPU
             registers.PC = (ulong)((pchi << 8) | pclo);
             cyclesThisOperation += 6;
         }
-        #endregion
+
+        #endregion J**
 
         #region RT*
 
@@ -2888,9 +3089,10 @@ namespace C64.CPU
             registers.PC++;
             cyclesThisOperation += 6;
         }
-        #endregion
 
-        #endregion
+        #endregion RT*
+
+        #endregion Documented Opcodes
 
         /// <summary>Increments program counter.</summary>
         /// <param name="value">The value supplied to the operation.</param>

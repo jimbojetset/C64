@@ -13,7 +13,6 @@
 
 namespace C64
 {
-
     /// <summary>
     /// Emulates datasette TAP pulse playback, including motor spin-up, sense state, read-line transitions, and pulse stepping.
     /// </summary>

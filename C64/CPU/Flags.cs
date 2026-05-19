@@ -11,12 +11,10 @@
 //              rights holders. This emulator is for educational purposes only.
 // ============================================================================
 
-
 using System.Runtime.CompilerServices;
 
 namespace C64.CPU
 {
-
     /// <summary>
     /// Stores the 6502 processor status register and exposes named flag accessors used by instruction implementations.
     /// </summary>
@@ -26,6 +24,7 @@ namespace C64.CPU
         // 7 6 5 4 3 2 1 0
         // N V T B D I Z C   (T = unused-by-CPU "Test" flag in bit 5)
         private const byte FLAG_C = 0x01;
+
         private const byte FLAG_Z = 0x02;
         private const byte FLAG_I = 0x04;
         private const byte FLAG_D = 0x08;

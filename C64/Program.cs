@@ -19,13 +19,12 @@ using static SDL2.SDL;
 
 namespace C64
 {
-
     /// <summary>
     /// Provides the process entry point and native-library resolution hooks used before the emulator starts.
     /// </summary>
     internal static class Program
     {
-        static int Main(string[] args)
+        private static int Main(string[] args)
         {
             NativeLibrary.SetDllImportResolver(typeof(SDL2.SDL).Assembly, ResolveNativeLibrary);
 
@@ -105,10 +104,12 @@ namespace C64
     {
         // --- Constants ---
         private const int Clock_PAL = 985248;
+
         private const int KeyboardDrainPeriodCycles = 5000;
 
         // --- Non-trace fields restored ---
         private bool lastDatasetteReadHigh;
+
         private readonly System.Threading.CancellationTokenSource cts;
         private readonly CPU_6510 cpu;
         private readonly Display display;
@@ -430,6 +431,7 @@ namespace C64
                 case 0xD012:
                     display.RasterCompare = (display.RasterCompare & 0x100) | value;
                     return true;
+
                 case 0xD011:
                     {
                         byte oldD011 = cpu.memory.memory[0xD011];
@@ -595,28 +597,34 @@ namespace C64
                     cia1PortA = value;
                     cpu.memory.memory[addr] = value;
                     return true;
+
                 case 0xDC01:
                     cia1PortB = value;
                     cpu.memory.memory[addr] = value;
                     return true;
+
                 case 0xDC02:
                     cia1Ddra = value;
                     cpu.memory.memory[addr] = value;
                     return true;
+
                 case 0xDC03:
                     cia1Ddrb = value;
                     cpu.memory.memory[addr] = value;
                     return true;
+
                 case 0xDD00:
                     cia2PortA = value;
                     cpu.memory.memory[addr] = value;
                     iecBus.UpdateHostCia2PortA(cia2PortA, cia2Ddra);
                     return true;
+
                 case 0xDD02:
                     cia2Ddra = (byte)(value & 0x3F);
                     cpu.memory.memory[addr] = value;
                     iecBus.UpdateHostCia2PortA(cia2PortA, cia2Ddra);
                     return true;
+
                 case 0xDD04:
                     lock (cia2Lock)
                     {
@@ -627,6 +635,7 @@ namespace C64
                         cpu.memory.memory[0xDD05] = (byte)(cia2TimerACounter >> 8);
                     }
                     return true;
+
                 case 0xDD05:
                     lock (cia2Lock)
                     {
@@ -637,6 +646,7 @@ namespace C64
                         cpu.memory.memory[0xDD05] = (byte)(cia2TimerACounter >> 8);
                     }
                     return true;
+
                 case 0xDD06:
                     lock (cia2Lock)
                     {
@@ -647,6 +657,7 @@ namespace C64
                         cpu.memory.memory[0xDD07] = (byte)(cia2TimerBCounter >> 8);
                     }
                     return true;
+
                 case 0xDD07:
                     lock (cia2Lock)
                     {
@@ -657,6 +668,7 @@ namespace C64
                         cpu.memory.memory[0xDD07] = (byte)(cia2TimerBCounter >> 8);
                     }
                     return true;
+
                 case 0xDD08:
                 case 0xDD09:
                 case 0xDD0A:
@@ -725,6 +737,7 @@ namespace C64
                         cpu.memory.memory[0xDD0E] = cia2Cra;
                     }
                     return true;
+
                 case 0xDD0F:
                     lock (cia2Lock)
                     {
@@ -833,14 +846,19 @@ namespace C64
                     }
                 case 0xD012:
                     return (byte)(display.CurrentRasterLine & 0xFF);
+
                 case 0xDC00:
                     return ReadCia1PortA();
+
                 case 0xDC01:
                     return ReadCia1PortB();
+
                 case 0xDC02:
                     return cia1Ddra;
+
                 case 0xDC03:
                     return cia1Ddrb;
+
                 case 0xDD00:
                     {
                         byte external = iecBus.BuildExternalCia2PortA(0xFF);
@@ -849,18 +867,23 @@ namespace C64
                     }
                 case 0xDD02:
                     return cia2Ddra;
+
                 case 0xDD04:
                     lock (cia2Lock)
                         return (byte)(cia2TimerACounter & 0xFF);
+
                 case 0xDD05:
                     lock (cia2Lock)
                         return (byte)(cia2TimerACounter >> 8);
+
                 case 0xDD06:
                     lock (cia2Lock)
                         return (byte)(cia2TimerBCounter & 0xFF);
+
                 case 0xDD07:
                     lock (cia2Lock)
                         return (byte)(cia2TimerBCounter >> 8);
+
                 case 0xDD08:
                 case 0xDD09:
                 case 0xDD0A:
@@ -870,13 +893,17 @@ namespace C64
                             ref cia2TodLatched,
                             ref cia2TodLatchTenths, ref cia2TodLatchSeconds, ref cia2TodLatchMinutes, ref cia2TodLatchHours,
                             cia2TodTenths, cia2TodSeconds, cia2TodMinutes, cia2TodHours);
+
                 case 0xDD0C:
                     lock (cia2Lock)
                         return cia2Sdr;
+
                 case 0xDD0E:
                     return cia2Cra;
+
                 case 0xDD0F:
                     return cia2Crb;
+
                 case 0xDC04:
                     {
                         lock (cia1Lock)
@@ -1524,7 +1551,6 @@ namespace C64
                     if (underB > 0)
                     {
                         cia1IcrStatus |= 0x02;
-
                     }
                 }
 
@@ -1602,7 +1628,6 @@ namespace C64
                     if (underB > 0)
                     {
                         cia2IcrStatus |= 0x02;
-
                     }
                 }
 
@@ -1709,6 +1734,7 @@ namespace C64
                 case 0xFFC0: // OPEN
                     HandleKernalOpenTrap();
                     break;
+
                 case 0xFFC3: // CLOSE
                     if (iecBus.Close(cpu.registers.A))
                     {
@@ -1716,6 +1742,7 @@ namespace C64
                         ReturnFromKernelTrap();
                     }
                     break;
+
                 case 0xFFC6: // CHKIN
                     if (iecBus.Chkin(cpu.registers.X))
                     {
@@ -1723,6 +1750,7 @@ namespace C64
                         ReturnFromKernelTrap();
                     }
                     break;
+
                 case 0xFFC9: // CHKOUT
                     if (iecBus.Chkout(cpu.registers.X))
                     {
@@ -1730,6 +1758,7 @@ namespace C64
                         ReturnFromKernelTrap();
                     }
                     break;
+
                 case 0xFFCC: // CLRCHN
                     if (iecBus.HasActiveChannel)
                     {
@@ -1739,6 +1768,7 @@ namespace C64
                         ReturnFromKernelTrap();
                     }
                     break;
+
                 case 0xFFCF: // CHRIN
                     if (iecBus.HasInputChannel)
                     {
@@ -1747,6 +1777,7 @@ namespace C64
                         ReturnFromKernelTrap();
                     }
                     break;
+
                 case 0xFFD2: // CHROUT
                     if (iecBus.Chrout(cpu.registers.A))
                     {
@@ -1754,41 +1785,49 @@ namespace C64
                         ReturnFromKernelTrap();
                     }
                     break;
+
                 case 0xFFB1: // LISTEN
                     iecBus.Listen(cpu.registers.A);
                     cpu.registers.Flags.C = false;
                     ReturnFromKernelTrap();
                     break;
+
                 case 0xFFB4: // TALK
                     iecBus.Talk(cpu.registers.A);
                     cpu.registers.Flags.C = false;
                     ReturnFromKernelTrap();
                     break;
+
                 case 0xFF93: // SECOND
                     iecBus.Second(cpu.registers.A);
                     cpu.registers.Flags.C = false;
                     ReturnFromKernelTrap();
                     break;
+
                 case 0xFF96: // TKSA
                     iecBus.Tksa(cpu.registers.A);
                     cpu.registers.Flags.C = false;
                     ReturnFromKernelTrap();
                     break;
+
                 case 0xFFA8: // CIOUT
                     iecBus.Ciout(cpu.registers.A);
                     cpu.registers.Flags.C = false;
                     ReturnFromKernelTrap();
                     break;
+
                 case 0xFFA5: // ACPTR
                     cpu.registers.A = iecBus.Acptr();
                     cpu.registers.Flags.C = false;
                     ReturnFromKernelTrap();
                     break;
+
                 case 0xFFAE: // UNLSN
                     iecBus.Unlisten();
                     cpu.registers.Flags.C = false;
                     ReturnFromKernelTrap();
                     break;
+
                 case 0xFFAB: // UNTLK
                     iecBus.Untalk();
                     cpu.registers.Flags.C = false;
@@ -2281,14 +2320,12 @@ namespace C64
         /// <summary>Runs the main emulator loop.</summary>
         public void Run()
         {
-
             string? audioDevice = Sound.GetDefaultDeviceName();
             display.Init();
             keyboard.InitGameControllers();
             sound.Init(audioDevice);
 
             var token = cts.Token;
-
 
             var cpuThread = new Thread(() =>
             {
@@ -2340,6 +2377,7 @@ namespace C64
                         case SDL_EventType.SDL_QUIT:
                             quit = true;
                             break;
+
                         case SDL_EventType.SDL_KEYDOWN:
                         case SDL_EventType.SDL_KEYUP:
                         case SDL_EventType.SDL_CONTROLLERDEVICEADDED:
@@ -2349,6 +2387,7 @@ namespace C64
                         case SDL_EventType.SDL_CONTROLLERAXISMOTION:
                             if (keyboard.HandleSdlEvent(ev)) quit = true;
                             break;
+
                         case SDL_EventType.SDL_DROPFILE:
                             {
                                 IntPtr p = ev.drop.file;
@@ -2498,7 +2537,6 @@ namespace C64
             // before BASIC tokenises RUN.
             await Task.Delay(50).ConfigureAwait(false);
 
-
             // Disk images attach media first, then use the C64 LOAD command.
             string ext = Path.GetExtension(path).ToLowerInvariant();
             if (ext == ".d64")
@@ -2546,7 +2584,6 @@ namespace C64
                     enterExtraMs: 120).ConfigureAwait(false);
                 return;
             }
-
 
             //await TypePetsciiLikeHumanAsync(
             //    new byte[] { (byte)'R', (byte)'U', (byte)'N', 0x0D },

@@ -15,14 +15,12 @@ using System.Text;
 
 namespace C64
 {
-
     /// <summary>A single loadable program block extracted from a T64 file.</summary>
     internal sealed record TapeEntry(
-        string   Name,
-        ushort   LoadAddress,
-        byte[]   Data)
+        string Name,
+        ushort LoadAddress,
+        byte[] Data)
     {
-
         /// <summary>True when the program sits at the standard BASIC start address $0801.</summary>
         public bool IsBasic => LoadAddress == 0x0801;
     }
@@ -73,8 +71,8 @@ namespace C64
                 if (entryType == 0) continue; // free slot
 
                 ushort loadAddr = (ushort)(raw[d + 2] | (raw[d + 3] << 8));
-                ushort endAddr  = (ushort)(raw[d + 4] | (raw[d + 5] << 8));
-                int    offset   = raw[d + 8] | (raw[d + 9] << 8) | (raw[d + 10] << 16) | (raw[d + 11] << 24);
+                ushort endAddr = (ushort)(raw[d + 4] | (raw[d + 5] << 8));
+                int offset = raw[d + 8] | (raw[d + 9] << 8) | (raw[d + 10] << 16) | (raw[d + 11] << 24);
 
                 // Guard against bad end-address (some tools write 0xC3C6 as a placeholder).
                 int dataLen = endAddr - loadAddr;
@@ -121,7 +119,7 @@ namespace C64
                 // PETSCII $61–$7A = lowercase a–z in PETSCII lowercase mode
                 if (b is >= 0x41 and <= 0x5A) sb.Append((char)b);
                 else if (b is >= 0x61 and <= 0x7A) sb.Append((char)(b - 0x20));
-                else if (b is >= 0x20 and < 0x80)  sb.Append((char)b);
+                else if (b is >= 0x20 and < 0x80) sb.Append((char)b);
                 // else: graphics/control character — skip
             }
             return sb.ToString().TrimEnd();

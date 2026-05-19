@@ -13,7 +13,6 @@
 
 namespace C64
 {
-
     /// <summary>
     /// Wraps an attached D64 image and exposes the file and sector operations used by the IEC bus and load traps.
     /// </summary>

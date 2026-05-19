@@ -11,13 +11,12 @@
 //              rights holders. This emulator is for educational purposes only.
 // ============================================================================
 
-using System.Diagnostics;
 using System.Collections.Concurrent;
+using System.Diagnostics;
 using static SDL2.SDL;
 
 namespace C64
 {
-
     /// <summary>
     /// MOS 6581 SID chip emulator.  Three voices with triangle / sawtooth /
     /// pulse / noise waveforms, full ADSR envelopes, hard-sync, ring modulation,
@@ -46,12 +45,14 @@ namespace C64
 
         // Keep the audio queue short so SID register writes are heard promptly.
         private const int TargetLatencyMs = 25;
+
         private const int MaxLatencyMs = 50;
 
         // ?? SID register file ($D400 = reg 0 � $D41C = reg 28) ????????????????
         // Synth-thread register image. CPU-thread writes are queued with
         // timestamps and applied by the synth thread in time order.
         private readonly byte[] _regs = new byte[29];
+
         private readonly ConcurrentQueue<SidWrite> _writeQueue = new();
         private static readonly double CyclesPerAudioSample = CyclesPerSample;
         private long _writeCycleCursor;
@@ -65,15 +66,18 @@ namespace C64
         // Keep this conservative. Heavy clipping makes the simple waveforms
         // sound gritty compared with a band-limited SID emulator.
         private const double VoicePreamp = 2.2;
+
         private const double VoiceLaneGain = 0.85;
         private const double MasterOutputGain = 0.95;
         private const double OutputLowPassCutoff = 15_500.0;
+
         private static readonly double OutputLowPassA =
             Math.Exp(-2.0 * Math.PI * OutputLowPassCutoff / SampleRate);
 
         // D418 volume-DAC approximation for sample-style SFX.
         // Use sample-and-hold with AC coupling (one-pole high-pass).
         private const double VolumeDacHpA = 0.9995;
+
         private const double VolumeDacStepResponse = 0.40;
         private const double VolumeDacSmoothing = 0.18;
         private const double VolumeDacQuietLiftPower = 0.62;
@@ -85,12 +89,15 @@ namespace C64
 
         // ?? State-variable filter (owned by the synthesis thread) ?????????????
         private double _flp, _fbp;          // low-pass / band-pass accumulators
+
         private double _filterF = 0.1;      // 2�sin(?�fc/fs)
         private double _filterQ = 1.0;      // 1/Q damping coefficient
         private int _lastFcReg = -1;    // cached to detect register changes
         private int _lastResReg = -1;
+
         // Capacitor state modeling for smoother filter transients and improved stability
         private double _filterCapacitorLeakage = 0.9999;  // capacitor discharge modeling
+
         private double _resonancePeakDamping = 1.0;  // dynamic damping for high Q stability
         private double _volDacRaw;
         private double _volDacHp;
@@ -104,16 +111,19 @@ namespace C64
 
         // ?? SDL audio ?????????????????????????????????????????????????????????
         private uint _dev;               // SDL audio device id (0 = none)
+
         private short[] _buf = Array.Empty<short>();
 
         // ?? Voice-3 oscillator / envelope readback ($D41B / $D41C) ????????????
         // Double-buffer mechanism to ensure cycle-consistent snapshots
         // (prevents torn reads when synthesis updates values mid-read)
         private byte _v3WaveSnapshot;     // Buffered oscillator value
+
         private byte _v3EnvSnapshot;      // Buffered envelope value
 
         // ?? Synthesis thread ??????????????????????????????????????????????????
         private Thread? _thread;
+
         private CancellationToken _ct;
         private readonly object _audioStateLock = new();
 
@@ -639,7 +649,6 @@ namespace C64
                 // D418 sample effects are encoded as rapid volume writes.
                 // Capture each write here so sub-sample transitions are kept.
                 HandleVolumeDacOnWrite(d.Reg, previous, d.Value);
-
             }
         }
 
@@ -1093,14 +1102,14 @@ namespace C64
         // ?? Per-voice state ???????????????????????????????????????????????????
 
         /// <summary>Defines the current ADSR envelope phase for a SID voice.</summary>
-        private enum EnvPhase { Attack, Decay, Sustain, Release }
+        private enum EnvPhase
+        { Attack, Decay, Sustain, Release }
 
         /// <summary>
         /// Represents a SID register write queued with the synth-cycle tick where it should become visible.
         /// </summary>
         private readonly struct SidWrite
         {
-
             /// <summary>Initializes a queued SID register write.</summary>
             /// <param name="reg">The SID register index.</param>
             /// <param name="value">The SID register value written.</param>
