@@ -102,6 +102,12 @@ namespace C64.CPU
         /// <summary>Requests a CPU reset at the next safe point.</summary>
         public void RequestReset() => Interlocked.Exchange(ref resetPending, 1);
 
+        /// <summary>Immediately resets CPU registers and loads the reset vector on the current thread.</summary>
+        public void ResetNow()
+        {
+            DoReset();
+        }
+
         /// <summary>Sets whether execution is paused.</summary>
         public void SetPaused(bool value) => Volatile.Write(ref paused, value);
 
@@ -1117,6 +1123,22 @@ namespace C64.CPU
 
                     #endregion Documented Opcodes
             }
+        }
+
+        /// <summary>Executes a single instruction and returns the number of cycles it consumed.</summary>
+        /// <returns>The number of CPU cycles consumed by the instruction.</returns>
+        public int StepInstruction()
+        {
+            int beforeCycles = cyclesThisOperation;
+            Execute(GetNextByteInstruction());
+            int elapsed = cyclesThisOperation - beforeCycles;
+            if (elapsed > 0)
+            {
+                Interlocked.Add(ref totalCycles, elapsed);
+                OnCyclesExecuted?.Invoke(elapsed);
+            }
+
+            return elapsed;
         }
 
         #region Illegal opcode helpers
