@@ -110,7 +110,7 @@ namespace C64
         /// --- Non-trace fields restored ---
         private bool lastDatasetteReadHigh;
 
-        private readonly System.Threading.CancellationTokenSource cts;
+        private readonly CancellationTokenSource cts;
         private readonly CPU_6510 cpu;
         private readonly Display display;
         private readonly Keyboard keyboard;
