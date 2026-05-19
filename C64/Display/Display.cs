@@ -279,8 +279,7 @@ namespace C64
                 SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
                 initialW, initialH,
                 SDL_WindowFlags.SDL_WINDOW_OPENGL |
-                SDL_WindowFlags.SDL_WINDOW_SHOWN |
-                SDL_WindowFlags.SDL_WINDOW_RESIZABLE);
+                SDL_WindowFlags.SDL_WINDOW_SHOWN);
             if (window == IntPtr.Zero)
                 throw new Exception($"SDL_CreateWindow failed: {SDL_GetError()}");
 
