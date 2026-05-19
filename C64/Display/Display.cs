@@ -300,7 +300,8 @@ namespace C64
         }
 
         /// <summary>
-        // Prefer a char ROM provided by the memory backend (BankedROM) if available.
+        /// Loads the character ROM.
+        /// Prefer a char ROM provided by the memory backend (BankedROM) if available.
         /// </summary>
         /// <returns>byte array containing char ROM data</returns>
         private byte[] LoadCharROM()
