@@ -203,6 +203,24 @@ namespace C64
             return SectorsPerTrack[track];
         }
 
+        /// <summary>Attempts to read the two-byte disk ID from the BAM sector.</summary>
+        /// <param name="id1">Receives the first disk ID byte.</param>
+        /// <param name="id2">Receives the second disk ID byte.</param>
+        /// <returns>True when the disk ID is present; otherwise, false.</returns>
+        public bool TryGetDiskId(out byte id1, out byte id2)
+        {
+            id1 = 0x30;
+            id2 = 0x30;
+
+            int bam = Offset(18, 0);
+            if (bam < 0 || bam + 0xA4 > raw.Length)
+                return false;
+
+            id1 = raw[bam + 0xA2];
+            id2 = raw[bam + 0xA3];
+            return true;
+        }
+
         /// <summary>Reads directory entries.</summary>
         /// <returns>The directory entries decoded from the D64 image.</returns>
         private List<DirectoryEntry> ReadDirectoryEntries()

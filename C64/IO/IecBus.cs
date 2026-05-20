@@ -34,6 +34,8 @@ namespace C64
 
         private bool hostClockRelease = true;
         private bool hostAtnRelease = true;
+        private byte hostPortLatch = 0xFF;
+        private byte hostDataDirection = 0x00;
 
         private bool devDataRelease = true;
         private bool devClockRelease = true;
@@ -61,6 +63,10 @@ namespace C64
         private int lowLevelBytePhase;  /// 0=handshake, 1-8=bit0-7, cycles for next byte
         private byte lowLevelCurrentByte;
         private bool lowLevelActivityReported;
+        private bool previousTraceDataRelease = true;
+        private bool previousTraceClockRelease = true;
+        private bool previousTraceAtnRelease = true;
+        private int lowLevelTransitionTraceCount;
 
         /// <summary>Initializes a new IecBus instance.</summary>
         /// <param name="drive">The virtual 1541 drive attached to the IEC bus.</param>
@@ -81,16 +87,23 @@ namespace C64
             bool oldDataRelease = hostDataRelease;
             bool oldClockRelease = hostClockRelease;
             bool oldAtnRelease = hostAtnRelease;
+            hostPortLatch = dd00;
+            hostDataDirection = dd02;
 
-            /// CIA2 port A IEC lines (active-low) on bits 5:DATA, 4:CLOCK, 3:ATN.
+            /// CIA2 port A IEC outputs are inverted: 0 releases the line high, 1 drives it low.
             bool outData = (dd02 & 0x20) != 0;
             bool outClock = (dd02 & 0x10) != 0;
             bool outAtn = (dd02 & 0x08) != 0;
 
-            hostDataRelease = !outData || (dd00 & 0x20) != 0;
-            hostClockRelease = !outClock || (dd00 & 0x10) != 0;
-            hostAtnRelease = !outAtn || (dd00 & 0x08) != 0;
+            hostDataRelease = !outData || (dd00 & 0x20) == 0;
+            hostClockRelease = !outClock || (dd00 & 0x10) == 0;
+            hostAtnRelease = !outAtn || (dd00 & 0x08) == 0;
             fullDrive?.UpdateHostLines(hostDataRelease, hostClockRelease, hostAtnRelease);
+            if (fullDrive is not null &&
+                (oldDataRelease != hostDataRelease || oldClockRelease != hostClockRelease || oldAtnRelease != hostAtnRelease))
+            {
+                fullDrive.Step(16);
+            }
 
             if (TraceEnabled &&
                 !lowLevelActivityReported &&
@@ -101,10 +114,62 @@ namespace C64
             {
                 lowLevelActivityReported = true;
                 Trace("low-level CIA2 IEC line activity detected outside KERNAL traps");
+                fullDrive?.BeginLowLevelTraceWindow(hostDataRelease, hostClockRelease, hostAtnRelease);
+                BeginLowLevelHostTraceWindow();
             }
+
+            TraceLowLevelHostTransition();
 
             if (LowLevelEnabled && fullDrive is null)
                 StepLowLevelResponder();
+        }
+
+        /// <summary>Gets the last CIA2 port A latch value sampled by the IEC bus.</summary>
+        public byte HostPortLatch => hostPortLatch;
+
+        /// <summary>Gets the last CIA2 port A data-direction value sampled by the IEC bus.</summary>
+        public byte HostDataDirection => hostDataDirection;
+
+        /// <summary>Gets whether focused low-level IEC diagnostics are currently active.</summary>
+        public bool IsLowLevelActivityReported => lowLevelActivityReported;
+
+        /// <summary>Gets whether a full drive-side 1541 emulator is attached to the IEC bus.</summary>
+        public bool HasFullDrive => fullDrive is not null;
+
+        /// <summary>Starts a focused raw CIA2 host trace window for low-level IEC activity.</summary>
+        private void BeginLowLevelHostTraceWindow()
+        {
+            if (!TraceEnabled)
+                return;
+
+            lowLevelTransitionTraceCount = 0;
+            previousTraceDataRelease = !hostDataRelease;
+            previousTraceClockRelease = !hostClockRelease;
+            previousTraceAtnRelease = !hostAtnRelease;
+            TraceLowLevelHostTransition();
+        }
+
+        /// <summary>Writes sparse raw CIA2 IEC diagnostics during the focused low-level trace window.</summary>
+        private void TraceLowLevelHostTransition()
+        {
+            if (!TraceEnabled || !lowLevelActivityReported)
+                return;
+
+            bool changed = hostDataRelease != previousTraceDataRelease ||
+                hostClockRelease != previousTraceClockRelease ||
+                hostAtnRelease != previousTraceAtnRelease;
+            if (!changed)
+                return;
+
+            previousTraceDataRelease = hostDataRelease;
+            previousTraceClockRelease = hostClockRelease;
+            previousTraceAtnRelease = hostAtnRelease;
+            lowLevelTransitionTraceCount++;
+            if (lowLevelTransitionTraceCount <= 32 || lowLevelTransitionTraceCount == 128 || lowLevelTransitionTraceCount == 512)
+            {
+                string driveState = fullDrive?.GetIecTraceState() ?? "no full drive";
+                Trace($"CIA2 dd00=${hostPortLatch:X2} dd02=${hostDataDirection:X2} host data={(hostDataRelease ? "H" : "L")} clock={(hostClockRelease ? "H" : "L")} atn={(hostAtnRelease ? "H" : "L")} {driveState}");
+            }
         }
 
         /// <summary>Steps the optional full 1541 drive path by the supplied number of elapsed C64 cycles.</summary>
@@ -291,6 +356,8 @@ namespace C64
             ext = dataHigh ? (byte)(ext | 0x20) : (byte)(ext & ~0x20);
             ext = clockHigh ? (byte)(ext | 0x10) : (byte)(ext & ~0x10);
             ext = atnHigh ? (byte)(ext | 0x08) : (byte)(ext & ~0x08);
+            ext = dataHigh ? (byte)(ext | 0x80) : (byte)(ext & ~0x80);
+            ext = clockHigh ? (byte)(ext | 0x40) : (byte)(ext & ~0x40);
 
             return ext;
         }

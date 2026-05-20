@@ -27,6 +27,7 @@ namespace C64
         private static int Main(string[] args)
         {
             NativeLibrary.SetDllImportResolver(typeof(SDL2.SDL).Assembly, ResolveNativeLibrary);
+            using TextWriter? traceOutput = ConfigureTraceOutput();
 
             string? loadPath = null;
 
@@ -49,6 +50,28 @@ namespace C64
                 Console.Error.WriteLine($"Fatal: {ex}");
                 return 1;
             }
+        }
+
+        /// <summary>Redirects stdout to a trace file when C64_TRACE_FILE is set.</summary>
+        /// <returns>The writer to dispose at shutdown, or null when stdout remains unchanged.</returns>
+        private static TextWriter? ConfigureTraceOutput()
+        {
+            string? tracePath = Environment.GetEnvironmentVariable("C64_TRACE_FILE");
+            if (string.IsNullOrWhiteSpace(tracePath))
+                return null;
+
+            string fullPath = Path.GetFullPath(tracePath);
+            string? directory = Path.GetDirectoryName(fullPath);
+            if (!string.IsNullOrEmpty(directory))
+                Directory.CreateDirectory(directory);
+
+            StreamWriter writer = new StreamWriter(new FileStream(fullPath, FileMode.Create, FileAccess.Write, FileShare.Read))
+            {
+                AutoFlush = true
+            };
+            Console.SetOut(writer);
+            Console.Error.WriteLine($"Trace output redirected to {fullPath}");
+            return writer;
         }
 
         /// <summary>
@@ -184,6 +207,7 @@ namespace C64
         private byte cia2AlarmSeconds;
         private byte cia2AlarmMinutes;
         private byte cia2AlarmHours;
+        private int cia2PortTraceCount;
         private byte cia2TodLatchTenths;
         private byte cia2TodLatchSeconds;
         private byte cia2TodLatchMinutes;
@@ -202,6 +226,8 @@ namespace C64
         private bool cia2SerialDataPending;
         private byte cia2SerialInShiftReg;
         private int cia2SerialInBits;
+        private static readonly bool Native1541LoadEnabled =
+            string.Equals(Environment.GetEnvironmentVariable("C64_1541_NATIVE_LOAD"), "1", StringComparison.Ordinal);
 
         /// <summary>Initializes a new C64Emulator instance.</summary>
         public C64Emulator()
@@ -627,6 +653,7 @@ namespace C64
                     cia2PortA = value;
                     cpu.memory.memory[addr] = value;
                     iecBus.UpdateHostCia2PortA(cia2PortA, cia2Ddra);
+                    TraceCia2PortAccess("W", value);
                     return true;
 
                 case 0xDD02:
@@ -872,8 +899,11 @@ namespace C64
                 case 0xDD00:
                     {
                         byte external = iecBus.BuildExternalCia2PortA(0xFF);
-                        byte v = MergeCiaPortRead(cia2PortA, cia2Ddra, external);
-                        return (byte)(v | 0xC0);
+                        byte outputLatchBits = (byte)(cia2PortA & cia2Ddra);
+                        byte inputPinBits = (byte)(external & (byte)~cia2Ddra);
+                        byte v = (byte)(outputLatchBits | inputPinBits);
+                        TraceCia2PortAccess("R", v);
+                        return v;
                     }
                 case 0xDD02:
                     return cia2Ddra;
@@ -1031,6 +1061,19 @@ namespace C64
             byte outBits = (byte)((latch & external) & ddr);
             byte inBits = (byte)(external & (byte)~ddr);
             return (byte)(outBits | inBits);
+        }
+
+        /// <summary>Writes sparse CIA2 port A access diagnostics during focused low-level IEC tracing.</summary>
+        /// <param name="kind">The access kind, either R or W.</param>
+        /// <param name="value">The value read from or written to CIA2 port A.</param>
+        private void TraceCia2PortAccess(string kind, byte value)
+        {
+            if (!iecBus.IsLowLevelActivityReported)
+                return;
+
+            cia2PortTraceCount++;
+            if (cia2PortTraceCount <= 48 || cia2PortTraceCount == 128 || cia2PortTraceCount == 512)
+                Console.WriteLine($"[IEC] CIA2 {kind} pc=${cpu.registers.PC:X4} value=${value:X2} latch=${cia2PortA:X2} ddr=${cia2Ddra:X2}");
         }
 
         /// External serial/user-port model entry points. CNT rising edges drive
@@ -1717,8 +1760,8 @@ namespace C64
             /// Reflect IEC data/clock line levels onto CIA2 SP/CNT pins so
             /// external clock/input timer modes observe real bus transitions.
             byte iecExternal = iecBus.BuildExternalCia2PortA(0xFF);
-            bool iecDataHigh = (iecExternal & 0x20) != 0;
-            bool iecClockHigh = (iecExternal & 0x10) != 0;
+            bool iecDataHigh = (iecExternal & 0x80) != 0;
+            bool iecClockHigh = (iecExternal & 0x40) != 0;
             SetCia2SerialPins(iecDataHigh, iecClockHigh);
             iecBus.StepDriveCycles((int)elapsed);
 
@@ -1906,6 +1949,8 @@ namespace C64
             }
 
             byte currentDevice = mem[0x00BA];
+            if (currentDevice == 8 && drive.HasMedia && iecBus.HasFullDrive && Native1541LoadEnabled)
+                return;
 
             if (currentDevice == 8 && drive.HasMedia)
             {
@@ -1937,6 +1982,7 @@ namespace C64
                     cpu.memory.WriteByte(0x00AF, (byte)(end >> 8));
                     cpu.memory.WriteByte(0x0090, 0x00);
                     SetLastHostLoadedFile(drive.AttachedPath);
+                    ReleaseIecLinesAfterTrappedLoad();
                 }
                 catch
                 {
@@ -1973,6 +2019,7 @@ namespace C64
                 cpu.memory.WriteByte(0x0090, 0x00);
 
                 SetLastHostLoadedFile(resolved);
+                ReleaseIecLinesAfterTrappedLoad();
             }
             catch
             {
@@ -1981,6 +2028,17 @@ namespace C64
             }
 
             ReturnFromKernelTrap();
+        }
+
+        /// <summary>
+        /// Leaves CIA2 IEC output lines idle after a host-side LOAD trap.
+        /// The trap bypasses the real KERNAL serial cleanup, so preserve VIC bank bits and release DATA, CLOCK, and ATN before custom loaders take over.
+        /// </summary>
+        private void ReleaseIecLinesAfterTrappedLoad()
+        {
+            cia2PortA = (byte)(cia2PortA & ~0x38);
+            cpu.memory.memory[0xDD00] = cia2PortA;
+            iecBus.UpdateHostCia2PortA(cia2PortA, cia2Ddra);
         }
 
         /// <summary>
