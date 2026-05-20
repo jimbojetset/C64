@@ -110,6 +110,7 @@ namespace C64
         private volatile bool resyncPending;
         private volatile bool muteOverlayVisible;
         private volatile bool pausedOverlayVisible;
+        private volatile bool driveActivityLightOn;
         private volatile int joystickPortOverlay;
         private string? temporaryMessage;
         private long temporaryMessageTicks;
@@ -191,6 +192,13 @@ namespace C64
         {
             get => joystickPortOverlay;
             set => joystickPortOverlay = value == 0 ? 0 : value == 1 ? 1 : 2;
+        }
+
+        /// <summary>Gets or sets whether the drive activity overlay should be shown as steadily lit.</summary>
+        public bool DriveActivityLightOn
+        {
+            get => driveActivityLightOn;
+            set => driveActivityLightOn = value;
         }
 
         /// <summary>Pulses drive activity.</summary>
@@ -917,6 +925,12 @@ namespace C64
         /// <summary>Draws drive activity overlay.</summary>
         private void DrawDriveActivityOverlay()
         {
+            if (driveActivityLightOn)
+            {
+                BlendStatusRect(5, 34, 2, 2, 95, 255, 125, 160);
+                return;
+            }
+
             long ticks = Interlocked.Read(ref driveActivityTicks);
             if (ticks == 0)
                 return;

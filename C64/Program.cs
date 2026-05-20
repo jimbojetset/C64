@@ -1732,6 +1732,7 @@ namespace C64
             bool iecClockHigh = (iecExternal & 0x40) != 0;
             SetCia2SerialPins(iecDataHigh, iecClockHigh);
             iecBus.StepDriveCycles((int)elapsed);
+            display.DriveActivityLightOn = iecBus.DriveActivityLightOn;
 
             StepCia1Timers(elapsed);
             StepCia2Timers(elapsed);
@@ -2479,6 +2480,8 @@ namespace C64
             display.JoystickPortOverlay = keyboard.ActiveJoystickPort;
             reu.Reset();
             iecBus.SetHostLooseProgramPresent(!string.IsNullOrWhiteSpace(lastHostLoadedFile));
+            iecBus.ResetDrive();
+            display.DriveActivityLightOn = false;
 
             cpu.RequestReset();
         }

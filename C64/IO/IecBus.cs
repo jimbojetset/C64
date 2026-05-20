@@ -121,6 +121,9 @@ namespace C64
         /// <summary>Gets whether a full drive-side 1541 emulator is attached to the IEC bus.</summary>
         public bool HasFullDrive => fullDrive is not null;
 
+        /// <summary>Gets whether the attached drive activity light should appear lit for UI polling.</summary>
+        public bool DriveActivityLightOn => fullDrive?.ActivityLightOn ?? false;
+
         /// <summary>Steps the optional full 1541 drive path by the supplied number of elapsed C64 cycles.</summary>
         /// <param name="cycles">The number of C64 CPU cycles that elapsed.</param>
         public void StepDriveCycles(int cycles)
@@ -131,13 +134,37 @@ namespace C64
         /// <summary>Resets the optional full 1541 drive path.</summary>
         public void ResetDrive()
         {
+            devDataRelease = true;
+            devClockRelease = true;
+            currentListener = null;
+            currentTalker = null;
+            listenSecondary = null;
+            talkSecondary = null;
+            commandBytes.Clear();
+            talkQueue.Clear();
+            statusQueue.Clear();
+            directChannels.Clear();
+            logicalChannels.Clear();
+            currentInputChannel = null;
+            currentOutputChannel = null;
+            pendingFilename = null;
+            prevHostClockRelease = hostClockRelease;
+            prevHostAtnRelease = hostAtnRelease;
+            lowLevelDataHoldTicks = 0;
+            lowLevelClockHoldTicks = 0;
+            lowLevelBytePhase = 0;
+            lowLevelCurrentByte = 0;
+            lowLevelActivityReported = false;
+            SetDriveOk();
             fullDrive?.Reset();
+            fullDrive?.UpdateHostLines(hostDataRelease, hostClockRelease, hostAtnRelease);
         }
 
         /// <summary>Notifies the optional full 1541 drive path that a D64 image was attached.</summary>
         /// <param name="path">The path of the attached D64 image.</param>
         public void AttachD64(string path)
         {
+            ResetDrive();
             fullDrive?.AttachD64(path);
         }
 
