@@ -381,7 +381,19 @@ namespace C64
                     SetMatrixKey(0, 4, pressed);
                     return;
 
+                case SDL_Keycode.SDLK_F2:
+                    SetMatrixKey(1, 7, pressed);
+                    SetMatrixKey(6, 4, pressed);
+                    SetMatrixKey(0, 4, pressed);
+                    return;
+
                 case SDL_Keycode.SDLK_F3:
+                    SetMatrixKey(0, 5, pressed);
+                    return;
+
+                case SDL_Keycode.SDLK_F4:
+                    SetMatrixKey(1, 7, pressed);
+                    SetMatrixKey(6, 4, pressed);
                     SetMatrixKey(0, 5, pressed);
                     return;
 
@@ -389,7 +401,19 @@ namespace C64
                     SetMatrixKey(0, 6, pressed);
                     return;
 
+                case SDL_Keycode.SDLK_F6:
+                    SetMatrixKey(1, 7, pressed);
+                    SetMatrixKey(6, 4, pressed);
+                    SetMatrixKey(0, 6, pressed);
+                    return;
+
                 case SDL_Keycode.SDLK_F7:
+                    SetMatrixKey(0, 3, pressed);
+                    return;
+
+                case SDL_Keycode.SDLK_F8:
+                    SetMatrixKey(1, 7, pressed);
+                    SetMatrixKey(6, 4, pressed);
                     SetMatrixKey(0, 3, pressed);
                     return;
 

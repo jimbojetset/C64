@@ -116,6 +116,7 @@ namespace C64
         private readonly Keyboard keyboard;
         private readonly Sound sound;
         private readonly VirtualDrive1541 drive;
+        private readonly Drive1541Emulator? fullDrive;
         private readonly IecBus iecBus;
         private readonly DatasetteDevice datasette;
         private readonly REU reu;
@@ -215,7 +216,15 @@ namespace C64
             keyboard = new Keyboard(cpu);
             sound = new Sound();
             drive = new VirtualDrive1541();
-            iecBus = new IecBus(drive);
+            fullDrive = string.Equals(Environment.GetEnvironmentVariable("C64_1541_FULL"), "1", StringComparison.Ordinal)
+                ? Drive1541Emulator.TryCreate(
+                    Path.Combine("ROMS", "1541.bin"),
+                    Path.Combine("ROMS", "dos1541.bin"),
+                    Path.Combine("ROMS", "1541-II.bin"))
+                : null;
+            if (fullDrive is not null)
+                Console.WriteLine("1541 drive ROM found; full drive emulation path enabled.");
+            iecBus = new IecBus(drive, fullDrive);
             iecBus.OnDriveActivity = display.PulseDriveActivity;
             datasette = new DatasetteDevice();
             reu = new REU(128);
@@ -336,6 +345,7 @@ namespace C64
             m[0xDD00] = 0x17;
             m[0xDD02] = 0x3F;
             iecBus.UpdateHostCia2PortA(m[0xDD00], m[0xDD02]);
+            iecBus.ResetDrive();
             lock (cia2Lock)
             {
                 cia2TimerALatch = 0xFFFF;
@@ -1710,6 +1720,7 @@ namespace C64
             bool iecDataHigh = (iecExternal & 0x20) != 0;
             bool iecClockHigh = (iecExternal & 0x10) != 0;
             SetCia2SerialPins(iecDataHigh, iecClockHigh);
+            iecBus.StepDriveCycles((int)elapsed);
 
             StepCia1Timers(elapsed);
             StepCia2Timers(elapsed);
@@ -2734,6 +2745,7 @@ namespace C64
                 else if (ext == ".d64")
                 {
                     drive.AttachD64(path);
+                    iecBus.AttachD64(path);
                     SetLastHostLoadedFile(path);
                     IReadOnlyList<string> files = drive.ListFiles();
                     Console.WriteLine($"Attached D64 {Path.GetFileName(path)} ({files.Count} PRG entries)");

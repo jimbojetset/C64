@@ -21,9 +21,13 @@ namespace C64
     internal sealed class IecBus
     {
         private readonly VirtualDrive1541 drive;
+        private readonly Drive1541Emulator? fullDrive;
 
         private static readonly bool LowLevelEnabled =
             string.Equals(Environment.GetEnvironmentVariable("C64_IEC_LOWLEVEL"), "1", StringComparison.Ordinal);
+
+        private static readonly bool TraceEnabled =
+            string.Equals(Environment.GetEnvironmentVariable("C64_IEC_TRACE"), "1", StringComparison.Ordinal);
 
         /// Open-collector line model; true = released/high, false = driven low.
         private bool hostDataRelease = true;
@@ -56,12 +60,14 @@ namespace C64
         private int lowLevelClockHoldTicks;
         private int lowLevelBytePhase;  /// 0=handshake, 1-8=bit0-7, cycles for next byte
         private byte lowLevelCurrentByte;
+        private bool lowLevelActivityReported;
 
         /// <summary>Initializes a new IecBus instance.</summary>
         /// <param name="drive">The virtual 1541 drive attached to the IEC bus.</param>
-        public IecBus(VirtualDrive1541 drive)
+        public IecBus(VirtualDrive1541 drive, Drive1541Emulator? fullDrive = null)
         {
             this.drive = drive;
+            this.fullDrive = fullDrive;
         }
 
         /// <summary>Gets or sets the callback invoked for drive activity.</summary>
@@ -72,6 +78,10 @@ namespace C64
         /// <param name="dd02">The CIA2 port A data direction register value.</param>
         public void UpdateHostCia2PortA(byte dd00, byte dd02)
         {
+            bool oldDataRelease = hostDataRelease;
+            bool oldClockRelease = hostClockRelease;
+            bool oldAtnRelease = hostAtnRelease;
+
             /// CIA2 port A IEC lines (active-low) on bits 5:DATA, 4:CLOCK, 3:ATN.
             bool outData = (dd02 & 0x20) != 0;
             bool outClock = (dd02 & 0x10) != 0;
@@ -80,9 +90,41 @@ namespace C64
             hostDataRelease = !outData || (dd00 & 0x20) != 0;
             hostClockRelease = !outClock || (dd00 & 0x10) != 0;
             hostAtnRelease = !outAtn || (dd00 & 0x08) != 0;
+            fullDrive?.UpdateHostLines(hostDataRelease, hostClockRelease, hostAtnRelease);
 
-            if (LowLevelEnabled)
+            if (TraceEnabled &&
+                !lowLevelActivityReported &&
+                currentListener != 8 &&
+                currentTalker != 8 &&
+                (oldDataRelease != hostDataRelease || oldClockRelease != hostClockRelease || oldAtnRelease != hostAtnRelease) &&
+                (drive.HasMedia || hostLooseProgramPresent))
+            {
+                lowLevelActivityReported = true;
+                Trace("low-level CIA2 IEC line activity detected outside KERNAL traps");
+            }
+
+            if (LowLevelEnabled && fullDrive is null)
                 StepLowLevelResponder();
+        }
+
+        /// <summary>Steps the optional full 1541 drive path by the supplied number of elapsed C64 cycles.</summary>
+        /// <param name="cycles">The number of C64 CPU cycles that elapsed.</param>
+        public void StepDriveCycles(int cycles)
+        {
+            fullDrive?.Step(cycles);
+        }
+
+        /// <summary>Resets the optional full 1541 drive path.</summary>
+        public void ResetDrive()
+        {
+            fullDrive?.Reset();
+        }
+
+        /// <summary>Notifies the optional full 1541 drive path that a D64 image was attached.</summary>
+        /// <param name="path">The path of the attached D64 image.</param>
+        public void AttachD64(string path)
+        {
+            fullDrive?.AttachD64(path);
         }
 
         /// <summary>Sets whether a loose host program is available to the drive path.</summary>
@@ -109,6 +151,7 @@ namespace C64
             logicalChannels[logicalFile] = channel;
 
             string text = name?.Trim().Trim('"', '\'') ?? string.Empty;
+            Trace($"OPEN lf={logicalFile} dev={device} sa={secondaryAddress} ch={channel} name=\"{text}\"");
             if (channel == 15)
             {
                 if (text.Length != 0)
@@ -140,6 +183,7 @@ namespace C64
             if (!logicalChannels.TryGetValue(logicalFile, out byte channel))
                 return false;
 
+            Trace($"CLOSE lf={logicalFile} ch={channel}");
             if (currentOutputChannel == channel)
                 FlushOutput();
 
@@ -162,6 +206,7 @@ namespace C64
             if (!logicalChannels.TryGetValue(logicalFile, out byte channel))
                 return false;
 
+            Trace($"CHKIN lf={logicalFile} ch={channel}");
             currentInputChannel = channel;
             if (channel == 15)
                 PrepareStatusBuffer();
@@ -176,6 +221,7 @@ namespace C64
             if (!logicalChannels.TryGetValue(logicalFile, out byte channel))
                 return false;
 
+            Trace($"CHKOUT lf={logicalFile} ch={channel}");
             currentOutputChannel = channel;
             commandBytes.Clear();
             return true;
@@ -223,7 +269,9 @@ namespace C64
         {
             if (currentOutputChannel == 15 && commandBytes.Count > 0)
             {
-                ExecuteDriveCommand(DecodePetscii(commandBytes));
+                string command = DecodePetscii(commandBytes);
+                Trace($"FLUSH command=\"{command}\"");
+                ExecuteDriveCommand(command);
                 commandBytes.Clear();
             }
         }
@@ -233,8 +281,10 @@ namespace C64
         /// <returns>The byte value produced by the operation.</returns>
         public byte BuildExternalCia2PortA(byte baseExternal)
         {
-            bool dataHigh = hostDataRelease && devDataRelease;
-            bool clockHigh = hostClockRelease && devClockRelease;
+            bool deviceDataRelease = fullDrive?.DeviceDataRelease ?? devDataRelease;
+            bool deviceClockRelease = fullDrive?.DeviceClockRelease ?? devClockRelease;
+            bool dataHigh = hostDataRelease && deviceDataRelease;
+            bool clockHigh = hostClockRelease && deviceClockRelease;
             bool atnHigh = hostAtnRelease;
 
             byte ext = baseExternal;
@@ -250,6 +300,7 @@ namespace C64
         public void Talk(byte dev)
         {
             currentTalker = NormalizeDevice(dev);
+            Trace($"TALK dev={dev} normalized={currentTalker}");
             currentListener = null;
             talkSecondary = null;
             devDataRelease = true;
@@ -261,6 +312,7 @@ namespace C64
         public void Listen(byte dev)
         {
             currentListener = NormalizeDevice(dev);
+            Trace($"LISTEN dev={dev} normalized={currentListener}");
             currentTalker = null;
             listenSecondary = null;
             commandBytes.Clear();
@@ -273,6 +325,7 @@ namespace C64
         public void Second(byte sa)
         {
             listenSecondary = (byte)(sa & 0x0F);
+            Trace($"SECOND sa={sa} ch={listenSecondary}");
             commandBytes.Clear();
         }
 
@@ -281,6 +334,7 @@ namespace C64
         public void Tksa(byte sa)
         {
             talkSecondary = (byte)(sa & 0x0F);
+            Trace($"TKSA sa={sa} ch={talkSecondary}");
             PrepareTalkBuffer(talkSecondary.Value);
         }
 
@@ -315,6 +369,7 @@ namespace C64
             if (currentListener == 8 && commandBytes.Count > 0)
             {
                 string text = DecodePetscii(commandBytes);
+                Trace($"UNLSN command=\"{text}\" secondary={listenSecondary}");
                 if (listenSecondary == 15)
                     ExecuteDriveCommand(text);
                 else
@@ -329,6 +384,7 @@ namespace C64
         public void Untalk()
         {
             currentTalker = null;
+            Trace("UNTLK");
             talkSecondary = null;
             talkQueue.Clear();
             statusQueue.Clear();
@@ -345,12 +401,14 @@ namespace C64
             {
                 if (statusQueue.Count == 0)
                     PrepareStatusBuffer();
+                Trace($"READ status ch={channel} queued={statusQueue.Count}");
                 return statusQueue.Count == 0 ? (byte)0 : statusQueue.Dequeue();
             }
 
             if (directChannels.TryGetValue(channel, out DirectChannel? directChannel))
             {
                 OnDriveActivity?.Invoke();
+                TraceDirectRead(channel, directChannel);
                 return directChannel.ReadByte();
             }
 
@@ -370,6 +428,7 @@ namespace C64
             string? requested = pendingFilename;
             pendingFilename = null;
             bool ok = drive.TryLoadPrg(requested, out prg, out resolvedName);
+            Trace($"LOAD pending=\"{requested}\" ok={ok} resolved=\"{resolvedName}\" bytes={prg.Length}");
             if (ok)
                 OnDriveActivity?.Invoke();
             return ok;
@@ -383,6 +442,7 @@ namespace C64
         public bool TryLoadFromDrive(string? requestedName, out byte[] prg, out string resolvedName)
         {
             bool ok = drive.TryLoadPrg(requestedName, out prg, out resolvedName);
+            Trace($"LOAD requested=\"{requestedName}\" ok={ok} resolved=\"{resolvedName}\" bytes={prg.Length}");
             if (ok)
                 OnDriveActivity?.Invoke();
             return ok;
@@ -407,8 +467,12 @@ namespace C64
 
             /// Secondary addr for LOAD/TALK data channels typically includes low nibble channel.
             if (!drive.TryLoadPrg(pendingFilename, out byte[] prg, out _))
+            {
+                Trace($"TALK LOAD pending=\"{pendingFilename}\" ok=False");
                 return;
+            }
 
+            Trace($"TALK LOAD pending=\"{pendingFilename}\" bytes={prg.Length}");
             OnDriveActivity?.Invoke();
             talkQueue = new Queue<byte>(prg);
             devDataRelease = true;
@@ -429,6 +493,7 @@ namespace C64
         private void ExecuteDriveCommand(string command)
         {
             string normalized = command.Trim().Trim('"', '\'').ToUpperInvariant();
+            Trace($"COMMAND raw=\"{command}\" normalized=\"{normalized}\"");
             if (normalized.Length == 0 || normalized == "I" || normalized == "UI")
             {
                 SetDriveOk();
@@ -456,6 +521,7 @@ namespace C64
         private void ExecuteBlockRead(string args)
         {
             int[] values = ParseDriveCommandNumbers(args);
+            Trace($"U1 args=\"{args}\" values=[{string.Join(",", values)}]");
             if (values.Length < 4)
             {
                 SetDriveStatus(30, "SYNTAX ERROR", 0, 0);
@@ -472,6 +538,7 @@ namespace C64
             }
 
             directChannels[channel] = new DirectChannel(sectorBytes);
+            Trace($"U1 read ch={channel} track={track} sector={sector}");
             OnDriveActivity?.Invoke();
             SetDriveOk(track, sector);
         }
@@ -481,6 +548,7 @@ namespace C64
         private void ExecuteBufferPointer(string args)
         {
             int[] values = ParseDriveCommandNumbers(args);
+            Trace($"B-P args=\"{args}\" values=[{string.Join(",", values)}]");
             if (values.Length < 2 || !directChannels.TryGetValue((byte)(values[0] & 0x0F), out DirectChannel? channel))
             {
                 SetDriveStatus(70, "NO CHANNEL", 0, 0);
@@ -488,6 +556,7 @@ namespace C64
             }
 
             channel.Position = Math.Clamp(values[1], 0, 255);
+            Trace($"B-P set ch={(byte)(values[0] & 0x0F)} pos={channel.Position}");
             SetDriveOk();
         }
 
@@ -496,13 +565,26 @@ namespace C64
         /// <returns>The numeric arguments parsed from the drive command.</returns>
         private static int[] ParseDriveCommandNumbers(string args)
         {
-            string[] parts = args.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-            var values = new List<int>(parts.Length);
-            foreach (string part in parts)
+            var values = new List<int>();
+            int index = 0;
+            while (index < args.Length)
             {
-                if (int.TryParse(part, out int value))
-                    values.Add(value);
+                while (index < args.Length && !char.IsDigit(args[index]))
+                    index++;
+
+                if (index >= args.Length)
+                    break;
+
+                int value = 0;
+                while (index < args.Length && char.IsDigit(args[index]))
+                {
+                    value = (value * 10) + (args[index] - '0');
+                    index++;
+                }
+
+                values.Add(value);
             }
+
             return values.ToArray();
         }
 
@@ -522,7 +604,29 @@ namespace C64
         private void SetDriveStatus(int code, string message, int track, int sector)
         {
             driveStatus = $"{code:00}, {message},{track:00},{sector:00}";
+            Trace($"STATUS {driveStatus}");
             statusQueue.Clear();
+        }
+
+        /// <summary>Writes an optional IEC trace line when C64_IEC_TRACE=1 is set.</summary>
+        /// <param name="message">The diagnostic message to write.</param>
+        private static void Trace(string message)
+        {
+            if (TraceEnabled)
+                Console.WriteLine($"[IEC] {message}");
+        }
+
+        /// <summary>Writes sparse diagnostics for direct channel reads without flooding the console.</summary>
+        /// <param name="channel">The IEC direct channel number.</param>
+        /// <param name="directChannel">The direct channel being read.</param>
+        private static void TraceDirectRead(byte channel, DirectChannel directChannel)
+        {
+            if (!TraceEnabled)
+                return;
+
+            int position = directChannel.Position;
+            if (position == 0 || position == 1 || position == 2 || position == 255)
+                Console.WriteLine($"[IEC] READ direct ch={channel} pos={position}");
         }
 
         /// <summary>Decodes petscii.</summary>

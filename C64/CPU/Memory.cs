@@ -80,6 +80,14 @@ namespace C64.CPU
         /// ($D01E / $D01F).
         public Action<ulong>? OnIOPostRead;
 
+        /// Optional whole-address-space write hook for simple device maps
+        /// that do not use C64 banking, such as the 1541 drive CPU memory map.
+        public Func<ulong, byte, bool>? OnMemoryWrite;
+
+        /// Optional whole-address-space read hook for simple device maps
+        /// that do not use C64 banking, such as the 1541 drive CPU memory map.
+        public Func<ulong, byte, byte>? OnMemoryRead;
+
         /// <summary>Initializes a new Memory instance.</summary>
         /// <param name="size">The size of the emulated memory in bytes.</param>
         public Memory(int size)
@@ -175,6 +183,9 @@ namespace C64.CPU
         {
             if (!bankingEnabled)
             {
+                if (OnMemoryWrite is not null && OnMemoryWrite(addr, value))
+                    return;
+
                 /// Legacy behaviour: ROM ranges are write-protected via the
                 /// rom list, and memory[] mirrors ROM bytes.
                 if (rom.Count != 0 && IsROM((int)addr)) return;
@@ -250,6 +261,8 @@ namespace C64.CPU
             if (!bankingEnabled)
             {
                 byte legacy = memory[addr];
+                if (OnMemoryRead is not null)
+                    legacy = OnMemoryRead(addr, legacy);
                 if (addr >= 0xD000 && addr < 0xE000 && OnIORead is not null)
                     legacy = OnIORead(addr, legacy);
                 if (addr >= 0xD000 && addr < 0xE000 && OnIOPostRead is not null)
