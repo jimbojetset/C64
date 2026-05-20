@@ -2755,18 +2755,21 @@ namespace C64
             {
                 if (ext == ".bas" || ext == ".txt")
                 {
+                    EjectDriveMedia();
                     LoadText(path);
                     SetLastHostLoadedFile(path);
                     Console.WriteLine($"Loaded {Path.GetFileName(path)}");
                 }
                 else if (ext == ".t64")
                 {
+                    EjectDriveMedia();
                     TapeLoader.ReadT64(File.ReadAllBytes(path));
                     SetLastHostLoadedFile(path);
                     Console.WriteLine($"Attached T64 {Path.GetFileName(path)}");
                 }
                 else if (ext == ".tap")
                 {
+                    EjectDriveMedia();
                     datasette.AttachTap(File.ReadAllBytes(path));
                     SetLastHostLoadedFile(path);
                     Console.WriteLine($"Attached datasette TAP {Path.GetFileName(path)}");
@@ -2781,6 +2784,7 @@ namespace C64
                 }
                 else
                 {
+                    EjectDriveMedia();
                     LoadPrg(path);
                     Console.WriteLine($"Loaded {Path.GetFileName(path)}");
                 }
@@ -2797,6 +2801,13 @@ namespace C64
         {
             LoadPrgFromBytes(File.ReadAllBytes(path));
             SetLastHostLoadedFile(path);
+        }
+
+        /// <summary>Ejects disk media when switching to a host-loaded file type.</summary>
+        private void EjectDriveMedia()
+        {
+            iecBus.EjectD64();
+            display.DriveActivityLightOn = false;
         }
 
         /// <summary>Sets last host loaded file.</summary>

@@ -411,6 +411,11 @@ namespace C64
             {
                 image = null;
                 currentTrack = -1;
+                byteIndex = 0;
+                cycleRemainder = 0;
+                motorOn = false;
+                activityLedOn = false;
+                byteReadyHigh = true;
                 trackBytes = Array.Empty<byte>();
                 currentByte = 0x55;
             }

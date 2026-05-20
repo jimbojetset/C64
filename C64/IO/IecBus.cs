@@ -168,6 +168,14 @@ namespace C64
             fullDrive?.AttachD64(path);
         }
 
+        /// <summary>Ejects attached disk media and resets drive-side IEC state.</summary>
+        public void EjectD64()
+        {
+            drive.Eject();
+            ResetDrive();
+            fullDrive?.Eject();
+        }
+
         /// <summary>Sets whether a loose host program is available to the drive path.</summary>
         /// <param name="present">Whether a host loose PRG is available to the virtual drive.</param>
         public void SetHostLooseProgramPresent(bool present)
