@@ -27,10 +27,6 @@ namespace C64
         private const int Via2Base = 0x1C00;
         private const int RomBase = 0xC000;
         private const int MaxCyclesPerHostStep = 512;
-        private static readonly bool TraceEnabled =
-            string.Equals(Environment.GetEnvironmentVariable("C64_1541_TRACE"), "1", StringComparison.Ordinal);
-        private static readonly bool VerboseTraceEnabled =
-            string.Equals(Environment.GetEnvironmentVariable("C64_1541_VERBOSE"), "1", StringComparison.Ordinal);
 
         private readonly CPU_6510 cpu = new CPU_6510(DriveClockHz);
         private readonly Via6522 via1 = new Via6522();
@@ -42,21 +38,7 @@ namespace C64
         private bool hostDataRelease = true;
         private bool hostClockRelease = true;
         private bool hostAtnRelease = true;
-        private bool previousTraceDataRelease = true;
-        private bool previousTraceClockRelease = true;
-        private bool previousTraceAtnRelease = true;
-        private int iecTransitionTraceCount;
-        private int via1SerialReadTraceCount;
-        private int serialByteTraceCount;
-        private int driveRamWriteTraceCount;
-        private int driveRamPcTraceCount;
-        private int driveRamVia2TraceCount;
-        private int driveRamZeroPageTraceCount;
-        private int driveRamWaitLoopTraceCount;
-        private int driveRamRetryTraceCount;
-        private ushort previousDriveRamPc = 0xFFFF;
-        private bool lowLevelTraceWindowActive;
-        private bool driveRamLoopTracePrinted;
+        private bool lowLevelActivityActive;
 
         /// <summary>Initializes a new Drive1541Emulator instance.</summary>
         /// <param name="rom">The 1541 DOS ROM bytes, normally 16 KiB mapped at $C000-$FFFF.</param>
@@ -137,45 +119,16 @@ namespace C64
             hostDataRelease = dataRelease;
             hostClockRelease = clockRelease;
             hostAtnRelease = atnRelease;
-            TraceHostLineTransition(dataRelease, clockRelease, atnRelease);
-            TraceDrivePcDuringHostWait(dataRelease, clockRelease, atnRelease);
             via1.SetControlInputs(ca1High: !atnRelease, cb1High: !clockRelease, ca2High: true, cb2High: !dataRelease);
         }
 
-        /// <summary>Starts a focused host IEC trace window around a detected low-level loader handoff.</summary>
+        /// <summary>Marks that drive-side uploaded loader activity has started.</summary>
         /// <param name="dataRelease">Whether the C64 has released the DATA line.</param>
         /// <param name="clockRelease">Whether the C64 has released the CLOCK line.</param>
         /// <param name="atnRelease">Whether the C64 has released the ATN line.</param>
-        public void BeginLowLevelTraceWindow(bool dataRelease, bool clockRelease, bool atnRelease)
+        public void BeginLowLevelActivity(bool dataRelease, bool clockRelease, bool atnRelease)
         {
-            iecTransitionTraceCount = 0;
-            via1SerialReadTraceCount = 0;
-            serialByteTraceCount = 0;
-            driveRamWriteTraceCount = 0;
-            driveRamPcTraceCount = 0;
-            driveRamVia2TraceCount = 0;
-            driveRamZeroPageTraceCount = 0;
-            driveRamWaitLoopTraceCount = 0;
-            driveRamRetryTraceCount = 0;
-            previousDriveRamPc = 0xFFFF;
-            driveRamLoopTracePrinted = false;
-            lowLevelTraceWindowActive = true;
-            previousTraceDataRelease = !dataRelease;
-            previousTraceClockRelease = !clockRelease;
-            previousTraceAtnRelease = !atnRelease;
-            if (TraceEnabled)
-            {
-                Trace("low-level IEC trace window opened");
-                TraceHostLineTransition(dataRelease, clockRelease, atnRelease);
-            }
-        }
-
-        /// <summary>Gets a short diagnostic string for the 1541 VIA1 IEC output state.</summary>
-        public string GetIecTraceState()
-        {
-            bool busDataRelease = hostDataRelease && DeviceDataRelease;
-            bool busClockRelease = hostClockRelease && DeviceClockRelease;
-            return $"bus data={(busDataRelease ? "H" : "L")} clock={(busClockRelease ? "H" : "L")} dev data={(DeviceDataRelease ? "H" : "L")} clock={(DeviceClockRelease ? "H" : "L")} via1 pb=${via1.PortBOutput:X2} ddr=${via1.DataDirectionB:X2} dout={(via1.DataOutputRelease ? "H" : "L")} atna={(via1.AtnAcknowledgeDrivesLow(hostAtnRelease) ? "L" : "H")}";
+            lowLevelActivityActive = true;
         }
 
         /// <summary>Gets whether the emulated drive releases the IEC DATA line.</summary>
@@ -195,7 +148,6 @@ namespace C64
             while (cycleDebt > 0)
             {
                 cpu.SetIrqLine(via1.IrqAsserted || via2.IrqAsserted);
-                ushort pcBefore = (ushort)cpu.registers.PC;
                 int elapsed = cpu.StepInstruction();
                 if (elapsed <= 0)
                     break;
@@ -204,9 +156,6 @@ namespace C64
                 via2.Step(elapsed);
                 disk.Step(elapsed, via2);
                 cpu.SetIrqLine(via1.IrqAsserted || via2.IrqAsserted);
-                TraceIrqState();
-                TraceSerialByteReceive(pcBefore);
-                TraceDriveRamExecution(pcBefore);
                 cycleDebt -= elapsed;
             }
         }
@@ -222,20 +171,10 @@ namespace C64
                 return ram[a & (RamSize - 1)];
 
             if (IsViaAddress(a, Via1Base))
-            {
-                byte register = (byte)(a & 0x0F);
-                byte value = via1.Read(register, hostDataRelease, hostClockRelease, hostAtnRelease);
-                TraceVia1SerialRead(register, value);
-                return value;
-            }
+                return via1.Read((byte)(a & 0x0F), hostDataRelease, hostClockRelease, hostAtnRelease);
 
             if (IsViaAddress(a, Via2Base))
-            {
-                byte register = (byte)(a & 0x0F);
-                byte value = via2.Read(register, disk.ReadPortA(), disk.ReadPortB());
-                TraceDriveRamVia2Access("R", register, value);
-                return value;
-            }
+                return via2.Read((byte)(a & 0x0F), disk.ReadPortA(), disk.ReadPortB());
 
             if (a >= RomBase)
                 return rom[a - RomBase];
@@ -253,51 +192,41 @@ namespace C64
             if (a < RamSize)
             {
                 ram[a & (RamSize - 1)] = value;
-                TraceDriveRamWrite(a, value);
-                TraceDriveZeroPageWrite(a, value);
                 TryAccelerateDriveJob(a, value);
                 return true;
             }
 
             if (IsViaAddress(a, Via1Base))
             {
-                TraceViaWrite("VIA1", (byte)(a & 0x0F), value, previousVia1Trace, previousVia1TraceSet);
                 via1.Write((byte)(a & 0x0F), value);
                 return true;
             }
 
             if (IsViaAddress(a, Via2Base))
             {
-                TraceViaWrite("VIA2", (byte)(a & 0x0F), value, previousVia2Trace, previousVia2TraceSet);
                 via2.Write((byte)(a & 0x0F), value);
                 disk.UpdateControl(via2.PortBOutput, via2.DataDirectionB);
-                TraceDriveRamVia2Access("W", (byte)(a & 0x0F), value);
                 return true;
             }
 
             return a >= RomBase;
         }
 
-        /// <summary>Handles the uploaded fast-loader's buffer-4 read job directly while the low-level trace window is active.</summary>
+        /// <summary>Handles the uploaded fast-loader's buffer-4 read job directly after low-level drive activity starts.</summary>
         /// <param name="addr">The zero-page address being written.</param>
         /// <param name="value">The job byte value.</param>
         private void TryAccelerateDriveJob(ushort addr, byte value)
         {
-            if (!lowLevelTraceWindowActive || addr != 0x0004 || value != 0x80)
+            if (!lowLevelActivityActive || addr != 0x0004 || value != 0x80)
                 return;
 
             byte track = ram[0x0E];
             byte sector = ram[0x0F];
             if (!disk.TryReadSector(track, sector, out byte[] sectorBytes))
-            {
-                Trace($"accelerated job read failed track={track} sector={sector}");
                 return;
-            }
 
             Array.Copy(sectorBytes, 0, ram, 0x0700, sectorBytes.Length);
             ram[0x0004] = 0x01;
-            if (TraceEnabled)
-                Console.WriteLine($"[1541] accelerated job read buffer=4 track={track} sector={sector} bytes={sectorBytes.Length} status=$01");
         }
 
         /// <summary>Determines whether an address selects a mirrored 6522 VIA register block.</summary>
@@ -413,267 +342,6 @@ namespace C64
             return resetVector >= RomBase;
         }
 
-        private bool previousVia1Irq;
-        private bool previousVia2Irq;
-        private int irqTraceCount;
-        private int hostWaitPcTraceCount;
-        private readonly byte[] previousVia1Trace = new byte[16];
-        private readonly byte[] previousVia2Trace = new byte[16];
-        private readonly bool[] previousVia1TraceSet = new bool[16];
-        private readonly bool[] previousVia2TraceSet = new bool[16];
-
-        /// <summary>Writes sparse IRQ transition diagnostics when C64_1541_TRACE=1 is set.</summary>
-        private void TraceIrqState()
-        {
-            if (!VerboseTraceEnabled)
-                return;
-
-            bool via1Irq = via1.IrqAsserted;
-            bool via2Irq = via2.IrqAsserted;
-            if (via1Irq != previousVia1Irq || via2Irq != previousVia2Irq)
-            {
-                previousVia1Irq = via1Irq;
-                previousVia2Irq = via2Irq;
-                irqTraceCount++;
-                if (irqTraceCount <= 32 || irqTraceCount % 512 == 0)
-                    Console.WriteLine($"[1541] IRQ via1={via1Irq} via2={via2Irq} pc=${cpu.registers.PC:X4}");
-            }
-        }
-
-        /// <summary>Writes an optional 1541 trace line when C64_1541_TRACE=1 is set.</summary>
-        /// <param name="message">The diagnostic message to write.</param>
-        private static void Trace(string message)
-        {
-            if (TraceEnabled)
-                Console.WriteLine($"[1541] {message}");
-        }
-
-        /// <summary>Writes sparse host IEC line transition diagnostics when summary tracing is enabled.</summary>
-        /// <param name="dataRelease">Whether the C64 has released DATA.</param>
-        /// <param name="clockRelease">Whether the C64 has released CLOCK.</param>
-        /// <param name="atnRelease">Whether the C64 has released ATN.</param>
-        private void TraceHostLineTransition(bool dataRelease, bool clockRelease, bool atnRelease)
-        {
-            if (!TraceEnabled)
-                return;
-
-            bool changed = dataRelease != previousTraceDataRelease ||
-                clockRelease != previousTraceClockRelease ||
-                atnRelease != previousTraceAtnRelease;
-            if (!changed)
-                return;
-
-            previousTraceDataRelease = dataRelease;
-            previousTraceClockRelease = clockRelease;
-            previousTraceAtnRelease = atnRelease;
-            iecTransitionTraceCount++;
-            if (iecTransitionTraceCount <= 32 || iecTransitionTraceCount == 128 || iecTransitionTraceCount == 512)
-            {
-                Console.WriteLine($"[1541] host IEC data={(dataRelease ? "H" : "L")} clock={(clockRelease ? "H" : "L")} atn={(atnRelease ? "H" : "L")} {GetIecTraceState()}");
-            }
-        }
-
-        /// <summary>Writes sparse drive PC diagnostics while the host is holding DATA low during a low-level wait.</summary>
-        /// <param name="dataRelease">Whether the C64 has released DATA.</param>
-        /// <param name="clockRelease">Whether the C64 has released CLOCK.</param>
-        /// <param name="atnRelease">Whether the C64 has released ATN.</param>
-        private void TraceDrivePcDuringHostWait(bool dataRelease, bool clockRelease, bool atnRelease)
-        {
-            if (!TraceEnabled || dataRelease || !atnRelease)
-                return;
-
-            hostWaitPcTraceCount++;
-            if (hostWaitPcTraceCount <= 16 || hostWaitPcTraceCount == 64 || hostWaitPcTraceCount == 256)
-                Console.WriteLine($"[1541] host wait pc=${cpu.registers.PC:X4} host clock={(clockRelease ? "H" : "L")} {GetIecTraceState()}");
-        }
-
-        /// <summary>Writes a narrow VIA1 ORB read trace while the 1541 ROM is receiving IEC bits.</summary>
-        /// <param name="register">The VIA register being read.</param>
-        /// <param name="value">The value returned to the drive CPU.</param>
-        private void TraceVia1SerialRead(byte register, byte value)
-        {
-            if (!TraceEnabled || (register & 0x0F) != 0x00)
-                return;
-
-            ushort pc = (ushort)cpu.registers.PC;
-            if (pc < 0xEA00 || pc > 0xEA70)
-                return;
-
-            via1SerialReadTraceCount++;
-            if (via1SerialReadTraceCount <= 64 || via1SerialReadTraceCount == 128 || via1SerialReadTraceCount == 256)
-            {
-                Console.WriteLine($"[1541] VIA1 ORB read pc=${pc:X4} value=${value:X2} host data={(hostDataRelease ? "H" : "L")} clock={(hostClockRelease ? "H" : "L")} atn={(hostAtnRelease ? "H" : "L")} {GetIecTraceState()}");
-            }
-        }
-
-        /// <summary>Writes a byte-level trace when the 1541 ROM finishes the serial receive routine.</summary>
-        /// <param name="pcBefore">The drive CPU PC before the instruction that just executed.</param>
-        private void TraceSerialByteReceive(ushort pcBefore)
-        {
-            if (!TraceEnabled || pcBefore != 0xEA28)
-                return;
-
-            serialByteTraceCount++;
-            if (serialByteTraceCount <= 32 || serialByteTraceCount == 64 || serialByteTraceCount == 128)
-            {
-                Console.WriteLine($"[1541] serial byte rx value=${ram[0x85]:X2} host data={(hostDataRelease ? "H" : "L")} clock={(hostClockRelease ? "H" : "L")} atn={(hostAtnRelease ? "H" : "L")} {GetIecTraceState()}");
-            }
-        }
-
-        /// <summary>Writes a capped trace when uploaded drive code is written to RAM.</summary>
-        /// <param name="addr">The drive RAM address.</param>
-        /// <param name="value">The byte written.</param>
-        private void TraceDriveRamWrite(ushort addr, byte value)
-        {
-            if (!TraceEnabled || !lowLevelTraceWindowActive || addr < 0x0300 || addr >= 0x0600)
-                return;
-
-            driveRamWriteTraceCount++;
-            bool focused = addr >= 0x03B0 && addr <= 0x03D0;
-            if (focused || driveRamWriteTraceCount <= 96 || driveRamWriteTraceCount == 128 || driveRamWriteTraceCount == 256)
-                Console.WriteLine($"[1541] RAM ${addr:X4} <= ${value:X2} pc=${cpu.registers.PC:X4}");
-        }
-
-        /// <summary>Writes a focused trace for uploaded drive code state bytes.</summary>
-        /// <param name="addr">The drive RAM address.</param>
-        /// <param name="value">The byte written.</param>
-        private void TraceDriveZeroPageWrite(ushort addr, byte value)
-        {
-            if (!TraceEnabled || !lowLevelTraceWindowActive || addr != 0x0004)
-                return;
-
-            ushort pc = (ushort)cpu.registers.PC;
-            driveRamZeroPageTraceCount++;
-            if (driveRamZeroPageTraceCount <= 64 || driveRamZeroPageTraceCount == 128 || driveRamZeroPageTraceCount == 256)
-                Console.WriteLine($"[1541] RAM zp04 <= ${value:X2} pc=${pc:X4} {via2.DebugInterruptState()}");
-        }
-
-        /// <summary>Writes a capped trace when execution reaches uploaded drive RAM code.</summary>
-        /// <param name="pcBefore">The drive CPU PC before the instruction that just executed.</param>
-        private void TraceDriveRamExecution(ushort pcBefore)
-        {
-            if (!TraceEnabled || !lowLevelTraceWindowActive || pcBefore < 0x0300 || pcBefore >= 0x0600)
-                return;
-
-            driveRamPcTraceCount++;
-            bool pcChanged = pcBefore != previousDriveRamPc;
-            previousDriveRamPc = pcBefore;
-            bool waitLoop = pcBefore == 0x03C0 || pcBefore == 0x03C2;
-            if (waitLoop)
-            {
-                driveRamWaitLoopTraceCount++;
-                if (driveRamWaitLoopTraceCount <= 8 ||
-                    driveRamWaitLoopTraceCount == 32 ||
-                    driveRamWaitLoopTraceCount == 128 ||
-                    driveRamWaitLoopTraceCount == 512 ||
-                    driveRamWaitLoopTraceCount == 2048 ||
-                    driveRamWaitLoopTraceCount == 8192)
-                {
-                    Console.WriteLine($"[1541] RAM wait pc=${pcBefore:X4} zp04=${ram[0x04]:X2} irqLine={(via1.IrqAsserted || via2.IrqAsserted)} {via2.DebugInterruptState()} {disk.DebugState()}");
-                }
-
-                return;
-            }
-
-            bool retryLoop = pcBefore == 0x03BB ||
-                pcBefore == 0x03BC ||
-                pcBefore == 0x03BE ||
-                pcBefore == 0x03C4 ||
-                pcBefore == 0x03C6;
-            if (retryLoop)
-            {
-                driveRamRetryTraceCount++;
-                if (driveRamRetryTraceCount > 24 &&
-                    driveRamRetryTraceCount != 64 &&
-                    driveRamRetryTraceCount != 256 &&
-                    driveRamRetryTraceCount != 1024)
-                    return;
-            }
-
-            if (!driveRamLoopTracePrinted && pcBefore >= 0x03B0 && pcBefore <= 0x03D0)
-            {
-                driveRamLoopTracePrinted = true;
-                Console.WriteLine($"[1541] RAM loop bytes 03B0={FormatRamBytes(0x03B0, 0x30)} zp0e=${ram[0x0E]:X2} zp0f=${ram[0x0F]:X2}");
-            }
-            if (pcChanged || driveRamPcTraceCount == 64 || driveRamPcTraceCount == 128 || driveRamPcTraceCount == 256 || driveRamPcTraceCount == 512)
-            {
-                byte op0 = ram[pcBefore & (RamSize - 1)];
-                byte op1 = ram[(pcBefore + 1) & (RamSize - 1)];
-                byte op2 = ram[(pcBefore + 2) & (RamSize - 1)];
-                Console.WriteLine($"[1541] RAM exec pc=${pcBefore:X4} op=${op0:X2} {op1:X2} {op2:X2} a=${cpu.registers.A:X2} x=${cpu.registers.X:X2} y=${cpu.registers.Y:X2} zp0e=${ram[0x0E]:X2} zp0f=${ram[0x0F]:X2}");
-            }
-        }
-
-        /// <summary>Formats drive RAM bytes for compact diagnostics.</summary>
-        /// <param name="start">Start address in drive RAM.</param>
-        /// <param name="count">Number of bytes to format.</param>
-        /// <returns>A hexadecimal byte list.</returns>
-        private string FormatRamBytes(int start, int count)
-        {
-            return string.Join(' ', Enumerable.Range(0, count).Select(i => ram[(start + i) & (RamSize - 1)].ToString("X2")));
-        }
-
-        /// <summary>Writes a capped trace for disk VIA accesses from uploaded drive code.</summary>
-        /// <param name="kind">Read/write label.</param>
-        /// <param name="register">The VIA2 register.</param>
-        /// <param name="value">The byte read or written.</param>
-        private void TraceDriveRamVia2Access(string kind, byte register, byte value)
-        {
-            if (!TraceEnabled || !lowLevelTraceWindowActive)
-                return;
-
-            ushort pc = (ushort)cpu.registers.PC;
-            if (pc < 0x0300 || pc >= 0x0600)
-                return;
-
-            byte index = (byte)(register & 0x0F);
-            if (index != 0x00 &&
-                index != 0x01 &&
-                index != 0x0B &&
-                index != 0x0C &&
-                index != 0x0D &&
-                index != 0x0E)
-                return;
-
-            driveRamVia2TraceCount++;
-            if (driveRamVia2TraceCount <= 96 || driveRamVia2TraceCount == 128 || driveRamVia2TraceCount == 256)
-                Console.WriteLine($"[1541] RAM VIA2 {kind} reg=${index:X1} value=${value:X2} pc=${pc:X4} {via2.DebugInterruptState()}");
-        }
-
-        /// <summary>Writes selected VIA register writes when verbose 1541 tracing is enabled.</summary>
-        /// <param name="via">The VIA label.</param>
-        /// <param name="register">The low register index.</param>
-        /// <param name="value">The value written by the drive CPU.</param>
-        /// <param name="previous">The previous traced register values for this VIA.</param>
-        /// <param name="previousSet">Whether the corresponding previous value is initialized.</param>
-        private static void TraceViaWrite(string via, byte register, byte value, byte[] previous, bool[] previousSet)
-        {
-            if (!VerboseTraceEnabled)
-                return;
-
-            int index = register & 0x0F;
-            if (previousSet[index] && previous[index] == value)
-                return;
-
-            previous[index] = value;
-            previousSet[index] = true;
-
-            string? name = register switch
-            {
-                0x00 => "ORB",
-                0x01 => "ORA",
-                0x02 => "DDRB",
-                0x03 => "DDRA",
-                0x0B => "ACR",
-                0x0C => "PCR",
-                0x0D => "IFR",
-                0x0E => "IER",
-                _ => null
-            };
-            if (name is not null)
-                Console.WriteLine($"[1541] {via} {name} <= ${value:X2}");
-        }
-
         /// <summary>
         /// Provides a first-pass 1541 disk mechanism: motor/head control, D64 sector-to-GCR track conversion, and byte-ready signalling.
         /// </summary>
@@ -714,7 +382,6 @@ namespace C64
                 byteReadyHigh = true;
                 currentByte = 0x55;
                 trackBytes = Array.Empty<byte>();
-                Trace("disk reset");
             }
 
             /// <summary>Attaches a D64 image and prepares the current track stream.</summary>
@@ -724,7 +391,6 @@ namespace C64
                 this.image = image;
                 currentTrack = -1;
                 EnsureTrackLoaded();
-                Trace("disk image attached");
             }
 
             /// <summary>Ejects media from the mechanism.</summary>
@@ -734,7 +400,6 @@ namespace C64
                 currentTrack = -1;
                 trackBytes = Array.Empty<byte>();
                 currentByte = 0x55;
-                Trace("disk image ejected");
             }
 
             /// <summary>Updates motor and stepper state from VIA2 port B control outputs.</summary>
@@ -744,10 +409,7 @@ namespace C64
             {
                 bool newMotorOn = (portB & 0x04) == 0;
                 if (newMotorOn != motorOn)
-                {
                     motorOn = newMotorOn;
-                    Trace($"motor {(motorOn ? "on" : "off")} halfTrack={halfTrack} track={CurrentTrackNumber()} portB=${portB:X2} ddrB=${ddrB:X2}");
-                }
 
                 int phase = portB & 0x03;
                 if (stepperPhase < 0)
@@ -758,15 +420,9 @@ namespace C64
 
                 int delta = (phase - stepperPhase + 4) & 0x03;
                 if (delta == 1 && halfTrack < MaxHalfTrack)
-                {
                     halfTrack++;
-                    Trace($"step in halfTrack={halfTrack} track={CurrentTrackNumber()}");
-                }
                 else if (delta == 3 && halfTrack > MinHalfTrack)
-                {
                     halfTrack--;
-                    Trace($"step out halfTrack={halfTrack} track={CurrentTrackNumber()}");
-                }
 
                 stepperPhase = phase;
                 EnsureTrackLoaded();
@@ -793,7 +449,6 @@ namespace C64
 
                     byteReadyHigh = !byteReadyHigh;
                     via.SetControlInputs(ca1High: byteReadyHigh, cb1High: IsSyncHigh(), ca2High: true, cb2High: true);
-                    TraceByteReady();
                 }
             }
 
@@ -802,12 +457,6 @@ namespace C64
             public byte ReadPortA()
             {
                 return currentByte;
-            }
-
-            /// <summary>Gets a compact diagnostic view of disk rotation state.</summary>
-            public string DebugState()
-            {
-                return $"disk motor={(motorOn ? "on" : "off")} byteReady={(byteReadyHigh ? "H" : "L")} data=${currentByte:X2} index={byteIndex}";
             }
 
             /// <summary>Reads disk-side status bits exposed through VIA2 port B inputs.</summary>
@@ -850,20 +499,6 @@ namespace C64
                 cycleRemainder = 0;
                 currentByte = 0x55;
                 trackBytes = image is null ? Array.Empty<byte>() : BuildGcrTrack(image, track);
-                Trace($"track loaded track={track} bytes={trackBytes.Length}");
-            }
-
-            private int byteReadyTraceCount;
-
-            /// <summary>Writes sparse byte-ready diagnostics for the current track stream.</summary>
-            private void TraceByteReady()
-            {
-                if (!TraceEnabled)
-                    return;
-
-                byteReadyTraceCount++;
-                if (byteReadyTraceCount <= 8 || byteReadyTraceCount == 512 || byteReadyTraceCount == 4096)
-                    Console.WriteLine($"[1541] byte ready track={CurrentTrackNumber()} index={byteIndex} data=${currentByte:X2} sync={!IsSyncHigh()}");
             }
 
             /// <summary>Gets the current whole track number derived from the half-track position.</summary>
@@ -1026,12 +661,6 @@ namespace C64
 
             /// <summary>Gets whether the VIA IRQ output is currently asserted.</summary>
             public bool IrqAsserted => (ReadInterruptFlags() & IfrIrq) != 0;
-
-            /// <summary>Gets a compact diagnostic view of interrupt-relevant VIA state.</summary>
-            public string DebugInterruptState()
-            {
-                return $"via ifr=${ReadInterruptFlags():X2}/${ifr:X2} ier=${ier:X2} acr=${acr:X2} pcr=${pcr:X2} t1={(timer1Running ? "run" : "stop")}:${timer1Counter:X4} ca1={(ca1High ? "H" : "L")} cb1={(cb1High ? "H" : "L")}";
-            }
 
             /// <summary>Resets VIA registers to their power-on defaults.</summary>
             public void Reset()

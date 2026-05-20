@@ -27,7 +27,6 @@ namespace C64
         private static int Main(string[] args)
         {
             NativeLibrary.SetDllImportResolver(typeof(SDL2.SDL).Assembly, ResolveNativeLibrary);
-            using TextWriter? traceOutput = ConfigureTraceOutput();
 
             string? loadPath = null;
 
@@ -39,7 +38,7 @@ namespace C64
 
             try
             {
-                var emu = new C64Emulator();
+                using var emu = new C64Emulator();
                 if (loadPath is not null)
                     emu.QueueLoadAndRun(loadPath);
                 emu.Run();
@@ -50,28 +49,6 @@ namespace C64
                 Console.Error.WriteLine($"Fatal: {ex}");
                 return 1;
             }
-        }
-
-        /// <summary>Redirects stdout to a trace file when C64_TRACE_FILE is set.</summary>
-        /// <returns>The writer to dispose at shutdown, or null when stdout remains unchanged.</returns>
-        private static TextWriter? ConfigureTraceOutput()
-        {
-            string? tracePath = Environment.GetEnvironmentVariable("C64_TRACE_FILE");
-            if (string.IsNullOrWhiteSpace(tracePath))
-                return null;
-
-            string fullPath = Path.GetFullPath(tracePath);
-            string? directory = Path.GetDirectoryName(fullPath);
-            if (!string.IsNullOrEmpty(directory))
-                Directory.CreateDirectory(directory);
-
-            StreamWriter writer = new StreamWriter(new FileStream(fullPath, FileMode.Create, FileAccess.Write, FileShare.Read))
-            {
-                AutoFlush = true
-            };
-            Console.SetOut(writer);
-            Console.Error.WriteLine($"Trace output redirected to {fullPath}");
-            return writer;
         }
 
         /// <summary>
@@ -130,7 +107,6 @@ namespace C64
 
         private const int KeyboardDrainPeriodCycles = 5000;
 
-        /// --- Non-trace fields restored ---
         private bool lastDatasetteReadHigh;
 
         private readonly CancellationTokenSource cts;
@@ -207,7 +183,6 @@ namespace C64
         private byte cia2AlarmSeconds;
         private byte cia2AlarmMinutes;
         private byte cia2AlarmHours;
-        private int cia2PortTraceCount;
         private byte cia2TodLatchTenths;
         private byte cia2TodLatchSeconds;
         private byte cia2TodLatchMinutes;
@@ -242,7 +217,7 @@ namespace C64
             keyboard = new Keyboard(cpu);
             sound = new Sound();
             drive = new VirtualDrive1541();
-            fullDrive = string.Equals(Environment.GetEnvironmentVariable("C64_1541_FULL"), "1", StringComparison.Ordinal)
+            fullDrive = IsFull1541Enabled()
                 ? Drive1541Emulator.TryCreate(
                     Path.Combine("ROMS", "1541.bin"),
                     Path.Combine("ROMS", "dos1541.bin"),
@@ -282,6 +257,14 @@ namespace C64
 
             cpu.memory.OnIOWrite = OnIOWrite;
             cpu.memory.OnIORead = OnIORead;
+        }
+
+        /// <summary>Gets whether the full drive ROM path should be used when a 1541 ROM is available.</summary>
+        private static bool IsFull1541Enabled()
+        {
+            string? setting = Environment.GetEnvironmentVariable("C64_1541_FULL");
+            return !string.Equals(setting, "0", StringComparison.OrdinalIgnoreCase) &&
+                !string.Equals(setting, "false", StringComparison.OrdinalIgnoreCase);
         }
 
         /// <summary>
@@ -653,7 +636,6 @@ namespace C64
                     cia2PortA = value;
                     cpu.memory.memory[addr] = value;
                     iecBus.UpdateHostCia2PortA(cia2PortA, cia2Ddra);
-                    TraceCia2PortAccess("W", value);
                     return true;
 
                 case 0xDD02:
@@ -902,7 +884,6 @@ namespace C64
                         byte outputLatchBits = (byte)(cia2PortA & cia2Ddra);
                         byte inputPinBits = (byte)(external & (byte)~cia2Ddra);
                         byte v = (byte)(outputLatchBits | inputPinBits);
-                        TraceCia2PortAccess("R", v);
                         return v;
                     }
                 case 0xDD02:
@@ -1061,19 +1042,6 @@ namespace C64
             byte outBits = (byte)((latch & external) & ddr);
             byte inBits = (byte)(external & (byte)~ddr);
             return (byte)(outBits | inBits);
-        }
-
-        /// <summary>Writes sparse CIA2 port A access diagnostics during focused low-level IEC tracing.</summary>
-        /// <param name="kind">The access kind, either R or W.</param>
-        /// <param name="value">The value read from or written to CIA2 port A.</param>
-        private void TraceCia2PortAccess(string kind, byte value)
-        {
-            if (!iecBus.IsLowLevelActivityReported)
-                return;
-
-            cia2PortTraceCount++;
-            if (cia2PortTraceCount <= 48 || cia2PortTraceCount == 128 || cia2PortTraceCount == 512)
-                Console.WriteLine($"[IEC] CIA2 {kind} pc=${cpu.registers.PC:X4} value=${value:X2} latch=${cia2PortA:X2} ddr=${cia2Ddra:X2}");
         }
 
         /// External serial/user-port model entry points. CNT rising edges drive
