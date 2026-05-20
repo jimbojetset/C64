@@ -32,13 +32,13 @@ namespace C64
 
             foreach (string arg in args)
             {
-                if (loadPath is null && File.Exists(arg))
+                if (File.Exists(arg))
                     loadPath = arg;
             }
 
             try
             {
-                using var emu = new C64Emulator();
+                var emu = new C64Emulator();
                 if (loadPath is not null)
                     emu.QueueLoadAndRun(loadPath);
                 emu.Run();
@@ -120,8 +120,8 @@ namespace C64
         private readonly IecBus iecBus;
         private readonly DatasetteDevice datasette;
         private readonly REU reu;
-        private readonly object cia1Lock = new object();
-        private readonly object cia2Lock = new object();
+        private readonly object cia1Lock = new();
+        private readonly object cia2Lock = new();
         private readonly ConcurrentQueue<(string Path, bool AutoRun)> pendingLoads = new();
         private string? lastHostLoadedFile;
         private byte cia1PortA = 0xFF;
