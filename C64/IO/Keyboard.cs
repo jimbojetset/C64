@@ -66,6 +66,9 @@ namespace C64
         /// <summary>Invoked when Ctrl+Alt+Shift+S is pressed (sprite debug screenshot).</summary>
         public Action? OnSpriteDebugScreenshot { get; set; }
 
+        /// <summary>Invoked when Ctrl+F is pressed (fullscreen viewport toggle).</summary>
+        public Action? OnToggleFullscreenViewport { get; set; }
+
         /// <summary>Invoked when Ctrl+Q is pressed.</summary>
         public Action? OnToggleMute { get; set; }
 
@@ -315,6 +318,7 @@ namespace C64
                 switch (sym)
                 {
                     case SDL_Keycode.SDLK_a: OnSelectAudioDevice?.Invoke(); return false;
+                    case SDL_Keycode.SDLK_f: OnToggleFullscreenViewport?.Invoke(); return false;
                     case SDL_Keycode.SDLK_j: OnToggleJoystickPort?.Invoke(); return false;
                     case SDL_Keycode.SDLK_o: OnLoad?.Invoke(); return false;
                     case SDL_Keycode.SDLK_p: OnTogglePause?.Invoke(); return false;

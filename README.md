@@ -121,6 +121,7 @@ At startup, the emulator automatically opens playback device `[0]` from SDL's au
 |---|---|
 | `F12` or `Ctrl+R` | Hard reset CPU and peripherals |
 | `Ctrl+A` | Open audio-device selector |
+| `Ctrl+F` | Toggle fullscreen undistorted C64 viewport |
 | `Ctrl+P` | Pause/unpause emulator |
 | `Ctrl+Q` | Toggle audio mute; shows a small mute icon in the bottom-left corner while muted |
 | `Ctrl+O` | Open software picker (load and run from `Software`) |

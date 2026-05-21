@@ -246,6 +246,10 @@ namespace C64
             {
                 display.TakeSpriteDebugScreenshot();
             };
+            keyboard.OnToggleFullscreenViewport = () =>
+            {
+                display.ToggleFullscreenViewportMode();
+            };
             keyboard.OnToggleMute = ToggleMute;
             keyboard.OnTogglePause = TogglePause;
             keyboard.OnToggleJoystickPort = ToggleJoystickPort;

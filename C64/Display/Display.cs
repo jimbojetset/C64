@@ -135,6 +135,7 @@ namespace C64
         private string? temporaryMessage;
         private long temporaryMessageTicks;
         private long driveActivityTicks;
+        private bool fullscreenViewportMode;
         private int rasterCycleInLine;
         private readonly bool[] busStealMask = new bool[CyclesPerRasterLine];
         private readonly List<RasterWriteEvent>[] rasterWriteEvents = new List<RasterWriteEvent>[PalRasterLines];
@@ -400,6 +401,31 @@ namespace C64
 
             loadedFileDisplayName = next;
             windowTitleDirty = true;
+        }
+
+        /// <summary>Toggles between normal monitor presentation and a fullscreen undistorted C64 viewport.</summary>
+        public void ToggleFullscreenViewportMode()
+        {
+            if (window == IntPtr.Zero)
+                return;
+
+            fullscreenViewportMode = !fullscreenViewportMode;
+            uint flags = fullscreenViewportMode
+                ? (uint)SDL_WindowFlags.SDL_WINDOW_FULLSCREEN_DESKTOP
+                : 0u;
+
+            if (SDL_SetWindowFullscreen(window, flags) != 0)
+            {
+                fullscreenViewportMode = !fullscreenViewportMode;
+                Console.Error.WriteLine($"Fullscreen toggle failed: {SDL_GetError()}");
+                return;
+            }
+
+            if (!fullscreenViewportMode)
+            {
+                SDL_SetWindowSize(window, MonitorImageW, MonitorImageH);
+                SDL_SetWindowPosition(window, SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED);
+            }
         }
 
         /// <summary>Applies pending window title.</summary>
@@ -771,6 +797,15 @@ namespace C64
             glApi.ClearColor(0f, 0f, 0f, 1f);
             glApi.Clear((uint)ClearBufferMask.ColorBufferBit);
 
+            if (fullscreenViewportMode)
+            {
+                (int vx, int vy, int vw, int vh) = CalculateFrameViewport(windowW, windowH);
+                DrawPresentationQuad(frameTexture, vx, vy, vw, vh, effectMode: 0);
+
+                SDL_GL_SwapWindow(window);
+                return;
+            }
+
             (int mx, int my, int mw, int mh) = CalculateMonitorViewport(windowW, windowH);
 
             double scaleX = mw / (double)MonitorImageW;
@@ -833,6 +868,27 @@ namespace C64
                 return (0, 0, 1, 1);
 
             double frameAspect = MonitorImageW / (double)MonitorImageH;
+            int w = windowW;
+            int h = (int)Math.Round(w / frameAspect);
+            if (h > windowH)
+            {
+                h = windowH;
+                w = (int)Math.Round(h * frameAspect);
+            }
+
+            return ((windowW - w) / 2, (windowH - h) / 2, Math.Max(1, w), Math.Max(1, h));
+        }
+
+        /// <summary>Calculates the aspect-fit viewport for the raw C64 framebuffer.</summary>
+        /// <param name="windowW">The window width in pixels.</param>
+        /// <param name="windowH">The window height in pixels.</param>
+        /// <returns>The viewport rectangle as X, Y, width, and height values.</returns>
+        private static (int X, int Y, int W, int H) CalculateFrameViewport(int windowW, int windowH)
+        {
+            if (windowW <= 0 || windowH <= 0)
+                return (0, 0, 1, 1);
+
+            double frameAspect = FrameW / (double)FrameH;
             int w = windowW;
             int h = (int)Math.Round(w / frameAspect);
             if (h > windowH)
