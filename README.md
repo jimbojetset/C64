@@ -171,7 +171,7 @@ This emulator is wired for UK keyboard layout and UK punctuation mode.
 | F1/F3/F5/F7 | `F1/F3/F5/F7` | C64 function pairs are handled in PETSCII layer |
 | Color shortcuts `Ctrl+1..8` | `Left Ctrl + 1..8` | PETSCII control-color codes |
 | Color shortcuts `C=+1..8` | `Right Alt + 1..8` | PETSCII Commodore-color codes |
-| Joystick fire (port 2) | `Right Ctrl` or `Left Ctrl` | `Right Alt` is reserved for Commodore key |
+| Joystick fire (port 2) | `Space` or `Right Ctrl` | `Right Alt` is reserved for Commodore key |
 | Joystick directions (port 2) | Arrow keys | Also drives C64 cursor keys |
 | UK punctuation `;:` | Host `;:` key | Mapped to C64 `:` key matrix position |
 | UK punctuation `'@` | Host `'@` key | Mapped to C64 `;` key matrix position |

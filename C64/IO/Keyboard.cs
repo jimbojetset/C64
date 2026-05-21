@@ -363,8 +363,7 @@ namespace C64
                     return;
 
                 case SDL_Keycode.SDLK_LCTRL:
-                    if (activeJoystickPort == 0)
-                        SetMatrixKey(7, 2, pressed); /// C64 CTRL key
+                    SetMatrixKey(7, 2, pressed); /// C64 CTRL key
                     return;
 
                 case SDL_Keycode.SDLK_RCTRL:
@@ -396,7 +395,8 @@ namespace C64
                     return;
 
                 case SDL_Keycode.SDLK_SPACE:
-                    SetMatrixKey(7, 4, pressed);
+                    if (activeJoystickPort == 0)
+                        SetMatrixKey(7, 4, pressed);
                     return;
 
                 case SDL_Keycode.SDLK_F1:
@@ -706,8 +706,8 @@ namespace C64
             SDL_Keycode.SDLK_DOWN => 0x02,
             SDL_Keycode.SDLK_LEFT => 0x04,
             SDL_Keycode.SDLK_RIGHT => 0x08,
+            SDL_Keycode.SDLK_SPACE => 0x10, /// fire
             SDL_Keycode.SDLK_RCTRL => 0x10, /// fire
-            SDL_Keycode.SDLK_LCTRL => 0x10, /// fire
             _ => 0
         };
     }
