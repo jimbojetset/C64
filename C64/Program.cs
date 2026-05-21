@@ -238,6 +238,14 @@ namespace C64
             {
                 display.TakeScreenshot();
             };
+            keyboard.OnViewportScreenshot = () =>
+            {
+                display.TakeViewportScreenshot();
+            };
+            keyboard.OnSpriteDebugScreenshot = () =>
+            {
+                display.TakeSpriteDebugScreenshot();
+            };
             keyboard.OnToggleMute = ToggleMute;
             keyboard.OnTogglePause = TogglePause;
             keyboard.OnToggleJoystickPort = ToggleJoystickPort;

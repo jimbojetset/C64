@@ -125,7 +125,9 @@ At startup, the emulator automatically opens playback device `[0]` from SDL's au
 | `Ctrl+Q` | Toggle audio mute; shows a small mute icon in the bottom-left corner while muted |
 | `Ctrl+O` | Open software picker (load and run from `Software`) |
 | `Ctrl+S` | Open save dialog for current BASIC program; saves a `.prg` into `Software` |
-| `Shift+S` | Screenshot (saved as `c64_screenshot_*.bmp`) |
+| `Shift+S` | Full SDL window screenshot (saved as `c64_screenshot_*.png`) |
+| `Ctrl+Shift+S` | Undistorted viewport screenshot (saved as `c64_viewport_screenshot_*.png`) |
+| `Ctrl+Alt+Shift+S` | Sprite-index debug screenshot (saved as `c64_sprite_debug_screenshot_*.png`) |
 | `Shift+Q` or `Alt+Q` or `Ctrl+W` | Quit emulator |
 | `Caps Lock` | Toggle C64 SHIFT LOCK |
 | `Page Up` or `Pause` | Trigger RESTORE NMI |
@@ -197,4 +199,3 @@ SDL-compatible controllers are detected at startup, and the emulator will open t
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
 Copyright (c) 2025 James Booth
-

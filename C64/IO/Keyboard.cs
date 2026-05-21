@@ -60,6 +60,12 @@ namespace C64
         /// <summary>Invoked when Shift+S is pressed (screenshot).</summary>
         public Action? OnScreenshot { get; set; }
 
+        /// <summary>Invoked when Ctrl+Shift+S is pressed (raw viewport screenshot).</summary>
+        public Action? OnViewportScreenshot { get; set; }
+
+        /// <summary>Invoked when Ctrl+Alt+Shift+S is pressed (sprite debug screenshot).</summary>
+        public Action? OnSpriteDebugScreenshot { get; set; }
+
         /// <summary>Invoked when Ctrl+Q is pressed.</summary>
         public Action? OnToggleMute { get; set; }
 
@@ -289,6 +295,18 @@ namespace C64
             if (sym == SDL_Keycode.SDLK_s && shift && !ctrl && !alt)
             {
                 OnScreenshot?.Invoke();
+                return false;
+            }
+
+            if (sym == SDL_Keycode.SDLK_s && ctrl && shift && !alt)
+            {
+                OnViewportScreenshot?.Invoke();
+                return false;
+            }
+
+            if (sym == SDL_Keycode.SDLK_s && ctrl && shift && alt)
+            {
+                OnSpriteDebugScreenshot?.Invoke();
                 return false;
             }
 
