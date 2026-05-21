@@ -215,7 +215,6 @@ namespace C64
             cpu.memory.LoadBankedROM(Path.Combine("ROMS", "kernal.bin"), Memory.BankSlot.Kernal);
             cpu.memory.LoadBankedROM(Path.Combine("ROMS", "characters.bin"), Memory.BankSlot.Char);
             display = new Display(cpu);
-            cpu.OnJamDiagnostics = FormatJamDiagnostics;
             keyboard = new Keyboard(cpu);
             sound = new Sound();
             drive = new VirtualDrive1541();
@@ -2389,19 +2388,6 @@ namespace C64
             byte hi = cpu.memory.ReadByte((ulong)(0x100 + (byte)(s + 2)));
             cpu.registers.S = (byte)(s + 2);
             cpu.registers.PC = (ushort)(((hi << 8) | lo) + 1);
-        }
-
-        /// <summary>Formats host-side device state when the CPU halts on a JAM/KIL opcode.</summary>
-        private string? FormatJamDiagnostics()
-        {
-            byte[] m = cpu.memory.memory;
-            string cartState = cartridge?.FormatDebugState() ?? "Cartridge: none";
-            return string.Join(Environment.NewLine,
-                cartState,
-                $"VIC: raster={display.CurrentRasterLine} compare={display.RasterCompare} " +
-                $"D011=${m[0xD011]:X2} D012=${m[0xD012]:X2} D019=${m[0xD019]:X2} D01A=${m[0xD01A]:X2} " +
-                $"D01E=${m[0xD01E]:X2} D01F=${m[0xD01F]:X2}",
-                $"CIA1: DC04=${m[0xDC04]:X2} DC05=${m[0xDC05]:X2} DC0D=${m[0xDC0D]:X2} DC0E=${m[0xDC0E]:X2} DC0F=${m[0xDC0F]:X2}");
         }
 
         /// <summary>Runs the main emulator loop.</summary>

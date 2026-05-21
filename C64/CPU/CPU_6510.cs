@@ -48,8 +48,6 @@ namespace C64.CPU
         private bool jammed;
         private bool jamReported;
         private ulong jamAddress;
-        private readonly ulong[] recentProgramCounters = new ulong[32];
-        private int recentProgramCounterIndex;
 
         private readonly int clockFreq = 2000000; //1MHz
 
@@ -81,7 +79,6 @@ namespace C64.CPU
         private int cyclesThisOperation = 0;
         private long totalCycles;
         public Action<int>? OnCyclesExecuted;
-        public Func<string?>? OnJamDiagnostics;
         private int externalStallCycles;
 
         /// <summary>Adds externally requested CPU stall cycles.</summary>
@@ -135,8 +132,6 @@ namespace C64.CPU
             jammed = false;
             jamReported = false;
             jamAddress = 0;
-            Array.Clear(recentProgramCounters, 0, recentProgramCounters.Length);
-            recentProgramCounterIndex = 0;
 
             while (IRQ_Buffer.TryDequeue(out _)) { }
             while (NMI_Buffer.TryDequeue(out _)) { }
@@ -181,7 +176,7 @@ namespace C64.CPU
                     {
                         if (!jamReported)
                         {
-                            ReportJam();
+                            Console.Error.WriteLine($"CPU jammed at ${jamAddress & 0xFFFF:X4}");
                             jamReported = true;
                         }
 
@@ -222,7 +217,6 @@ namespace C64.CPU
                         if (!registers.Flags.I && Volatile.Read(ref irqLineAsserted) != 0)
                             ProcessIRQ();
                         int beforeCycles = cyclesThisOperation;
-                        RecordRecentProgramCounter(registers.PC);
                         Execute(GetNextByteInstruction());
                         int deltaCycles = cyclesThisOperation - beforeCycles;
                         if (deltaCycles > 0)
@@ -1162,7 +1156,7 @@ namespace C64.CPU
             {
                 if (!jamReported)
                 {
-                    ReportJam();
+                    Console.Error.WriteLine($"CPU jammed at ${jamAddress & 0xFFFF:X4}");
                     jamReported = true;
                 }
                 return 0;
@@ -1179,7 +1173,6 @@ namespace C64.CPU
             if (!registers.Flags.I && Volatile.Read(ref irqLineAsserted) != 0)
                 ProcessIRQ();
 
-            RecordRecentProgramCounter(registers.PC);
             Execute(GetNextByteInstruction());
             int elapsed = cyclesThisOperation - beforeCycles;
             if (elapsed > 0)
@@ -3173,59 +3166,6 @@ namespace C64.CPU
         {
             /// Mask is branch-free and equivalent to wrapping the 16-bit PC.
             registers.PC = (registers.PC + value) & 0xFFFF;
-        }
-
-        /// <summary>Records the next instruction address for diagnostics.</summary>
-        /// <param name="pc">The program counter before opcode fetch.</param>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private void RecordRecentProgramCounter(ulong pc)
-        {
-            recentProgramCounters[recentProgramCounterIndex] = pc & 0xFFFF;
-            recentProgramCounterIndex = (recentProgramCounterIndex + 1) & (recentProgramCounters.Length - 1);
-        }
-
-        /// <summary>Formats the recent program-counter history from oldest to newest.</summary>
-        /// <returns>The formatted program-counter history.</returns>
-        private string FormatRecentProgramCounters()
-        {
-            var parts = new string[recentProgramCounters.Length];
-            for (int i = 0; i < recentProgramCounters.Length; i++)
-            {
-                int idx = (recentProgramCounterIndex + i) & (recentProgramCounters.Length - 1);
-                parts[i] = "$" + (recentProgramCounters[idx] & 0xFFFF).ToString("X4");
-            }
-
-            return string.Join(" ", parts);
-        }
-
-        /// <summary>Writes CPU and memory context for a JAM/KIL halt.</summary>
-        private void ReportJam()
-        {
-            Console.Error.WriteLine($"CPU jammed at ${jamAddress & 0xFFFF:X4}");
-            Console.Error.WriteLine(
-                $"Registers: A=${registers.A:X2} X=${registers.X:X2} Y=${registers.Y:X2} " +
-                $"S=${registers.S:X2} P=${registers.P:X2} PC=${registers.PC & 0xFFFF:X4}");
-            Console.Error.WriteLine("Recent PCs: " + FormatRecentProgramCounters());
-            Console.Error.WriteLine(
-                $"Memory ${((jamAddress - 8) & 0xFFFF):X4}-${((jamAddress + 15) & 0xFFFF):X4}: " +
-                FormatMemoryBytes(jamAddress - 8, 24));
-            Console.Error.WriteLine(
-                $"Stack ${0x0100 + ((registers.S + 1) & 0xFF):X4}: " +
-                FormatMemoryBytes((ulong)(0x0100 + ((registers.S + 1) & 0xFF)), 16));
-
-            string? extra = OnJamDiagnostics?.Invoke();
-            if (!string.IsNullOrWhiteSpace(extra))
-                Console.Error.WriteLine(extra);
-        }
-
-        /// <summary>Formats a contiguous memory range as hexadecimal bytes.</summary>
-        private string FormatMemoryBytes(ulong start, int count)
-        {
-            var bytes = new string[count];
-            for (int i = 0; i < count; i++)
-                bytes[i] = memory.ReadByte((start + (ulong)i) & 0xFFFF).ToString("X2");
-
-            return string.Join(" ", bytes);
         }
 
         /// <summary>Reads byte from memory.</summary>

@@ -58,18 +58,6 @@ namespace C64
             _ => $"CRT type {HardwareType}"
         };
 
-        /// <summary>Formats the current mapper state for diagnostics.</summary>
-        public string FormatDebugState()
-        {
-            string control = HardwareType switch
-            {
-                HardwareEasyFlash => $"control=${easyFlashControl:X2}",
-                HardwareMagicDesk => magicDeskDisabled ? "disabled" : "enabled",
-                _ => string.Empty
-            };
-            return $"Cartridge: {HardwareName} bank={activeBank} {control} mode={GetMode()}".TrimEnd();
-        }
-
         /// <summary>Parses a CRT cartridge image.</summary>
         /// <param name="raw">The raw CRT file bytes.</param>
         /// <returns>The parsed cartridge.</returns>
