@@ -19,6 +19,7 @@ namespace C64
     internal sealed class CrtCartridge
     {
         private const int HardwareNormal = 0;
+        private const int HardwareMagicDesk = 19;
         private const int HardwareEasyFlash = 32;
         private const int BankSize = 0x2000;
         private const int EasyFlashBankCount = 64;
@@ -31,6 +32,7 @@ namespace C64
 
         private int activeBank;
         private byte easyFlashControl;
+        private bool magicDeskDisabled;
 
         private CrtCartridge(string name, int hardwareType, bool exromLow, bool gameLow)
         {
@@ -51,6 +53,7 @@ namespace C64
         public string HardwareName => HardwareType switch
         {
             HardwareNormal => "Normal cartridge",
+            HardwareMagicDesk => "Magic Desk",
             HardwareEasyFlash => "EasyFlash",
             _ => $"CRT type {HardwareType}"
         };
@@ -58,7 +61,13 @@ namespace C64
         /// <summary>Formats the current mapper state for diagnostics.</summary>
         public string FormatDebugState()
         {
-            return $"Cartridge: {HardwareName} bank={activeBank} control=${easyFlashControl:X2} mode={GetMode()}";
+            string control = HardwareType switch
+            {
+                HardwareEasyFlash => $"control=${easyFlashControl:X2}",
+                HardwareMagicDesk => magicDeskDisabled ? "disabled" : "enabled",
+                _ => string.Empty
+            };
+            return $"Cartridge: {HardwareName} bank={activeBank} {control} mode={GetMode()}".TrimEnd();
         }
 
         /// <summary>Parses a CRT cartridge image.</summary>
@@ -76,7 +85,7 @@ namespace C64
                 throw new InvalidDataException("CRT file has an invalid header length.");
 
             int hardwareType = ReadBe16(raw, 0x16);
-            if (hardwareType is not HardwareNormal and not HardwareEasyFlash)
+            if (hardwareType is not HardwareNormal and not HardwareMagicDesk and not HardwareEasyFlash)
                 throw new NotSupportedException($"CRT hardware type {hardwareType} is not supported yet.");
 
             bool exromLow = raw[0x18] == 0;
@@ -121,6 +130,7 @@ namespace C64
         {
             activeBank = 0;
             easyFlashControl = 0x00;
+            magicDeskDisabled = false;
         }
 
         /// <summary>Reads a CPU-visible cartridge ROM byte if the current mapping exposes one.</summary>
@@ -174,6 +184,19 @@ namespace C64
         public bool WriteIo(ulong addr, byte value)
         {
             int address = (int)(addr & 0xFFFF);
+            if (HardwareType == HardwareMagicDesk)
+            {
+                if (address is >= 0xDE00 and <= 0xDEFF)
+                {
+                    magicDeskDisabled = (value & 0x80) != 0;
+                    if (!magicDeskDisabled)
+                        activeBank = value & 0x7F;
+                    return true;
+                }
+
+                return false;
+            }
+
             if (HardwareType != HardwareEasyFlash)
                 return false;
 
@@ -218,7 +241,12 @@ namespace C64
             bool gameLow;
             bool exromLow;
 
-            if (HardwareType == HardwareEasyFlash)
+            if (HardwareType == HardwareMagicDesk)
+            {
+                gameLow = false;
+                exromLow = !magicDeskDisabled;
+            }
+            else if (HardwareType == HardwareEasyFlash)
             {
                 bool gameModeControlled = (easyFlashControl & 0x04) != 0;
                 gameLow = gameModeControlled ? (easyFlashControl & 0x01) != 0 : true;

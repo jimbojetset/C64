@@ -29,7 +29,7 @@ Most-used non-standard key mappings:
 | SHIFT LOCK | `Caps Lock` (toggle) |
 | CLR/HOME | `Home` |
 | INST/DEL | `Insert` or `Backspace/Delete` |
-| Load bundled software | `Ctrl+O` |
+| Load software / ROM | `Ctrl+L` |
 | Save BASIC program | `Ctrl+S` |
 | Pause/unpause emulator | `Ctrl+P` |
 | Select audio device | `Ctrl+A` |
@@ -105,7 +105,7 @@ dotnet run -c Release
 
 ### Software Loading And Saving
 
-Bundled software lives under `C64/Software`. Press `Ctrl+O` while the emulator is running to open the ImGui software picker. The picker also has a `Browse...` button for selecting supported files from other folders with the OS-native file dialog. The emulator pauses while the picker is open; selecting a file closes the picker, unpauses the emulator, and uses the existing extension-based loader to reset, load, and run the selected software. Closing or cancelling the picker restores the previous pause state. `.sid`, `.psid`, and `.rsid` files are parsed as SID tunes and started directly with a small in-memory player driver. `.crt` files are inserted as cartridges and reset into, with standard 8K/16K/Ultimax and EasyFlash banking supported.
+Press `Ctrl+L` while the emulator is running to open the OS-native file picker for supported C64 software, disks, tapes, cartridges, and SID files. The emulator pauses while the picker is open; selecting a file unpauses the emulator and uses the existing extension-based loader to reset, load, and run the selected software. Closing or cancelling the picker restores the previous pause state. `.sid`, `.psid`, and `.rsid` files are parsed as SID tunes and started directly with a small in-memory player driver. `.crt` files are inserted as cartridges and reset into, with standard 8K/16K/Ultimax, EasyFlash, and Magic Desk banking supported.
 
 Press `Ctrl+S` to open the ImGui save dialog for the current BASIC program. The emulator pauses while the save dialog is active, then restores the previous pause state after saving or cancelling. Files are saved into `C64/Software` as standard `.prg` files with a two-byte little-endian load address followed by the saved program bytes.
 
@@ -124,7 +124,7 @@ At startup, the emulator automatically opens playback device `[0]` from SDL's au
 | `Ctrl+F` | Toggle fullscreen undistorted C64 viewport |
 | `Ctrl+P` | Pause/unpause emulator |
 | `Ctrl+Q` | Toggle audio mute; shows a small mute icon in the bottom-left corner while muted |
-| `Ctrl+O` | Open software picker (load and run from `Software`) |
+| `Ctrl+L` | Open native file picker to load and run software, disks, tapes, cartridges, or SID files |
 | `Ctrl+S` | Open save dialog for current BASIC program; saves a `.prg` into `Software` |
 | `Shift+S` | Full SDL window screenshot (saved as `c64_screenshot_*.png`) |
 | `Ctrl+Shift+S` | Undistorted viewport screenshot (saved as `c64_viewport_screenshot_*.png`) |

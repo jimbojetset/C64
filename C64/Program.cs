@@ -233,7 +233,7 @@ namespace C64
             reu = new REU(128);
             reu.OnIrqRequest = () => cpu.InitiateIRQ(0xFFFE);
             keyboard.OnHardReset = HardResetFromKeyboard;
-            keyboard.OnLoad = LoadProgram;
+            keyboard.OnNativeLoad = LoadProgramFromNativeFileDialog;
             keyboard.OnSave = SaveProgram;
             keyboard.OnRestoreNmi = TriggerRestoreNmi;
             keyboard.OnScreenshot = () =>
@@ -2080,7 +2080,7 @@ namespace C64
 
             try
             {
-                string softwareDir = SoftwareDirectory.Ensure();
+                string softwareDir = EnsureSoftwareDirectory();
                 string filename = NormalizePrgFilename(requestedName);
                 string path = Path.Combine(softwareDir, filename);
 
@@ -2236,7 +2236,7 @@ namespace C64
                 if (Path.IsPathRooted(name) && File.Exists(name))
                     return name;
 
-                string? softwareDir = SoftwareDirectory.Find();
+                string? softwareDir = FindSoftwareDirectory();
                 if (!string.IsNullOrWhiteSpace(softwareDir))
                 {
                     string softwareCandidate = Path.Combine(softwareDir, name);
@@ -2773,8 +2773,33 @@ namespace C64
         private static bool IsCartridgePath(string path) =>
             Path.GetExtension(path).Equals(".crt", StringComparison.OrdinalIgnoreCase);
 
-        /// <summary>Loads program.</summary>
-        private void LoadProgram()
+        /// <summary>Finds the default Software directory used by C64 SAVE and relative LOAD fallback.</summary>
+        private static string? FindSoftwareDirectory()
+        {
+            string[] candidates =
+            {
+                Path.Combine(Environment.CurrentDirectory, "Software"),
+                Path.Combine(AppContext.BaseDirectory, "Software"),
+                Path.Combine(Environment.CurrentDirectory, "C64", "Software"),
+            };
+
+            return candidates.FirstOrDefault(Directory.Exists);
+        }
+
+        /// <summary>Finds or creates the default Software directory for host-side saves.</summary>
+        private static string EnsureSoftwareDirectory()
+        {
+            string? existing = FindSoftwareDirectory();
+            if (existing is not null)
+                return existing;
+
+            string created = Path.Combine(Environment.CurrentDirectory, "Software");
+            Directory.CreateDirectory(created);
+            return created;
+        }
+
+        /// <summary>Loads a host file chosen directly from the platform-native file dialog.</summary>
+        private void LoadProgramFromNativeFileDialog()
         {
             bool wasPaused = IsPaused;
             SetPaused(true);
@@ -2782,7 +2807,7 @@ namespace C64
 
             try
             {
-                string? path = SoftwareFileWindow.Prompt();
+                string? path = NativeLoadFileDialog.Prompt();
                 if (!string.IsNullOrWhiteSpace(path))
                 {
                     SetPaused(false);
@@ -2796,7 +2821,7 @@ namespace C64
             catch (Exception ex)
             {
                 SetPaused(wasPaused);
-                Console.Error.WriteLine($"Load picker failed: {ex.Message}");
+                Console.Error.WriteLine($"Native load picker failed: {ex.Message}");
             }
         }
 
@@ -3207,7 +3232,7 @@ namespace C64
                 if (string.IsNullOrWhiteSpace(filename))
                     return;
 
-                string softwareDir = SoftwareDirectory.Ensure();
+                string softwareDir = EnsureSoftwareDirectory();
                 string path = Path.Combine(softwareDir, NormalizePrgFilename(filename));
                 SaveMemoryRangeAsPrg(path, mem, 0x0801, (ushort)(0x0801 + progLen));
                 Console.WriteLine($"Saved {Path.GetFileName(path)}");

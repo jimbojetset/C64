@@ -48,8 +48,8 @@ namespace C64
         /// <summary>Invoked when F12 / Ctrl+R is pressed.</summary>
         public Action? OnHardReset { get; set; }
 
-        /// <summary>Invoked when Ctrl+O is pressed.</summary>
-        public Action? OnLoad { get; set; }
+        /// <summary>Invoked when Ctrl+L is pressed.</summary>
+        public Action? OnNativeLoad { get; set; }
 
         /// <summary>Invoked when Ctrl+S is pressed.</summary>
         public Action? OnSave { get; set; }
@@ -320,7 +320,7 @@ namespace C64
                     case SDL_Keycode.SDLK_a: OnSelectAudioDevice?.Invoke(); return false;
                     case SDL_Keycode.SDLK_f: OnToggleFullscreenViewport?.Invoke(); return false;
                     case SDL_Keycode.SDLK_j: OnToggleJoystickPort?.Invoke(); return false;
-                    case SDL_Keycode.SDLK_o: OnLoad?.Invoke(); return false;
+                    case SDL_Keycode.SDLK_l: OnNativeLoad?.Invoke(); return false;
                     case SDL_Keycode.SDLK_p: OnTogglePause?.Invoke(); return false;
                     case SDL_Keycode.SDLK_s: OnSave?.Invoke(); return false;
                     case SDL_Keycode.SDLK_r:
