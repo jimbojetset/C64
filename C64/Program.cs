@@ -2570,8 +2570,9 @@ namespace C64
         /// <summary>
         /// Drag-and-drop flow: reset the emulator (Ctrl+R equivalent), wait
         /// for the KERNAL to reach the READY prompt, load the file, then
-        /// type RUN + RETURN.  Runs on a background task so we don't block
-        /// the SDL event pump while waiting for the boot sequence.
+        /// type RUN + RETURN when the selected file type needs BASIC to start.
+        /// Runs on a background task so we don't block the SDL event pump while
+        /// waiting for the boot sequence.
         /// </summary>
         /// <param name="path">The path of the file to use.</param>
         /// <returns>A task that completes when the asynchronous operation finishes.</returns>
@@ -2751,7 +2752,7 @@ namespace C64
         }
 
         /// <summary>
-        /// Loads text/PRG/T64 files into memory or attaches TAP/D64 media, updating host-file metadata and user-facing status messages.
+        /// Loads text/PRG/SID/T64 files into memory or attaches TAP/D64 media, updating host-file metadata and user-facing status messages.
         /// </summary>
         /// <param name="path">The path of the file to use.</param>
         private void DoLoad(string path)
@@ -2794,6 +2795,11 @@ namespace C64
                     IReadOnlyList<string> files = drive.ListFiles();
                     Console.WriteLine($"Attached D64 {Path.GetFileName(path)} ({files.Count} PRG entries)");
                 }
+                else if (IsSidExtension(ext))
+                {
+                    EjectDriveMedia();
+                    LoadSid(path);
+                }
                 else
                 {
                     EjectDriveMedia();
@@ -2813,6 +2819,26 @@ namespace C64
         {
             LoadPrgFromBytes(File.ReadAllBytes(path));
             SetLastHostLoadedFile(path);
+        }
+
+        /// <summary>Gets whether a file extension names a SID music file.</summary>
+        /// <param name="ext">The lower-case file extension to test.</param>
+        /// <returns>True when the extension is a SID container extension.</returns>
+        private static bool IsSidExtension(string ext) => ext is ".sid" or ".psid" or ".rsid";
+
+        /// <summary>Loads and starts a PSID/RSID music file.</summary>
+        /// <param name="path">The path of the SID file to load.</param>
+        private void LoadSid(string path)
+        {
+            SidFile sid = SidFile.Parse(File.ReadAllBytes(path));
+            StartSidTune(sid);
+            SetLastHostLoadedFile(path);
+
+            string title = string.IsNullOrWhiteSpace(sid.Name) ? Path.GetFileName(path) : sid.Name;
+            string byline = string.IsNullOrWhiteSpace(sid.Author) ? string.Empty : $" by {sid.Author}";
+            Console.WriteLine($"Loaded SID {title}{byline} (song {sid.StartSong}/{sid.Songs})");
+            if (sid.SelectedSongUsesCiaSpeed && sid.PlayAddress != 0)
+                Console.WriteLine("SID speed requests CIA timing; currently using the PAL frame player path.");
         }
 
         /// <summary>Ejects disk media when switching to a host-loaded file type.</summary>
@@ -2870,6 +2896,127 @@ namespace C64
             }
 
             return (loadAddr, (ushort)endAddr);
+        }
+
+        /// <summary>Copies a SID payload into RAM and redirects the CPU to a small player driver.</summary>
+        /// <param name="sid">The parsed SID file to start.</param>
+        private void StartSidTune(SidFile sid)
+        {
+            if (sid.LoadAddress + sid.Data.Length > 0x10000)
+                throw new InvalidDataException("SID payload would load past end of memory.");
+
+            int driverLength = GetSidPlayerDriverLength(sid);
+            ushort driverAddress = ChooseSidDriverAddress(sid.LoadAddress, sid.Data.Length, driverLength);
+            byte[] driver = CreateSidPlayerDriver(sid, driverAddress);
+
+            bool wasCpuPaused = cpu.Paused;
+            cpu.SetPaused(true);
+
+            try
+            {
+                Thread.Sleep(10);
+                sound.Reset();
+
+                for (int i = 0; i < sid.Data.Length; i++)
+                    cpu.memory.WriteRamByte((ulong)(sid.LoadAddress + i), sid.Data[i]);
+
+                for (int i = 0; i < driver.Length; i++)
+                    cpu.memory.WriteRamByte((ulong)(driverAddress + i), driver[i]);
+
+                /// Expose RAM under BASIC/KERNAL for direct PSID playback
+                /// while keeping I/O visible so player code can write SID.
+                /// IRQ-driven RSID-style tunes keep the normal KERNAL map.
+                cpu.memory.WriteByte(0x0000, 0x2F);
+                cpu.memory.WriteByte(0x0001, sid.PlayAddress == 0 ? (byte)0x37 : (byte)0x35);
+
+                cpu.registers.A = sid.StartSongIndex;
+                cpu.registers.X = 0;
+                cpu.registers.Y = 0;
+                cpu.registers.S = 0xFF;
+                cpu.registers.P = 0x24;
+                cpu.registers.PC = driverAddress;
+            }
+            finally
+            {
+                cpu.SetPaused(wasCpuPaused);
+            }
+        }
+
+        /// <summary>Creates a tiny C64-side driver that calls the SID init routine and then services playback.</summary>
+        /// <param name="sid">The SID file being played.</param>
+        /// <param name="driverAddress">The address where the driver will be copied.</param>
+        /// <returns>The assembled 6510 driver bytes.</returns>
+        private static byte[] CreateSidPlayerDriver(SidFile sid, ushort driverAddress)
+        {
+            byte song = sid.StartSongIndex;
+            byte initLo = (byte)(sid.InitAddress & 0xFF);
+            byte initHi = (byte)(sid.InitAddress >> 8);
+
+            if (sid.PlayAddress == 0)
+            {
+                /// Some RSID/PSID files install their own IRQ player during
+                /// init. Keep the CPU alive and let interrupts do the work.
+                return new byte[]
+                {
+                    0x78,                         // SEI
+                    0xA9, song,                   // LDA #song
+                    0x20, initLo, initHi,         // JSR init
+                    0x58,                         // CLI
+                    0x4C,
+                    (byte)((driverAddress + 7) & 0xFF),
+                    (byte)((driverAddress + 7) >> 8)
+                };
+            }
+
+            byte playLo = (byte)(sid.PlayAddress & 0xFF);
+            byte playHi = (byte)(sid.PlayAddress >> 8);
+
+            return new byte[]
+            {
+                0x78,                         // SEI
+                0xA9, song,                   // LDA #song
+                0x20, initLo, initHi,         // JSR init
+                0xA9, 0xFB,                   // LDA #$FB
+                0xCD, 0x12, 0xD0,             // CMP $D012
+                0xD0, 0xFB,                   // BNE wait_for_line
+                0xCD, 0x12, 0xD0,             // CMP $D012
+                0xF0, 0xFB,                   // BEQ wait_leave_line
+                0x20, playLo, playHi,         // JSR play
+                0x4C,
+                (byte)((driverAddress + 8) & 0xFF),
+                (byte)((driverAddress + 8) >> 8)
+            };
+        }
+
+        /// <summary>Gets the byte size of the SID player driver for this tune.</summary>
+        /// <param name="sid">The SID file being played.</param>
+        /// <returns>The player driver byte count.</returns>
+        private static int GetSidPlayerDriverLength(SidFile sid) => sid.PlayAddress == 0 ? 10 : 24;
+
+        /// <summary>Finds a small RAM area for the SID driver that does not overlap the tune payload.</summary>
+        /// <param name="loadAddress">The SID payload load address.</param>
+        /// <param name="payloadLength">The SID payload byte count.</param>
+        /// <param name="driverLength">The driver byte count.</param>
+        /// <returns>The selected driver load address.</returns>
+        private static ushort ChooseSidDriverAddress(ushort loadAddress, int payloadLength, int driverLength)
+        {
+            ReadOnlySpan<ushort> candidates = stackalloc ushort[] { 0xC000, 0xC100, 0xCE00, 0x0800, 0x033C };
+            foreach (ushort candidate in candidates)
+            {
+                if (candidate + driverLength <= 0x10000 &&
+                    !RangesOverlap(candidate, driverLength, loadAddress, payloadLength))
+                    return candidate;
+            }
+
+            throw new InvalidDataException("Could not find free RAM for the SID player driver.");
+        }
+
+        /// <summary>Gets whether two linear 64K address ranges overlap.</summary>
+        private static bool RangesOverlap(int aStart, int aLength, int bStart, int bLength)
+        {
+            int aEnd = aStart + aLength;
+            int bEnd = bStart + bLength;
+            return aStart < bEnd && bStart < aEnd;
         }
 
         /// <summary>Copies a decoded tape entry into emulated RAM and updates BASIC pointers for BASIC tape programs.</summary>
