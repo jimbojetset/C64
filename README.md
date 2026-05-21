@@ -15,7 +15,7 @@ Commodore 64 emulator application using SDL2 for display/input/audio. Key featur
 - Keyboard and SDL-compatible game controller joystick input
 - IEC + virtual 1541 D64 file loading support, including selected command/status and direct block-access operations
 - TAP datasette pulse playback with motor/sense/read behavior
-- Host PRG/SID/T64/TAP/D64 loading and PRG saving, including ImGui picker windows for bundled software
+- Host PRG/SID/CRT/T64/TAP/D64 loading and PRG saving, including ImGui picker windows for bundled software
 
 ## Quick Keymap
 
@@ -105,7 +105,7 @@ dotnet run -c Release
 
 ### Software Loading And Saving
 
-Bundled software lives under `C64/Software`. Press `Ctrl+O` while the emulator is running to open the ImGui software picker. The emulator pauses while the picker is open; selecting a file closes the picker, unpauses the emulator, and uses the existing extension-based loader to reset, load, and run the selected software. Closing or cancelling the picker restores the previous pause state. `.sid`, `.psid`, and `.rsid` files are parsed as SID tunes and started directly with a small in-memory player driver.
+Bundled software lives under `C64/Software`. Press `Ctrl+O` while the emulator is running to open the ImGui software picker. The picker also has a `Browse...` button for selecting supported files from other folders with the OS-native file dialog. The emulator pauses while the picker is open; selecting a file closes the picker, unpauses the emulator, and uses the existing extension-based loader to reset, load, and run the selected software. Closing or cancelling the picker restores the previous pause state. `.sid`, `.psid`, and `.rsid` files are parsed as SID tunes and started directly with a small in-memory player driver. `.crt` files are inserted as cartridges and reset into, with standard 8K/16K/Ultimax and EasyFlash banking supported.
 
 Press `Ctrl+S` to open the ImGui save dialog for the current BASIC program. The emulator pauses while the save dialog is active, then restores the previous pause state after saving or cancelling. Files are saved into `C64/Software` as standard `.prg` files with a two-byte little-endian load address followed by the saved program bytes.
 

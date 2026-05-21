@@ -152,22 +152,70 @@ namespace C64
         /// <returns>The discovered software file entries.</returns>
         private static IReadOnlyList<SoftwareFileEntry> DiscoverSoftwareFiles()
         {
-            string? softwareDir = SoftwareDirectory.Find();
-            if (softwareDir is null)
+            List<(string Root, string Label)> roots = FindLoaderRoots();
+            if (roots.Count == 0)
                 return Array.Empty<SoftwareFileEntry>();
 
-            return Directory.EnumerateFiles(softwareDir, "*", SearchOption.AllDirectories)
-                .OrderBy(path => Path.GetRelativePath(softwareDir, path), StringComparer.OrdinalIgnoreCase)
-                .Select(path =>
-                {
-                    string relative = Path.GetRelativePath(softwareDir, path);
-                    string display = Path.ChangeExtension(relative, null) ?? relative;
-                    string extension = Path.GetExtension(path).TrimStart('.').ToUpperInvariant();
-                    if (string.IsNullOrWhiteSpace(extension))
-                        extension = "FILE";
-                    return new SoftwareFileEntry(path, display, extension);
-                })
+            return roots
+                .SelectMany(root => Directory.EnumerateFiles(root.Root, "*", SearchOption.AllDirectories)
+                    .Where(IsLoadableFile)
+                    .Select(path => CreateEntry(root.Root, root.Label, path)))
+                .GroupBy(entry => entry.Path, StringComparer.OrdinalIgnoreCase)
+                .Select(group => group.First())
+                .OrderBy(entry => entry.DisplayName, StringComparer.OrdinalIgnoreCase)
                 .ToArray();
+        }
+
+        /// <summary>Finds directories that may contain user-loadable files.</summary>
+        /// <returns>The discovered loader roots and their display labels.</returns>
+        private static List<(string Root, string Label)> FindLoaderRoots()
+        {
+            var roots = new List<(string Root, string Label)>();
+
+            AddRoot(roots, SoftwareDirectory.Find(), "Software");
+
+            string[] romCandidates =
+            {
+                Path.Combine(Environment.CurrentDirectory, "ROMS"),
+                Path.Combine(AppContext.BaseDirectory, "ROMS"),
+                Path.Combine(Environment.CurrentDirectory, "C64", "ROMS"),
+            };
+
+            foreach (string candidate in romCandidates)
+                AddRoot(roots, candidate, "ROMS");
+
+            return roots;
+        }
+
+        /// <summary>Adds a loader root when it exists and has not already been added.</summary>
+        private static void AddRoot(List<(string Root, string Label)> roots, string? root, string label)
+        {
+            if (string.IsNullOrWhiteSpace(root) || !Directory.Exists(root))
+                return;
+
+            string fullPath = Path.GetFullPath(root);
+            if (roots.Any(existing => string.Equals(existing.Root, fullPath, StringComparison.OrdinalIgnoreCase)))
+                return;
+
+            roots.Add((fullPath, label));
+        }
+
+        /// <summary>Gets whether a host file has an extension supported by the loader.</summary>
+        private static bool IsLoadableFile(string path) => LoadableFileTypes.IsLoadable(path);
+
+        /// <summary>Creates a selector entry for one host file.</summary>
+        private static SoftwareFileEntry CreateEntry(string root, string rootLabel, string path)
+        {
+            string relative = Path.GetRelativePath(root, path);
+            string display = Path.ChangeExtension(relative, null) ?? relative;
+            if (!string.Equals(rootLabel, "Software", StringComparison.OrdinalIgnoreCase))
+                display = Path.Combine(rootLabel, display);
+
+            string extension = Path.GetExtension(path).TrimStart('.').ToUpperInvariant();
+            if (string.IsNullOrWhiteSpace(extension))
+                extension = "FILE";
+
+            return new SoftwareFileEntry(path, display, extension);
         }
     }
 }

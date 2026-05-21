@@ -80,6 +80,15 @@ namespace C64.CPU
         /// ($D01E / $D01F).
         public Action<ulong>? OnIOPostRead;
 
+        /// Optional cartridge read hook. The hook receives the effective
+        /// $0001 processor-port value so cartridge implementations can obey
+        /// the same PLA visibility rules as BASIC/KERNAL/CHAR banking.
+        public Func<ulong, byte, byte?>? OnCartridgeRead;
+
+        /// Optional cartridge write hook. Cartridge ROM/flash hardware may
+        /// observe writes, but C64 RAM underneath still receives the byte.
+        public Func<ulong, byte, byte, bool>? OnCartridgeWrite;
+
         /// Optional whole-address-space write hook for simple device maps
         /// that do not use C64 banking, such as the 1541 drive CPU memory map.
         public Func<ulong, byte, bool>? OnMemoryWrite;
@@ -204,6 +213,13 @@ namespace C64.CPU
             /// RAM byte is what reads see when the ROM is banked out).
             /// Writes in $D000-$DFFF go to I/O if I/O is mapped, or to
             /// RAM underneath if ROM/RAM is selected there.
+            byte port = GetProcessorPortEffective();
+
+            if (addr >= 0x8000 && addr < 0xD000 && OnCartridgeWrite is not null)
+            {
+                _ = OnCartridgeWrite(addr, port, value);
+            }
+
             if (addr >= 0xD000 && addr < 0xE000)
             {
                 int ioIdx = (int)(addr - 0xD000);
@@ -231,6 +247,11 @@ namespace C64.CPU
                 /// RAM underneath (CHAR ROM is read-only on real hardware).
                 ioUnderRam[ioIdx] = value;
                 return;
+            }
+
+            if (addr >= 0xE000 && OnCartridgeWrite is not null)
+            {
+                _ = OnCartridgeWrite(addr, port, value);
             }
 
             memory[addr] = value;
@@ -271,12 +292,22 @@ namespace C64.CPU
             }
 
             /// Hot paths first: zero page / stack / low RAM dominate.
+            if (addr < 0x8000) return memory[addr];
+
+            byte port = GetProcessorPortEffective();
+
+            if (OnCartridgeRead is not null)
+            {
+                byte? cart = OnCartridgeRead(addr, port);
+                if (cart.HasValue)
+                    return cart.Value;
+            }
+
             if (addr < 0xA000) return memory[addr];
 
             /// $A000-$BFFF: BASIC ROM if both LORAM and HIRAM set.
             if (addr < 0xC000)
             {
-                byte port = GetProcessorPortEffective();
                 if (basicRom is not null && (port & 0x03) == 0x03)
                     return basicRom[addr - 0xA000];
                 return memory[addr];
@@ -288,7 +319,6 @@ namespace C64.CPU
             /// $D000-$DFFF: I/O, CHAR ROM, or RAM. See PLA truth table.
             if (addr < 0xE000)
             {
-                byte port = GetProcessorPortEffective();
                 int loHi = port & 0x03;            /// LORAM | HIRAM
                 bool charen = (port & 0x04) != 0;
                 if (loHi == 0)
@@ -315,8 +345,14 @@ namespace C64.CPU
             }
 
             /// $E000-$FFFF: KERNAL ROM if HIRAM set.
-            byte p2 = GetProcessorPortEffective();
-            if (kernalRom is not null && (p2 & 0x02) != 0)
+            if (OnCartridgeRead is not null)
+            {
+                byte? cart = OnCartridgeRead(addr, port);
+                if (cart.HasValue)
+                    return cart.Value;
+            }
+
+            if (kernalRom is not null && (port & 0x02) != 0)
                 return kernalRom[addr - 0xE000];
             return memory[addr];
         }

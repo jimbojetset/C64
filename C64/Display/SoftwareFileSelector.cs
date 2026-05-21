@@ -22,7 +22,7 @@ namespace C64
     /// </summary>
     internal sealed class SoftwareFileSelector
     {
-        private const string PopupId = "Load Software";
+        private const string PopupId = "Load Software / ROM";
 
         private readonly IReadOnlyList<SoftwareFileEntry> _files;
         private bool _needsOpen = true;
@@ -61,17 +61,29 @@ namespace C64
 
             if (ImGui.BeginPopupModal(PopupId, ImGuiWindowFlags.AlwaysAutoResize | ImGuiWindowFlags.NoSavedSettings | ImGuiWindowFlags.NoMove))
             {
-                ImGui.Text("Select software to load:");
+                ImGui.Text("Select software or ROM to load:");
                 ImGui.Separator();
 
                 if (_files.Count == 0)
                 {
-                    ImGui.TextDisabled("No files found in the Software directory.");
+                    ImGui.TextDisabled("No loadable files found.");
                 }
                 else
                 {
                     DrawFileList();
                     HandleKeyboard();
+                }
+
+                ImGui.Separator();
+                if (ImGui.Button("Browse..."))
+                {
+                    string? path = NativeLoadFileDialog.Prompt();
+                    if (!string.IsNullOrWhiteSpace(path))
+                    {
+                        _selectedPath = path;
+                        _completed = true;
+                        ImGui.CloseCurrentPopup();
+                    }
                 }
 
                 ImGui.EndPopup();

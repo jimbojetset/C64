@@ -122,6 +122,7 @@ namespace C64
         private readonly object cia1Lock = new();
         private readonly object cia2Lock = new();
         private readonly ConcurrentQueue<(string Path, bool AutoRun)> pendingLoads = new();
+        private CrtCartridge? cartridge;
         private string? lastHostLoadedFile;
         private byte cia1PortA = 0xFF;
         private byte cia1PortB = 0xFF;
@@ -214,6 +215,7 @@ namespace C64
             cpu.memory.LoadBankedROM(Path.Combine("ROMS", "kernal.bin"), Memory.BankSlot.Kernal);
             cpu.memory.LoadBankedROM(Path.Combine("ROMS", "characters.bin"), Memory.BankSlot.Char);
             display = new Display(cpu);
+            cpu.OnJamDiagnostics = FormatJamDiagnostics;
             keyboard = new Keyboard(cpu);
             sound = new Sound();
             drive = new VirtualDrive1541();
@@ -444,6 +446,7 @@ namespace C64
             keyboard.Reset();
             sound.Reset();
             lastDatasetteReadHigh = datasette.ReadHigh;
+            cartridge?.Reset();
 
             display.EndReset();
         }
@@ -457,6 +460,9 @@ namespace C64
         /// <returns>True when the operation succeeds; otherwise, false.</returns>
         private bool OnIOWrite(ulong addr, byte value)
         {
+            if (cartridge is not null && cartridge.WriteIo(addr, value))
+                return true;
+
             switch (addr)
             {
                 case 0xD012:
@@ -867,6 +873,13 @@ namespace C64
         /// <returns>The byte value produced by the operation.</returns>
         private byte OnIORead(ulong addr, byte fallback)
         {
+            if (cartridge is not null)
+            {
+                byte? value = cartridge.ReadIo(addr);
+                if (value.HasValue)
+                    return value.Value;
+            }
+
             switch (addr)
             {
                 case 0xD011:
@@ -1763,6 +1776,9 @@ namespace C64
         /// </summary>
         private void TryHandleKernalIecTrap()
         {
+            if (cartridge is not null)
+                return;
+
             ulong pc = cpu.registers.PC;
             switch (pc)
             {
@@ -1906,6 +1922,11 @@ namespace C64
             if (cpu.registers.PC != 0xFFD5)
                 return;
 
+            /// A cartridge owns its boot/runtime environment. Do not reinterpret
+            /// cartridge KERNAL LOAD calls as host PRG/T64 loads.
+            if (cartridge is not null)
+                return;
+
             byte[] mem = cpu.memory.memory;
 
             /// KERNAL parameter block used by SETLFS/SETNAM:
@@ -2030,6 +2051,9 @@ namespace C64
             /// KERNAL SAVE entry. A points to a zero-page word containing the
             /// start address; X/Y contain the exclusive end address.
             if (cpu.registers.PC != 0xFFD8)
+                return;
+
+            if (cartridge is not null)
                 return;
 
             byte[] mem = cpu.memory.memory;
@@ -2242,8 +2266,8 @@ namespace C64
                 return null;
             }
 
-            /// LOAD"",x reuses the most recent host-backed file when available.
-            if (!string.IsNullOrWhiteSpace(lastHostLoadedFile) && File.Exists(lastHostLoadedFile))
+            /// LOAD"",x reuses the most recent loose host-backed program when available.
+            if (IsLooseHostProgram(lastHostLoadedFile) && File.Exists(lastHostLoadedFile!))
                 return lastHostLoadedFile;
 
             return null;
@@ -2367,6 +2391,19 @@ namespace C64
             cpu.registers.PC = (ushort)(((hi << 8) | lo) + 1);
         }
 
+        /// <summary>Formats host-side device state when the CPU halts on a JAM/KIL opcode.</summary>
+        private string? FormatJamDiagnostics()
+        {
+            byte[] m = cpu.memory.memory;
+            string cartState = cartridge?.FormatDebugState() ?? "Cartridge: none";
+            return string.Join(Environment.NewLine,
+                cartState,
+                $"VIC: raster={display.CurrentRasterLine} compare={display.RasterCompare} " +
+                $"D011=${m[0xD011]:X2} D012=${m[0xD012]:X2} D019=${m[0xD019]:X2} D01A=${m[0xD01A]:X2} " +
+                $"D01E=${m[0xD01E]:X2} D01F=${m[0xD01F]:X2}",
+                $"CIA1: DC04=${m[0xDC04]:X2} DC05=${m[0xDC05]:X2} DC0D=${m[0xDC0D]:X2} DC0E=${m[0xDC0E]:X2} DC0F=${m[0xDC0F]:X2}");
+        }
+
         /// <summary>Runs the main emulator loop.</summary>
         public void Run()
         {
@@ -2380,7 +2417,7 @@ namespace C64
             var cpuThread = new Thread(() =>
             {
                 try { cpu.Run(); }
-                catch (Exception) { }
+                catch (Exception ex) { Console.Error.WriteLine($"CPU thread stopped: {ex.Message}"); }
             })
             {
                 IsBackground = true,
@@ -2451,7 +2488,7 @@ namespace C64
 
                 while (pendingLoads.TryDequeue(out var entry))
                 {
-                    if (entry.AutoRun)
+                    if (entry.AutoRun && !IsCartridgePath(entry.Path))
                         _ = Task.Run(() => ResetLoadRun(entry.Path));
                     else
                         DoLoad(entry.Path);
@@ -2486,21 +2523,27 @@ namespace C64
         /// <summary>Performs a full emulator hardware reset.</summary>
         private void HardReset()
         {
+            ResetHostPeripheralsForCpuReset();
+            cpu.RequestReset();
+        }
+
+        /// <summary>Performs the host-side portion of a C64 reset before resetting CPU registers.</summary>
+        private void ResetHostPeripheralsForCpuReset()
+        {
             display.BeginReset();
 
             keyboard.Reset();
             display.JoystickPortOverlay = keyboard.ActiveJoystickPort;
             reu.Reset();
-            iecBus.SetHostLooseProgramPresent(!string.IsNullOrWhiteSpace(lastHostLoadedFile));
+            iecBus.SetHostLooseProgramPresent(IsLooseHostProgram(lastHostLoadedFile));
             iecBus.ResetDrive();
             display.DriveActivityLightOn = false;
-
-            cpu.RequestReset();
         }
 
         /// <summary>Handles a keyboard-triggered hard reset.</summary>
         private void HardResetFromKeyboard()
         {
+            DetachCartridge();
             ClearLastHostLoadedFile();
             HardReset();
         }
@@ -2724,6 +2767,12 @@ namespace C64
         /// <summary>Queues a host file to load and run.</summary>
         public void QueueLoadAndRun(string path) => pendingLoads.Enqueue((path, true));
 
+        /// <summary>Gets whether a host file should be inserted as a cartridge without BASIC staging.</summary>
+        /// <param name="path">The host file path.</param>
+        /// <returns>True when the file extension is a cartridge image.</returns>
+        private static bool IsCartridgePath(string path) =>
+            Path.GetExtension(path).Equals(".crt", StringComparison.OrdinalIgnoreCase);
+
         /// <summary>Loads program.</summary>
         private void LoadProgram()
         {
@@ -2789,11 +2838,16 @@ namespace C64
                 }
                 else if (ext == ".d64")
                 {
+                    DetachCartridge();
                     drive.AttachD64(path);
                     iecBus.AttachD64(path);
                     SetLastHostLoadedFile(path);
                     IReadOnlyList<string> files = drive.ListFiles();
                     Console.WriteLine($"Attached D64 {Path.GetFileName(path)} ({files.Count} PRG entries)");
+                }
+                else if (ext == ".crt")
+                {
+                    LoadCartridge(path);
                 }
                 else if (IsSidExtension(ext))
                 {
@@ -2821,6 +2875,35 @@ namespace C64
             SetLastHostLoadedFile(path);
         }
 
+        /// <summary>Loads and inserts a CRT cartridge image, then resets so cartridge boot code runs.</summary>
+        /// <param name="path">The path of the CRT file to load.</param>
+        private void LoadCartridge(string path)
+        {
+            CrtCartridge cart = CrtCartridge.Parse(File.ReadAllBytes(path));
+            bool wasCpuPaused = cpu.Paused;
+            cpu.SetPaused(true);
+
+            try
+            {
+                Thread.Sleep(20);
+                iecBus.EjectD64();
+                display.DriveActivityLightOn = false;
+                DetachCartridge();
+
+                cartridge = cart;
+                cpu.memory.OnCartridgeRead = cart.ReadMemory;
+                cpu.memory.OnCartridgeWrite = cart.WriteMemory;
+                SetLastHostLoadedFile(path);
+                Console.WriteLine($"Inserted CRT {Path.GetFileName(path)} ({cart.HardwareName}{FormatCartridgeName(cart.Name)})");
+                ResetHostPeripheralsForCpuReset();
+                cpu.ResetNow();
+            }
+            finally
+            {
+                cpu.SetPaused(wasCpuPaused);
+            }
+        }
+
         /// <summary>Gets whether a file extension names a SID music file.</summary>
         /// <param name="ext">The lower-case file extension to test.</param>
         /// <returns>True when the extension is a SID container extension.</returns>
@@ -2846,6 +2929,15 @@ namespace C64
         {
             iecBus.EjectD64();
             display.DriveActivityLightOn = false;
+            DetachCartridge();
+        }
+
+        /// <summary>Removes any inserted cartridge from the CPU memory map.</summary>
+        private void DetachCartridge()
+        {
+            cartridge = null;
+            cpu.memory.OnCartridgeRead = null;
+            cpu.memory.OnCartridgeWrite = null;
         }
 
         /// <summary>Sets last host loaded file.</summary>
@@ -2854,7 +2946,7 @@ namespace C64
         {
             lastHostLoadedFile = path;
             display.SetLoadedFileInTitle(path);
-            iecBus.SetHostLooseProgramPresent(!string.IsNullOrWhiteSpace(path));
+            iecBus.SetHostLooseProgramPresent(IsLooseHostProgram(path));
         }
 
         /// <summary>Clears last host loaded file.</summary>
@@ -2863,6 +2955,26 @@ namespace C64
             lastHostLoadedFile = null;
             display.SetLoadedFileInTitle(null);
             iecBus.SetHostLooseProgramPresent(false);
+        }
+
+        /// <summary>Gets whether the host file should make a loose virtual LOAD target visible on IEC.</summary>
+        /// <param name="path">The host file path.</param>
+        /// <returns>True when the file can act like a loose program file.</returns>
+        private static bool IsLooseHostProgram(string? path)
+        {
+            if (string.IsNullOrWhiteSpace(path))
+                return false;
+
+            string ext = Path.GetExtension(path).ToLowerInvariant();
+            return ext is ".prg" or ".bas" or ".txt" or ".t64";
+        }
+
+        /// <summary>Formats a CRT cartridge name for console logging.</summary>
+        /// <param name="name">The cartridge header name.</param>
+        /// <returns>A parenthesized suffix, or an empty string.</returns>
+        private static string FormatCartridgeName(string name)
+        {
+            return string.IsNullOrWhiteSpace(name) ? string.Empty : $", {name}";
         }
 
         /// <summary>Copies a PRG payload into emulated RAM and updates BASIC pointers when it loads at the BASIC start address.</summary>
