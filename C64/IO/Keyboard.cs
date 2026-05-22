@@ -278,15 +278,34 @@ namespace C64
 
             /// Let common text-entry punctuation land in the BASIC input buffer
             /// as the character the user typed on the host keyboard.
-            if (!ctrl && !alt && sym == SDL_Keycode.SDLK_8 && shift)
+            if (!ctrl && !alt && shift)
             {
-                keyQueue.Enqueue((byte)'*');
-                return false;
+                char? typed = sym switch
+                {
+                    SDL_Keycode.SDLK_8 => '*',
+                    SDL_Keycode.SDLK_9 => '(',
+                    SDL_Keycode.SDLK_0 => ')',
+                    SDL_Keycode.SDLK_MINUS => '_',
+                    SDL_Keycode.SDLK_EQUALS => '+',
+                    _ => null
+                };
+
+                if (typed.HasValue)
+                {
+                    keyQueue.Enqueue((byte)typed.Value);
+                    return false;
+                }
             }
 
             if (!ctrl && !alt && sym == SDL_Keycode.SDLK_KP_MULTIPLY)
             {
                 keyQueue.Enqueue((byte)'*');
+                return false;
+            }
+
+            if (!ctrl && !alt && sym == SDL_Keycode.SDLK_KP_PLUS)
+            {
+                keyQueue.Enqueue((byte)'+');
                 return false;
             }
 
