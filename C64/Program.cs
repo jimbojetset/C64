@@ -2764,9 +2764,9 @@ namespace C64
         {
             string[] candidates =
             {
+                Path.Combine(Environment.CurrentDirectory, "C64", "Software"),
                 Path.Combine(Environment.CurrentDirectory, "Software"),
                 Path.Combine(AppContext.BaseDirectory, "Software"),
-                Path.Combine(Environment.CurrentDirectory, "C64", "Software"),
             };
 
             return candidates.FirstOrDefault(Directory.Exists);
@@ -2779,7 +2779,10 @@ namespace C64
             if (existing is not null)
                 return existing;
 
-            string created = Path.Combine(Environment.CurrentDirectory, "Software");
+            string projectSoftware = Path.Combine(Environment.CurrentDirectory, "C64", "Software");
+            string created = File.Exists(Path.Combine(Environment.CurrentDirectory, "C64", "C64.csproj"))
+                ? projectSoftware
+                : Path.Combine(Environment.CurrentDirectory, "Software");
             Directory.CreateDirectory(created);
             return created;
         }
