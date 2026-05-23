@@ -2666,12 +2666,6 @@ namespace C64
                     enterExtraMs: 120).ConfigureAwait(false);
                 return;
             }
-
-            //await TypePetsciiLikeHumanAsync(
-            ///    new byte[] { (byte)'R', (byte)'U', (byte)'N', 0x0D },
-            ///    minInterKeyMs: 110,
-            ///    maxInterKeyMs: 220,
-            ///    enterExtraMs: 120).ConfigureAwait(false);
         }
 
         /// <summary>Types petscii like human async.</summary>
