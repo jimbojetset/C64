@@ -100,6 +100,8 @@ namespace C64
         private readonly bool[] spriteDisplayLivePointer = new bool[8];
         private readonly bool[] spriteDisplayYExpandPhase = new bool[8];
         private readonly bool[] spriteDisplayCrunchApplied = new bool[8];
+        private readonly bool[] spriteDisplayCrunched = new bool[8];
+        private readonly int[] spriteDisplayCrunchLinesRemaining = new int[8];
         private int spriteDisplayStateLine = -1;
         private bool horizontalBorderOpenedThisFrame;
         private bool verticalBorderOpenedThisFrame;
@@ -297,6 +299,8 @@ namespace C64
             Array.Clear(spriteDisplayLivePointer, 0, spriteDisplayLivePointer.Length);
             Array.Clear(spriteDisplayYExpandPhase, 0, spriteDisplayYExpandPhase.Length);
             Array.Clear(spriteDisplayCrunchApplied, 0, spriteDisplayCrunchApplied.Length);
+            Array.Clear(spriteDisplayCrunched, 0, spriteDisplayCrunched.Length);
+            Array.Clear(spriteDisplayCrunchLinesRemaining, 0, spriteDisplayCrunchLinesRemaining.Length);
             ClearRasterWriteEvents();
             ClearFramebuffers();
             /// Invalidate bitmap row cache on reset
@@ -2241,6 +2245,8 @@ namespace C64
                 Array.Clear(spriteDisplayLivePointer, 0, spriteDisplayLivePointer.Length);
                 Array.Clear(spriteDisplayYExpandPhase, 0, spriteDisplayYExpandPhase.Length);
                 Array.Clear(spriteDisplayCrunchApplied, 0, spriteDisplayCrunchApplied.Length);
+                Array.Clear(spriteDisplayCrunched, 0, spriteDisplayCrunched.Length);
+                Array.Clear(spriteDisplayCrunchLinesRemaining, 0, spriteDisplayCrunchLinesRemaining.Length);
             }
             else
             {
@@ -2250,7 +2256,21 @@ namespace C64
                     if (!spriteDisplayActive[s])
                         continue;
 
-                    if (spriteDisplayCrunchApplied[s])
+                    if (spriteDisplayCrunched[s])
+                    {
+                        if (spriteDisplayCrunchLinesRemaining[s] <= 0)
+                        {
+                            spriteDisplayActive[s] = false;
+                            spriteDisplayLivePointer[s] = false;
+                            spriteDisplayCrunchApplied[s] = false;
+                            spriteDisplayCrunched[s] = false;
+                            continue;
+                        }
+
+                        spriteDisplayMcBase[s] = (spriteDisplayMcBase[s] + 3) % 63;
+                        spriteDisplayCrunchLinesRemaining[s]--;
+                    }
+                    else if (spriteDisplayCrunchApplied[s])
                     {
                         spriteDisplayCrunchApplied[s] = false;
                     }
@@ -2274,6 +2294,8 @@ namespace C64
                         spriteDisplayActive[s] = false;
                         spriteDisplayLivePointer[s] = false;
                         spriteDisplayCrunchApplied[s] = false;
+                        spriteDisplayCrunched[s] = false;
+                        spriteDisplayCrunchLinesRemaining[s] = 0;
                     }
                 }
             }
@@ -2330,6 +2352,8 @@ namespace C64
                 spriteDisplayLivePointer[s] = false;
                 spriteDisplayYExpandPhase[s] = false;
                 spriteDisplayCrunchApplied[s] = false;
+                spriteDisplayCrunched[s] = false;
+                spriteDisplayCrunchLinesRemaining[s] = 0;
             }
         }
 
@@ -2340,7 +2364,7 @@ namespace C64
         /// <param name="newValue">The register value after the write.</param>
         private void MarkActiveSpritesCrunched(ushort address, int cycle, byte oldValue, byte newValue)
         {
-            if (address != 0xD017)
+            if (address != 0xD015 && address != 0xD017)
                 return;
 
             if (cycle < 10 || cycle > 20)
@@ -2349,18 +2373,17 @@ namespace C64
             for (int s = 0; s < 8; s++)
             {
                 byte mask = (byte)(1 << s);
-                if ((s & 1) == 0)
-                    continue;
 
-                if ((oldValue & mask) == 0 || (newValue & mask) != 0 || !spriteDisplayActive[s])
+                if (((oldValue ^ newValue) & mask) == 0 || !spriteDisplayActive[s])
                     continue;
 
                 int mcBase = spriteDisplayMcBase[s] & 0x3F;
                 int mc = (mcBase + 3) & 0x3F;
                 spriteDisplayMcBase[s] = ((mc | mcBase) & 0x15) | ((mc & mcBase) & 0x2A);
-                spriteDisplayLivePointer[s] = true;
                 spriteDisplayYExpandPhase[s] = false;
                 spriteDisplayCrunchApplied[s] = true;
+                spriteDisplayCrunched[s] = true;
+                spriteDisplayCrunchLinesRemaining[s] = Math.Max(spriteDisplayCrunchLinesRemaining[s], 62 - Math.Min(mcBase / 3, 20));
             }
         }
 
@@ -2399,14 +2422,18 @@ namespace C64
                 int mcBase = spriteDisplayMcBase[s] & 0x3F;
                 if (mcBase == 63) continue;
 
-                int spritePtr = spriteDisplayLivePointer[s] ? spritePtrs[s] : spriteDisplayPointer[s];
-                int dataAddr = (spriteDisplayLivePointer[s] ? bank : spriteDisplayBank[s]) + spritePtr * 64;
+                bool liveSpriteData = spriteDisplayLivePointer[s] || spriteDisplayCrunched[s];
+                int spritePtr = liveSpriteData ? spritePtrs[s] : spriteDisplayPointer[s];
+                int dataAddr = (liveSpriteData ? bank : spriteDisplayBank[s]) + spritePtr * 64;
                 int mc1 = C64Palette[spriteDisplayMc1Color[s] & 0x0F];
                 int mc2 = C64Palette[spriteDisplayMc2Color[s] & 0x0F];
+                int rowByte0 = spriteDisplayCrunched[s] ? mcBase % 63 : mcBase;
+                int rowByte1 = spriteDisplayCrunched[s] ? (rowByte0 + 1) % 63 : ((mcBase + 1) & 0x3F);
+                int rowByte2 = spriteDisplayCrunched[s] ? (rowByte0 + 2) % 63 : ((mcBase + 2) & 0x3F);
                 int rowBits =
-                    (cpu.memory.ReadVicByte((ulong)(dataAddr + mcBase)) << 16) |
-                    (cpu.memory.ReadVicByte((ulong)(dataAddr + ((mcBase + 1) & 0x3F))) << 8) |
-                    cpu.memory.ReadVicByte((ulong)(dataAddr + ((mcBase + 2) & 0x3F)));
+                    (cpu.memory.ReadVicByte((ulong)(dataAddr + rowByte0)) << 16) |
+                    (cpu.memory.ReadVicByte((ulong)(dataAddr + rowByte1)) << 8) |
+                    cpu.memory.ReadVicByte((ulong)(dataAddr + rowByte2));
 
                 if (mc)
                 {
