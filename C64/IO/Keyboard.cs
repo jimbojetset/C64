@@ -78,6 +78,9 @@ namespace C64
         /// <summary>Invoked when Ctrl+J is pressed.</summary>
         public Action? OnToggleJoystickPort { get; set; }
 
+        /// <summary>Invoked when Ctrl+T is pressed.</summary>
+        public Action? OnToggleTurbo { get; set; }
+
         /// <summary>Invoked when Ctrl+A is pressed.</summary>
         public Action? OnSelectAudioDevice { get; set; }
 
@@ -342,6 +345,7 @@ namespace C64
                     case SDL_Keycode.SDLK_l: OnNativeLoad?.Invoke(); return false;
                     case SDL_Keycode.SDLK_p: OnTogglePause?.Invoke(); return false;
                     case SDL_Keycode.SDLK_s: OnSave?.Invoke(); return false;
+                    case SDL_Keycode.SDLK_t: OnToggleTurbo?.Invoke(); return false;
                     case SDL_Keycode.SDLK_r:
                     case SDL_Keycode.SDLK_F12: OnHardReset?.Invoke(); return false;
                     case SDL_Keycode.SDLK_q: OnToggleMute?.Invoke(); return false;

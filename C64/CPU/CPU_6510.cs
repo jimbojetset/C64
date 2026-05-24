@@ -80,6 +80,7 @@ namespace C64.CPU
         private long totalCycles;
         public Action<int>? OnCyclesExecuted;
         private int externalStallCycles;
+        public bool PacingEnabled { get; set; } = true;
 
         /// <summary>Adds externally requested CPU stall cycles.</summary>
         /// <param name="cycles">The number of emulated CPU cycles to advance.</param>
@@ -228,13 +229,20 @@ namespace C64.CPU
                             break;
                     }
 
-                    WaitUntil(nextDeadline);
+                    if (PacingEnabled)
+                    {
+                        WaitUntil(nextDeadline);
 
-                    nextDeadline += ticksPerSlice;
+                        nextDeadline += ticksPerSlice;
 
-                    long now = Stopwatch.GetTimestamp();
-                    if (nextDeadline < now - ticksPerSlice * 4)
-                        nextDeadline = now + ticksPerSlice;
+                        long now = Stopwatch.GetTimestamp();
+                        if (nextDeadline < now - ticksPerSlice * 4)
+                            nextDeadline = now + ticksPerSlice;
+                    }
+                    else
+                    {
+                        nextDeadline = Stopwatch.GetTimestamp() + ticksPerSlice;
+                    }
                 }
             }
             finally

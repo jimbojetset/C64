@@ -29,16 +29,19 @@ namespace C64
             NativeLibrary.SetDllImportResolver(typeof(SDL2.SDL).Assembly, ResolveNativeLibrary);
 
             string? loadPath = null;
+            bool turbo = false;
 
             foreach (string arg in args)
             {
-                if (File.Exists(arg))
+                if (string.Equals(arg, "--turbo", StringComparison.OrdinalIgnoreCase))
+                    turbo = true;
+                else if (File.Exists(arg))
                     loadPath = arg;
             }
 
             try
             {
-                using var emu = new C64Emulator();
+                using var emu = new C64Emulator(turbo);
                 if (loadPath is not null)
                     emu.QueueLoadAndRun(loadPath);
                 emu.Run();
@@ -206,11 +209,13 @@ namespace C64
             string.Equals(Environment.GetEnvironmentVariable("C64_1541_NATIVE_LOAD"), "1", StringComparison.Ordinal);
 
         /// <summary>Initializes a new C64Emulator instance.</summary>
-        public C64Emulator()
+        public C64Emulator(bool turbo = false)
         {
             cts = new System.Threading.CancellationTokenSource();
             cpu = new CPU_6510(Clock_PAL);
             cpu.OnCyclesExecuted = OnCpuCyclesExecuted;
+            if (turbo)
+                cpu.PacingEnabled = false;
             cpu.memory.LoadBankedROM(Path.Combine("ROMS", "basic.bin"), Memory.BankSlot.Basic);
             cpu.memory.LoadBankedROM(Path.Combine("ROMS", "kernal.bin"), Memory.BankSlot.Kernal);
             cpu.memory.LoadBankedROM(Path.Combine("ROMS", "characters.bin"), Memory.BankSlot.Char);
@@ -254,8 +259,14 @@ namespace C64
             keyboard.OnToggleMute = ToggleMute;
             keyboard.OnTogglePause = TogglePause;
             keyboard.OnToggleJoystickPort = ToggleJoystickPort;
+            keyboard.OnToggleTurbo = ToggleTurbo;
             keyboard.OnSelectAudioDevice = SelectAudioDevice;
             display.JoystickPortOverlay = keyboard.ActiveJoystickPort;
+
+            if (turbo)
+            {
+                Console.WriteLine("Turbo mode enabled: CPU pacing disabled.");
+            }
 
             byte[] kernal = cpu.memory.GetBankedROM(Memory.BankSlot.Kernal)!;
             kernal[0xFCF5 - 0xE000] = 0xEA;
@@ -2555,6 +2566,14 @@ namespace C64
         private void TogglePause()
         {
             SetPaused(!IsPaused);
+        }
+
+        /// <summary>Toggles CPU pacing between normal PAL speed and turbo mode.</summary>
+        private void ToggleTurbo()
+        {
+            cpu.PacingEnabled = !cpu.PacingEnabled;
+            display.ShowTemporaryMessage(cpu.PacingEnabled ? "TURBO OFF" : "TURBO ON", 1200);
+            Console.WriteLine(cpu.PacingEnabled ? "Turbo mode disabled." : "Turbo mode enabled.");
         }
 
         /// <summary>Toggles keyboard and controller joystick input between C64 joystick ports and keyboard-only mode.</summary>
