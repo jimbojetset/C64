@@ -28,8 +28,8 @@ namespace C64.CPU
         private const byte FLAG_Z = 0x02;
         private const byte FLAG_I = 0x04;
         private const byte FLAG_D = 0x08;
-        private const byte FLAG_B = 0x10;
-        private const byte FLAG_T = 0x20;
+        //private const byte FLAG_B = 0x10;
+        //private const byte FLAG_T = 0x20;
         private const byte FLAG_V = 0x40;
         private const byte FLAG_N = 0x80;
 
@@ -39,10 +39,10 @@ namespace C64.CPU
         public bool Z { [MethodImpl(MethodImplOptions.AggressiveInlining)] get => (p & FLAG_Z) != 0; [MethodImpl(MethodImplOptions.AggressiveInlining)] set => p = value ? (byte)(p | FLAG_Z) : (byte)(p & ~FLAG_Z); } /// Zero
         public bool I { [MethodImpl(MethodImplOptions.AggressiveInlining)] get => (p & FLAG_I) != 0; [MethodImpl(MethodImplOptions.AggressiveInlining)] set => p = value ? (byte)(p | FLAG_I) : (byte)(p & ~FLAG_I); } /// Interrupt Disable
         public bool D { [MethodImpl(MethodImplOptions.AggressiveInlining)] get => (p & FLAG_D) != 0; [MethodImpl(MethodImplOptions.AggressiveInlining)] set => p = value ? (byte)(p | FLAG_D) : (byte)(p & ~FLAG_D); } /// Decimal
-        public bool B { [MethodImpl(MethodImplOptions.AggressiveInlining)] get => (p & FLAG_B) != 0; [MethodImpl(MethodImplOptions.AggressiveInlining)] set => p = value ? (byte)(p | FLAG_B) : (byte)(p & ~FLAG_B); } /// Break
+        //public bool B { [MethodImpl(MethodImplOptions.AggressiveInlining)] get => (p & FLAG_B) != 0; [MethodImpl(MethodImplOptions.AggressiveInlining)] set => p = value ? (byte)(p | FLAG_B) : (byte)(p & ~FLAG_B); } /// Break
         public bool V { [MethodImpl(MethodImplOptions.AggressiveInlining)] get => (p & FLAG_V) != 0; [MethodImpl(MethodImplOptions.AggressiveInlining)] set => p = value ? (byte)(p | FLAG_V) : (byte)(p & ~FLAG_V); } /// Overflow
         public bool N { [MethodImpl(MethodImplOptions.AggressiveInlining)] get => (p & FLAG_N) != 0; [MethodImpl(MethodImplOptions.AggressiveInlining)] set => p = value ? (byte)(p | FLAG_N) : (byte)(p & ~FLAG_N); } /// Negative
-        public bool T { [MethodImpl(MethodImplOptions.AggressiveInlining)] get => (p & FLAG_T) != 0; [MethodImpl(MethodImplOptions.AggressiveInlining)] set => p = value ? (byte)(p | FLAG_T) : (byte)(p & ~FLAG_T); } /// Test Flag Not Used By CPU
+        //public bool T { [MethodImpl(MethodImplOptions.AggressiveInlining)] get => (p & FLAG_T) != 0; [MethodImpl(MethodImplOptions.AggressiveInlining)] set => p = value ? (byte)(p | FLAG_T) : (byte)(p & ~FLAG_T); } /// Test Flag Not Used By CPU
 
         /// <summary>Initializes a new Flags instance.</summary>
         public Flags()
@@ -52,7 +52,7 @@ namespace C64.CPU
         /// <summary>Clears this instance to its reset state.</summary>
         public void Clear()
         {
-            p = (byte)(p & FLAG_T);
+            p = (byte)(p & 0x20);// & FLAG_T);
         }
 
         /// <summary>Sets flags from byte.</summary>
