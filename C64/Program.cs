@@ -205,6 +205,7 @@ namespace C64
         private bool cia2SerialDataPending;
         private byte cia2SerialInShiftReg;
         private int cia2SerialInBits;
+
         private static readonly bool Native1541LoadEnabled =
             string.Equals(Environment.GetEnvironmentVariable("C64_1541_NATIVE_LOAD"), "1", StringComparison.Ordinal);
 

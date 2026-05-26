@@ -761,38 +761,53 @@ namespace C64
                     case 0x00:
                         ClearInterruptFlags((byte)(IfrCb1 | IfrCb2));
                         return ReadPort(portB, ddrB, portBInput);
+
                     case 0x01:
                     case 0x0F:
                         ClearInterruptFlags((byte)(IfrCa1 | IfrCa2));
                         return ReadPort(portA, ddrA, portAInput);
+
                     case 0x02:
                         return ddrB;
+
                     case 0x03:
                         return ddrA;
+
                     case 0x04:
                         ClearInterruptFlags(IfrTimer1);
                         return (byte)(timer1Counter & 0xFF);
+
                     case 0x05:
                         return (byte)((timer1Counter >> 8) & 0xFF);
+
                     case 0x06:
                         return (byte)(timer1Latch & 0xFF);
+
                     case 0x07:
                         return (byte)(timer1Latch >> 8);
+
                     case 0x08:
                         ClearInterruptFlags(IfrTimer2);
                         return (byte)(timer2Counter & 0xFF);
+
                     case 0x09:
                         return (byte)((timer2Counter >> 8) & 0xFF);
+
                     case 0x0A:
                         return shiftRegister;
+
                     case 0x0B:
                         return acr;
+
                     case 0x0C:
                         return pcr;
+
                     case 0x0D:
                         return ReadInterruptFlags();
+
                     case 0x0E:
                         return (byte)(ier | 0x80);
+
                     default:
                         return 0x00;
                 }
@@ -809,20 +824,25 @@ namespace C64
                         portB = value;
                         ClearInterruptFlags((byte)(IfrCb1 | IfrCb2));
                         break;
+
                     case 0x01:
                     case 0x0F:
                         portA = value;
                         ClearInterruptFlags((byte)(IfrCa1 | IfrCa2));
                         break;
+
                     case 0x02:
                         ddrB = value;
                         break;
+
                     case 0x03:
                         ddrA = value;
                         break;
+
                     case 0x04:
                         timer1Latch = (ushort)((timer1Latch & 0xFF00) | value);
                         break;
+
                     case 0x05:
                         timer1Latch = (ushort)((timer1Latch & 0x00FF) | (value << 8));
                         timer1Counter = timer1Latch;
@@ -830,16 +850,20 @@ namespace C64
                         timer1HasInterrupted = false;
                         ClearInterruptFlags(IfrTimer1);
                         break;
+
                     case 0x06:
                         timer1Latch = (ushort)((timer1Latch & 0xFF00) | value);
                         break;
+
                     case 0x07:
                         timer1Latch = (ushort)((timer1Latch & 0x00FF) | (value << 8));
                         ClearInterruptFlags(IfrTimer1);
                         break;
+
                     case 0x08:
                         timer2Latch = (ushort)((timer2Latch & 0xFF00) | value);
                         break;
+
                     case 0x09:
                         timer2Latch = (ushort)((timer2Latch & 0x00FF) | (value << 8));
                         timer2Counter = timer2Latch;
@@ -847,19 +871,24 @@ namespace C64
                         timer2HasInterrupted = false;
                         ClearInterruptFlags(IfrTimer2);
                         break;
+
                     case 0x0A:
                         shiftRegister = value;
                         ClearInterruptFlags(IfrShift);
                         break;
+
                     case 0x0B:
                         acr = value;
                         break;
+
                     case 0x0C:
                         pcr = value;
                         break;
+
                     case 0x0D:
                         ClearInterruptFlags((byte)(value & 0x7F));
                         break;
+
                     case 0x0E:
                         if ((value & 0x80) != 0)
                             ier |= (byte)(value & 0x7F);

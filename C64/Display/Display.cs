@@ -388,7 +388,6 @@ namespace C64
                 /// Fallback to direct file load if anything goes wrong inspecting memory.
                 return File.ReadAllBytes(Path.Combine("ROMS", "characters.bin"));
             }
-
         }
 
         /// <summary>Starts this component.</summary>
