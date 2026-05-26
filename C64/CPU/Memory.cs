@@ -87,7 +87,7 @@ namespace C64.CPU
 
         /// Optional cartridge write hook. Cartridge ROM/flash hardware may
         /// observe writes, but C64 RAM underneath still receives the byte.
-        public Func<ulong, byte, byte, bool>? OnCartridgeWrite;
+        public Func<ulong, byte, bool>? OnCartridgeWrite;
 
         /// Optional whole-address-space write hook for simple device maps
         /// that do not use C64 banking, such as the 1541 drive CPU memory map.
@@ -217,7 +217,7 @@ namespace C64.CPU
 
             if (addr >= 0x8000 && addr < 0xD000 && OnCartridgeWrite is not null)
             {
-                _ = OnCartridgeWrite(addr, port, value);
+                _ = OnCartridgeWrite(addr, port);
             }
 
             if (addr >= 0xD000 && addr < 0xE000)
@@ -251,7 +251,7 @@ namespace C64.CPU
 
             if (addr >= 0xE000 && OnCartridgeWrite is not null)
             {
-                _ = OnCartridgeWrite(addr, port, value);
+                _ = OnCartridgeWrite(addr, port);
             }
 
             memory[addr] = value;

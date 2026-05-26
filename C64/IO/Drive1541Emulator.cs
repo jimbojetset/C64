@@ -131,7 +131,7 @@ namespace C64
         /// <param name="dataRelease">Whether the C64 has released the DATA line.</param>
         /// <param name="clockRelease">Whether the C64 has released the CLOCK line.</param>
         /// <param name="atnRelease">Whether the C64 has released the ATN line.</param>
-        public void BeginLowLevelActivity(bool dataRelease, bool clockRelease, bool atnRelease)
+        public void BeginLowLevelActivity()
         {
             lowLevelActivityActive = true;
         }
@@ -213,7 +213,7 @@ namespace C64
             if (IsViaAddress(a, Via2Base))
             {
                 via2.Write((byte)(a & 0x0F), value);
-                disk.UpdateControl(via2.PortBOutput, via2.DataDirectionB);
+                disk.UpdateControl(via2.PortBOutput);
                 return true;
             }
 
@@ -423,7 +423,7 @@ namespace C64
             /// <summary>Updates motor and stepper state from VIA2 port B control outputs.</summary>
             /// <param name="portB">The VIA2 port B output latch.</param>
             /// <param name="ddrB">The VIA2 port B data-direction register.</param>
-            public void UpdateControl(byte portB, byte ddrB)
+            public void UpdateControl(byte portB)
             {
                 bool newMotorOn = (portB & 0x04) == 0;
                 if (newMotorOn != motorOn)
@@ -518,13 +518,6 @@ namespace C64
                 cycleRemainder = 0;
                 currentByte = 0x55;
                 trackBytes = image is null ? Array.Empty<byte>() : BuildGcrTrack(image, track);
-            }
-
-            /// <summary>Gets the current whole track number derived from the half-track position.</summary>
-            /// <returns>The one-based whole track number.</returns>
-            private int CurrentTrackNumber()
-            {
-                return Math.Clamp((halfTrack + 1) / 2, 1, 35);
             }
 
             /// <summary>Builds an approximate GCR byte stream for a D64 track.</summary>

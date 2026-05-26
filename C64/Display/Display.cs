@@ -77,8 +77,8 @@ namespace C64
 
         private byte[] renderBuf = new byte[FrameW * FrameH * 4];
         private byte[] displayBuf = new byte[FrameW * FrameH * 4];
-        private byte[] presentationBuf = new byte[FrameW * FrameH * 4];
-        private byte[] statusOverlayBuf = new byte[StatusOverlayW * StatusOverlayH * 4];
+        private readonly byte[] presentationBuf = new byte[FrameW * FrameH * 4];
+        private readonly byte[] statusOverlayBuf = new byte[StatusOverlayW * StatusOverlayH * 4];
         private byte[] spriteOwnerRenderBuf = new byte[FrameW * FrameH];
         private byte[] spriteOwnerDisplayBuf = new byte[FrameW * FrameH];
         private readonly object swapLock = new object();
@@ -1647,7 +1647,7 @@ namespace C64
             ApplyOuterBorders(frameY, horizontalBorderOpen);
             ApplyInnerBorders(frameY, playY, d011, d016, horizontalBorderOpen, verticalBorderOpen);
 
-            RenderSpritesScanline(frameY, d011, d016, horizontalBorderOpen, verticalBorderOpen, bank, spriteEnable, spriteXExpand, spriteYExpand, spriteMulticolor, spritePriority, spriteXHigh, spriteMc1Color, spriteMc2Color, spriteColors, spriteXPos, spriteYPos, spritePtrs);
+            RenderSpritesScanline(frameY, d011, d016, horizontalBorderOpen, verticalBorderOpen, bank, spritePtrs);
         }
 
         /// <summary>Gets vic bank base.</summary>
@@ -2403,7 +2403,7 @@ namespace C64
         /// <param name="spriteXPos">The per-sprite X positions.</param>
         /// <param name="spriteYPos">The per-sprite Y positions.</param>
         /// <param name="spritePtrs">The per-sprite data pointers.</param>
-        private void RenderSpritesScanline(int frameY, byte d011, byte d016, bool horizontalBorderOpen, bool verticalBorderOpen, int bank, byte spriteEnable, byte spriteXExpand, byte spriteYExpand, byte spriteMulticolor, byte spritePriority, byte spriteXHigh, byte spriteMc1Color, byte spriteMc2Color, byte[] spriteColors, byte[] spriteXPos, byte[] spriteYPos, byte[] spritePtrs)
+        private void RenderSpritesScanline(int frameY, byte d011, byte d016, bool horizontalBorderOpen, bool verticalBorderOpen, int bank, byte[] spritePtrs)
         {
             byte[] mem = cpu.memory.memory;
 

@@ -84,24 +84,6 @@ namespace C64.IO
         }
 
         /// <summary>
-        /// Convenience wrapper that produces a flattened debug string showing
-        /// how a given input would be expanded (literals as themselves,
-        /// PETSCII bytes as <c>[HH]</c>). Intended for diagnostics / tests.
-        /// </summary>
-        public static string DebugExpand(string text)
-        {
-            var sb = new StringBuilder();
-            foreach (var tok in Parse(text))
-            {
-                if (tok.IsPetscii)
-                    sb.Append('[').Append(tok.Byte.ToString("X2", CultureInfo.InvariantCulture)).Append(']');
-                else
-                    sb.Append(tok.Char);
-            }
-            return sb.ToString();
-        }
-
-        /// <summary>
         /// Attempts to expand the inside of a <c>{...}</c> token to a single
         /// PETSCII byte plus repeat count. Returns false for unknown tokens.
         /// </summary>

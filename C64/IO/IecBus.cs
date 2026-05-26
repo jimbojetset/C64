@@ -105,7 +105,7 @@ namespace C64
                 (drive.HasMedia || hostLooseProgramPresent))
             {
                 lowLevelActivityReported = true;
-                fullDrive?.BeginLowLevelActivity(hostDataRelease, hostClockRelease, hostAtnRelease);
+                fullDrive?.BeginLowLevelActivity();
             }
 
             if (LowLevelEnabled && fullDrive is null)

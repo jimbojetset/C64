@@ -139,7 +139,7 @@ namespace C64
         /// <param name="processorPort">The effective $0001 processor-port value.</param>
         /// <param name="value">The byte being written.</param>
         /// <returns>True when cartridge ROM was visible and observed the write.</returns>
-        public bool WriteMemory(ulong addr, byte processorPort, byte value)
+        public bool WriteMemory(ulong addr, byte processorPort)
         {
             int address = (int)(addr & 0xFFFF);
             if (!TryGetVisibleRom(address, processorPort, out _, out _))

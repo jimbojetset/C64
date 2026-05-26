@@ -96,7 +96,7 @@ namespace C64
         private int _lastResReg = -1;
 
         /// Capacitor state modeling for smoother filter transients and improved stability
-        private double _filterCapacitorLeakage = 0.9999;  /// capacitor discharge modeling
+        private readonly double _filterCapacitorLeakage = 0.9999;  /// capacitor discharge modeling
 
         private double _resonancePeakDamping = 1.0;  /// dynamic damping for high Q stability
         private double _volDacRaw;
@@ -648,7 +648,7 @@ namespace C64
 
                 /// D418 sample effects are encoded as rapid volume writes.
                 /// Capture each write here so sub-sample transitions are kept.
-                HandleVolumeDacOnWrite(d.Reg, previous, d.Value);
+                HandleVolumeDacOnWrite(d.Reg, d.Value);
             }
         }
 
@@ -719,7 +719,7 @@ namespace C64
         /// <param name="reg">The SID register index.</param>
         /// <param name="previous">The previous value before the update.</param>
         /// <param name="value">The value supplied to the operation.</param>
-        private void HandleVolumeDacOnWrite(int reg, byte previous, byte value)
+        private void HandleVolumeDacOnWrite(int reg, byte value)
         {
             if (reg != 24)
                 return;
@@ -825,7 +825,7 @@ namespace C64
             }
 
             /// ?? Envelope ??
-            StepEnvelope(v, gate, ad, sr);
+            StepEnvelope(v, ad, sr);
 
             /// ?? Waveform ??
             int waveform = ComputeWaveform(ctrl, v, pw12, ring, syncSrc.PhaseAccum);
@@ -960,7 +960,7 @@ namespace C64
         /// <param name="gate">Whether the SID gate bit is currently set.</param>
         /// <param name="ad">The attack/decay register value.</param>
         /// <param name="sr">The sustain/release register value.</param>
-        private static void StepEnvelope(Voice v, bool gate, byte ad, byte sr)
+        private static void StepEnvelope(Voice v, byte ad, byte sr)
         {
             int attackIdx = (ad >> 4) & 0x0F;
             int decayIdx = ad & 0x0F;
