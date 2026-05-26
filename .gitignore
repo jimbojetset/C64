@@ -102,8 +102,7 @@ StyleCopReport.xml
 *.DS_Store
 
 # Game Specific Files
-*.bmp
-*.jpg
+
 
 
 # Chutzpah Test files
