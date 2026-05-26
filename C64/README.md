@@ -34,6 +34,7 @@ Most-used non-standard key mappings:
 | Pause/unpause emulator | `Ctrl+P` |
 | Select audio device | `Ctrl+A` |
 | Mute/unmute audio | `Ctrl+Q` |
+| Paste clipboard text as PETSCII | `Ctrl+V` or `Shift+Insert` |
 
 For the complete mapping and notes, see the full table in the keyboard section below.
 
@@ -111,6 +112,56 @@ Press `Ctrl+S` to open the ImGui save dialog for the current BASIC program. The 
 
 Native C64 `SAVE` commands also write standard `.prg` files into `C64/Software`. For example, `SAVE "HELLO",8` creates `HELLO.prg`. Disk-style prefixes and options such as `SAVE "0:HELLO,P",8` are normalized to a host filename like `HELLO.prg`.
 
+### Clipboard Paste (BASIC Listings)
+
+Press `Ctrl+V` (or `Shift+Insert`) at the C64 `READY.` prompt to paste the host clipboard into the emulator. The clipboard text is converted to PETSCII and pushed through the same keyboard buffer (`$0277`, count at `$00C6`) that the KERNAL fills from real keystrokes, so BASIC tokenizes each line exactly as if you had typed it. Each input line is terminated with `RETURN` (`$0D`), making multi-line BASIC listings auto-enter line by line.
+
+Because the queue is paced by the CIA tick driven `DrainQueue`, the C64 sees the paste at native typing speed (one buffer-full per RETURN) rather than all at once. This means large listings visibly type themselves in, which is required for BASIC to tokenize each line correctly.
+
+#### VICE-Style PETSCII Token Parser
+
+Text pasted via `Ctrl+V` is first scanned by the VICE-compatible token parser in `C64/IO/VicePetsciiTokenParser.cs`. Any `{...}` escape in the clipboard text is expanded to one or more raw PETSCII bytes before the surrounding characters are converted from ASCII. Unknown tokens (typos, foreign formats) are passed through verbatim, including the braces, so the existing ASCII path can decide what to do with them.
+
+Supported token forms (case-insensitive, whitespace and dash tolerant):
+
+| Form | Example | Result |
+|---|---|---|
+| Named control | `{home}`, `{clr}`, `{return}`, `{rvson}`, `{rvsoff}`, `{stop}` | One PETSCII byte |
+| Color | `{wht}`, `{red}`, `{cyn}`, `{pur}`, `{grn}`, `{blu}`, `{yel}`, `{orng}`, `{brn}`, `{lred}`, `{gry1}`, `{gry2}`, `{lgrn}`, `{lblu}`, `{gry3}`, `{blk}` | One PETSCII color code (`$05`, `$1C`, ...) |
+| Function key | `{f1}`...`{f8}` | One PETSCII byte (`$85`, `$89`, ...) |
+| Repeat suffix | `{right*39}`, `{down*5}` | Byte repeated N times |
+| VICE prefix repeat | `{5 space}`, `{39 right}` | Byte repeated N times |
+| Modifier | `{shift-a}`, `{cbm-q}`, `{ctrl-c}` | Shifted, Commodore, or Control byte |
+| Hex raw | `{$93}`, `{$a0*3}` | Raw PETSCII byte (optional repeat) |
+| Decimal raw | `{147}`, `{160*4}` | Raw PETSCII byte (optional repeat) |
+
+Example:
+
+```basic
+16 x$="{home}{right*39}":rem x cursor petscii chars
+```
+
+expands to `16 X$="` + `$13` (HOME) + 39 x `$1D` (CURSOR RIGHT) + `":REM X CURSOR PETSCII CHARS` + RETURN, exactly as if you had entered the control codes while in BASIC quote mode.
+
+#### BASIC Abbreviation Heuristic (Mixed-Case Listings)
+
+Many classic C64 listings use the SHIFT-letter convention for BASIC keyword abbreviations: lowercase letters mean an unshifted keystroke, while UPPERCASE letters mean a SHIFTED keystroke. The C64 BASIC tokenizer recognizes those shifted letters (`$C1`-`$DA`) as the second letter of a keyword abbreviation, so for example `tA` -> `TAB(`, `rN` -> `RND`, `gO` -> `GOTO`, `pE` -> `PEEK`.
+
+When `PasteClipboardText` sees clipboard text that contains **both** lowercase and uppercase letters (outside `{...}` token spans), it automatically switches the ASCII-to-PETSCII conversion into **abbreviation mode**:
+
+- `a..z` -> PETSCII `$41..$5A` (unshifted letters)
+- `A..Z` -> PETSCII `$C1..$DA` (shifted letters - recognized as abbreviation second letters)
+
+Pure uppercase or pure lowercase listings keep the original case-insensitive mapping (everything -> `$41..$5A`), so ordinary `LIST` output, all-caps tutorial listings, and all-lowercase modern listings continue to paste exactly as before. Content inside `{...}` is excluded from the heuristic so tokens such as `{SHIFT-A}` or `{WHT}` cannot accidentally flip the mode.
+
+This lets dense magazine-style one-liners such as:
+
+```
+1?tArN(0)*39)"*":gEk:p=p+(k=1)-(k=9):pO1284+p,22:onp<420aN(pE(1324+p)=42)+2gO,1
+```
+
+paste in and tokenize as the equivalent of `1 PRINT TAB(RND(0)*39)"*":GETK:P=P+...:POKE1284+P,22:ONP<420AND(PEEK(1324+P)=42)+2GOTO,1` without manual fix-up.
+
 ### Audio Device Selection
 
 At startup, the emulator automatically opens playback device `[0]` from SDL's audio device list. Press `Ctrl+A` while the emulator is running to open the ImGui audio-device selector and switch output devices. The emulator pauses while the selector is active and restores the previous pause state after selecting or cancelling.
@@ -126,6 +177,7 @@ At startup, the emulator automatically opens playback device `[0]` from SDL's au
 | `Ctrl+Q` | Toggle audio mute; shows a small mute icon in the bottom-left corner while muted |
 | `Ctrl+L` | Open native file picker to load and run software, disks, tapes, cartridges, or SID files |
 | `Ctrl+S` | Open save dialog for current BASIC program; saves a `.prg` into `Software` |
+| `Ctrl+V` or `Shift+Insert` | Paste host clipboard text into the C64 keyboard buffer as PETSCII (see Clipboard Paste below) |
 | `Shift+S` | Full SDL window screenshot (saved as `c64_screenshot_*.png`) |
 | `Ctrl+Shift+S` | Undistorted viewport screenshot (saved as `c64_viewport_screenshot_*.png`) |
 | `Ctrl+Alt+Shift+S` | Sprite-index debug screenshot (saved as `c64_sprite_debug_screenshot_*.png`) |

@@ -12,6 +12,7 @@
 // ============================================================================
 
 using C64.CPU;
+using C64.IO;
 using System.Collections.Concurrent;
 using static SDL2.SDL;
 
@@ -174,6 +175,123 @@ namespace C64
 
         /// <summary>Enqueues a raw PETSCII byte for typed-text injection (e.g. from file load).</summary>
         public void EnqueuePetscii(byte petscii) => keyQueue.Enqueue(petscii);
+
+        /// <summary>
+        /// Reads text from the host clipboard and enqueues it as PETSCII so the
+        /// running C64 program (typically the BASIC READY prompt) receives it
+        /// exactly as if the user had typed it. Each line is terminated with
+        /// RETURN ($0D) so multi-line BASIC listings auto-enter.
+        /// </summary>
+        /// <returns>True if any characters were enqueued; otherwise false.</returns>
+        public bool PasteClipboardText()
+        {
+            if (SDL_HasClipboardText() == SDL_bool.SDL_FALSE)
+                return false;
+
+            string? text = SDL_GetClipboardText();
+            if (string.IsNullOrEmpty(text))
+                return false;
+
+            /// Normalize line endings so CRLF / CR / LF all become single RETURNs.
+            text = text.Replace("\r\n", "\n").Replace('\r', '\n');
+
+            /// Heuristic: if the clipboard mixes lowercase and uppercase letters,
+            /// assume the listing follows the C64 abbreviation convention where
+            /// UPPERCASE means a SHIFTED keystroke (PETSCII $C1-$DA, used for
+            /// keyword abbreviations like tA -> TAB(, rN -> RND, gO -> GOTO).
+            /// Otherwise fall back to the case-insensitive mapping used for
+            /// ordinary listings (everything -> $41-$5A).
+            bool abbreviationMode = DetectAbbreviationMode(text);
+
+            bool any = false;
+            string[] lines = text.Split('\n');
+            for (int i = 0; i < lines.Length; i++)
+            {
+                string line = lines[i];
+
+                /// Expand VICE-style {tokens} (e.g. {home}, {right*39}, {5 space},
+                /// {shift-a}, {$93}, {147}) before falling back to the literal
+                /// ASCII-to-PETSCII path used for ordinary characters.
+                foreach (var tok in VicePetsciiTokenParser.Parse(line))
+                {
+                    if (tok.IsPetscii)
+                    {
+                        keyQueue.Enqueue(tok.Byte);
+                        any = true;
+                    }
+                    else
+                    {
+                        byte pet = AsciiCharToPetscii(tok.Char, abbreviationMode);
+                        if (pet != 0)
+                        {
+                            keyQueue.Enqueue(pet);
+                            any = true;
+                        }
+                    }
+                }
+
+                /// Terminate every line except a trailing empty one with RETURN.
+                if (i < lines.Length - 1 || line.Length > 0)
+                {
+                    keyQueue.Enqueue(0x0D);
+                    any = true;
+                }
+            }
+
+            return any;
+        }
+
+        /// <summary>
+        /// Returns true when the clipboard text contains BOTH lowercase and
+        /// uppercase ASCII letters outside of <c>{...}</c> token spans, which
+        /// indicates a C64 BASIC listing using the lowercase=unshifted /
+        /// UPPERCASE=SHIFTED abbreviation convention.
+        /// </summary>
+        private static bool DetectAbbreviationMode(string text)
+        {
+            bool hasLower = false;
+            bool hasUpper = false;
+            int depth = 0;
+            for (int i = 0; i < text.Length; i++)
+            {
+                char ch = text[i];
+                if (ch == '{') { depth++; continue; }
+                if (ch == '}') { if (depth > 0) depth--; continue; }
+                if (depth > 0) continue;
+
+                if (ch >= 'a' && ch <= 'z') hasLower = true;
+                else if (ch >= 'A' && ch <= 'Z') hasUpper = true;
+                if (hasLower && hasUpper) return true;
+            }
+            return false;
+        }
+
+        /// <summary>
+        /// Converts a host ASCII character to a PETSCII byte suitable for the
+        /// keyboard buffer.
+        /// </summary>
+        /// <param name="ch">The character to convert.</param>
+        /// <param name="abbreviationMode">
+        /// When true, UPPERCASE letters are emitted as SHIFTED PETSCII bytes
+        /// ($C1-$DA) so BASIC keyword abbreviations such as <c>tA</c> -> TAB(
+        /// tokenize correctly; lowercase letters become unshifted PETSCII
+        /// ($41-$5A). When false (default), letters map case-insensitively to
+        /// $41-$5A, matching the behavior used for plain listings.
+        /// </param>
+        private static byte AsciiCharToPetscii(char ch, bool abbreviationMode = false)
+        {
+            if (abbreviationMode)
+            {
+                if (ch >= 'a' && ch <= 'z') return (byte)('A' + (ch - 'a'));
+                if (ch >= 'A' && ch <= 'Z') return (byte)(0xC1 + (ch - 'A'));
+            }
+            else
+            {
+                if (ch >= 'a' && ch <= 'z') return (byte)('A' + (ch - 'a'));
+            }
+            if (ch >= ' ' && ch <= '~') return (byte)ch;
+            return 0;
+        }
 
         /// <summary>Toggles keyboard joystick input between C64 port 1, port 2, and keyboard-only mode.</summary>
         /// <returns>The newly selected keyboard joystick port number, or 0 when keyboard mapping is disabled.</returns>
@@ -346,11 +464,19 @@ namespace C64
                     case SDL_Keycode.SDLK_p: OnTogglePause?.Invoke(); return false;
                     case SDL_Keycode.SDLK_s: OnSave?.Invoke(); return false;
                     case SDL_Keycode.SDLK_t: OnToggleTurbo?.Invoke(); return false;
+                    case SDL_Keycode.SDLK_v: PasteClipboardText(); return false;
                     case SDL_Keycode.SDLK_r:
                     case SDL_Keycode.SDLK_F12: OnHardReset?.Invoke(); return false;
                     case SDL_Keycode.SDLK_q: OnToggleMute?.Invoke(); return false;
                     case SDL_Keycode.SDLK_w: return true;
                 }
+            }
+
+            /// Shift+Insert is a common host-side "paste" shortcut.
+            if (shift && !ctrl && !alt && sym == SDL_Keycode.SDLK_INSERT)
+            {
+                PasteClipboardText();
+                return false;
             }
 
             byte jmask = JoystickMaskFromKey(sym);
