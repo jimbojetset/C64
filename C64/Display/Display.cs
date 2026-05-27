@@ -108,7 +108,7 @@ namespace C64
 
         private readonly byte[] cachedScreenRow = new byte[40];
         private readonly byte[][] cachedBitmapRows = new byte[8][];
-        private readonly int[] cachedBitmapRowNum = new int[8];  /// Track which row number each cache came from
+        private readonly int[] cachedBitmapRowNum = new int[8];
 
         private IntPtr window;
         private IntPtr glContext;
