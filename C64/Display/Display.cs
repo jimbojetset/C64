@@ -32,10 +32,10 @@ namespace C64
         public const int FrameH = 272;
         private const int MonitorImageW = 873;
         private const int MonitorImageH = 913;
-        private const int MonitorScreenX = 177;
-        private const int MonitorScreenY = 85;
-        private const int MonitorScreenW = 516;
-        private const int MonitorScreenH = 426;
+        private const int MonitorScreenX = 175;
+        private const int MonitorScreenY = 65;
+        private const int MonitorScreenW = 520;
+        private const int MonitorScreenH = 464;
         private const double MonitorScreenOverscan = 1.0;
         private const int StatusOverlayScale = 4;
         private const int StatusOverlayW = 64;
@@ -106,9 +106,9 @@ namespace C64
         private bool horizontalBorderOpenedThisFrame;
         private bool verticalBorderOpenedThisFrame;
 
-        private byte[] cachedScreenRow = new byte[40];
-        private byte[][] cachedBitmapRows = new byte[8][];
-        private int[] cachedBitmapRowNum = new int[8];  /// Track which row number each cache came from
+        private readonly byte[] cachedScreenRow = new byte[40];
+        private readonly byte[][] cachedBitmapRows = new byte[8][];
+        private readonly int[] cachedBitmapRowNum = new int[8];  /// Track which row number each cache came from
 
         private IntPtr window;
         private IntPtr glContext;
@@ -501,8 +501,8 @@ namespace C64
 
                     vec2 centered = Frag_UV * 2.0 - 1.0;
                     float r2 = dot(centered, centered);
-                    vec2 sampleUv = centered * (1.0 + 0.0825 * r2);
-                    sampleUv.x = centered.x * (1.0 + 0.04125 * r2);
+                    vec2 sampleUv = centered * (1.0 + 0.0300 * r2);
+                    sampleUv.x = centered.x * (1.0 + 0.0150 * r2);
 
                     if (abs(sampleUv.x) > 1.0 || abs(sampleUv.y) > 1.0)
                     {
