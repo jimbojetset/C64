@@ -99,8 +99,10 @@ namespace C64.CPU
 
         /// Optional notification fired whenever the CPU writes to $FF00.
         /// Used by the REU (8726) to detect FF00-triggered DMA. The hook does
-        /// not suppress the actual store; the write proceeds normally.
-        public Action<byte>? OnFF00Write;
+        /// not suppress the actual store; the write proceeds normally. The
+        /// memory reference is supplied so the hook can perform DMA against
+        /// the live CPU bus.
+        public Action<Memory, byte>? OnFF00Write;
 
         /// <summary>Initializes a new Memory instance.</summary>
         /// <param name="size">The size of the emulated memory in bytes.</param>
@@ -196,7 +198,7 @@ namespace C64.CPU
         public void WriteByte(ulong addr, byte value)
         {
             if (addr == 0xFF00 && OnFF00Write is not null)
-                OnFF00Write(value);
+                OnFF00Write(this, value);
 
             if (!bankingEnabled)
             {

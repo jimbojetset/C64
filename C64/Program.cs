@@ -237,7 +237,8 @@ namespace C64
             datasette = new DatasetteDevice();
             reu = new REU(128);
             reu.OnIrqRequest = () => cpu.InitiateIRQ(0xFFFE);
-            cpu.memory.OnFF00Write = _ => reu.NotifyFF00Write();
+            reu.OnExecuteNow = () => reu.RunDmaTransfer(cpu.memory);
+            cpu.memory.OnFF00Write = (mem, _) => reu.NotifyFF00Write(mem);
             keyboard.OnHardReset = HardResetFromKeyboard;
             keyboard.OnNativeLoad = LoadProgramFromNativeFileDialog;
             keyboard.OnSave = SaveProgram;
@@ -1724,7 +1725,7 @@ namespace C64
         /// behavior follows CPU progression instead of coarse host wall-clock ticks.
 
         /// <summary>
-        /// Steps peripherals after CPU execution, including VIC raster timing, CIA timers/TOD, REU DMA, datasette pulses, and keyboard queue draining.
+        /// Steps peripherals after CPU execution, including VIC raster timing, CIA timers/TOD, REU DMA stall accounting, datasette pulses, and keyboard queue draining.
         /// </summary>
         /// <param name="cycles">The number of emulated CPU cycles to advance.</param>
         private void OnCpuCyclesExecuted(int cycles)
@@ -1748,7 +1749,18 @@ namespace C64
                 _ = display.StepCycles(vicSteal, accountBusSteal: false);
             }
 
-            uint elapsed = step + vicSteal;
+            /// REU DMA stalls the 6510 for the duration of the transfer. Any
+            /// cycles the 8726 burned on its own bus are billed to the CPU
+            /// and the other peripherals step by the same amount so VIC, CIA
+            /// timers, datasette and IEC stay aligned with wall-clock time.
+            int reuStall = reu.ConsumePendingStallCycles();
+            if (reuStall > 0)
+            {
+                cpu.RequestExternalStallCycles(reuStall);
+                _ = display.StepCycles((uint)reuStall, accountBusSteal: false);
+            }
+
+            uint elapsed = step + vicSteal + (uint)reuStall;
             bool tapeEdge = datasette.Step(elapsed);
             if (tapeEdge || datasette.ReadHigh != lastDatasetteReadHigh)
             {
@@ -1773,7 +1785,6 @@ namespace C64
 
             StepCia1Timers(elapsed);
             StepCia2Timers(elapsed);
-            reu.StepDma((int)cycles, cpu.memory);
 
             keyboardDrainCycleBudget += (int)elapsed;
             if (keyboardDrainCycleBudget >= KeyboardDrainPeriodCycles)

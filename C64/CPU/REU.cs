@@ -78,15 +78,25 @@ namespace C64
         private bool _endOfBlock;
         private bool _fault;
 
-        /// DMA state machine.
-        private bool _dmaActive;
-        private int _dmaBytesRemaining;
+        /// DMA state.
         private int _dmaType;        /// 0 stash, 1 fetch, 2 swap, 3 compare
-        private int _dmaCycleAccumulator;
+
+        /// CPU stall cycles owed to the host stepper for the most recent DMA
+        /// burst. The 8726 halts the 6510 by asserting BA / DMA while it
+        /// transfers, so the CPU loses these cycles to the REU bus master.
+        private int _pendingStallCycles;
+
         private bool _ff00Armed;     /// EXECUTE pending FF00 trigger
 
         /// <summary>Gets or sets the callback invoked when an REU IRQ is asserted.</summary>
         public Action? OnIrqRequest { get; set; }
+
+        /// <summary>
+        /// Callback invoked when an EXECUTE-now DMA is requested via a write
+        /// to $DF01 with the FF00-trigger bit set. The host wires this to
+        /// <see cref="RunDmaTransfer"/> with the live CPU memory reference.
+        /// </summary>
+        public Action? OnExecuteNow { get; set; }
 
         /// <summary>Initializes a new REU instance.</summary>
         /// <param name="sizeKb">The REU capacity in kilobytes (128, 256, or 512).</param>
@@ -129,9 +139,7 @@ namespace C64
             _irqPending = false;
             _endOfBlock = false;
             _fault = false;
-            _dmaActive = false;
-            _dmaBytesRemaining = 0;
-            _dmaCycleAccumulator = 0;
+            _pendingStallCycles = 0;
             _ff00Armed = false;
         }
 
@@ -206,7 +214,7 @@ namespace C64
                         if ((value & 0x10) != 0)
                         {
                             _ff00Armed = false;
-                            StartDmaTransfer();
+                            OnExecuteNow?.Invoke();
                         }
                         else
                         {
@@ -258,19 +266,25 @@ namespace C64
         }
 
         /// <summary>
-        /// Called from the memory subsystem when the CPU writes to $FF00.
-        /// If the REU has been armed for an FF00-triggered DMA, the transfer
-        /// starts now.
+        /// Called from the memory subsystem when the CPU writes to $FF00 with
+        /// a real memory reference so the DMA can be executed in-place.
         /// </summary>
-        public void NotifyFF00Write()
+        /// <param name="memory">The CPU memory map used by the operation.</param>
+        public void NotifyFF00Write(CPU.Memory memory)
         {
             if (!_ff00Armed) return;
             _ff00Armed = false;
-            StartDmaTransfer();
+            RunDmaTransfer(memory);
         }
 
-        /// <summary>Captures shadow registers and starts a DMA transfer.</summary>
-        private void StartDmaTransfer()
+        /// <summary>
+        /// Runs a DMA transfer to completion immediately and accumulates the
+        /// CPU-stall cycle cost in <see cref="ConsumePendingStallCycles"/>.
+        /// On real hardware the 8726 halts the 6510 while it transfers, so
+        /// the CPU loses these cycles to the REU bus master.
+        /// </summary>
+        /// <param name="memory">The CPU memory map used by the operation.</param>
+        public void RunDmaTransfer(CPU.Memory memory)
         {
             _reuAddrShadow = _reuAddr;
             _cpuAddrShadow = _cpuAddr;
@@ -278,48 +292,25 @@ namespace C64
 
             /// Length register of 0 means 65536 bytes (one full bank).
             int len = _transferLen == 0 ? 0x10000 : _transferLen;
-
-            _dmaActive = true;
-            _dmaBytesRemaining = len;
             _dmaType = _commandReg & 0x03;
-            _dmaCycleAccumulator = 0;
             _endOfBlock = false;
             _fault = false;
-        }
-
-        /// <summary>
-        /// Step DMA transfer by a cycle count. Called from the main CPU cycle
-        /// stepper. Approximate rate: 1 byte per 2 CPU cycles.
-        /// </summary>
-        /// <param name="cycles">The number of emulated CPU cycles to advance.</param>
-        /// <param name="memory">The CPU memory map used by the operation.</param>
-        public void StepDma(int cycles, CPU.Memory memory)
-        {
-            if (!_dmaActive) return;
-
-            _dmaCycleAccumulator += cycles;
 
             bool fixCpu = (_acrReg & 0x80) != 0;
             bool fixReu = (_acrReg & 0x40) != 0;
 
-            while (_dmaCycleAccumulator >= 2 && _dmaBytesRemaining > 0 && _dmaActive)
-            {
-                _dmaCycleAccumulator -= 2;
+            int bytesTransferred = 0;
 
+            for (int i = 0; i < len; i++)
+            {
                 switch (_dmaType)
                 {
                     case 0: /// Stash: C64 -> REU
-                        {
-                            byte data = memory.ReadByte((ulong)_cpuAddr);
-                            WriteReuByte(_reuAddr, data);
-                            break;
-                        }
+                        WriteReuByte(_reuAddr, memory.ReadByte((ulong)_cpuAddr));
+                        break;
                     case 1: /// Fetch: REU -> C64
-                        {
-                            byte data = ReadReuByte(_reuAddr);
-                            memory.WriteByte((ulong)_cpuAddr, data);
-                            break;
-                        }
+                        memory.WriteByte((ulong)_cpuAddr, ReadReuByte(_reuAddr));
+                        break;
                     case 2: /// Swap: C64 <-> REU
                         {
                             byte cpuByte = memory.ReadByte((ulong)_cpuAddr);
@@ -335,54 +326,66 @@ namespace C64
                             if (cpuByte != reuByte)
                             {
                                 _fault = true;
-                                _dmaBytesRemaining = 1; /// fall through to
-                                                        /// completion below
+                                bytesTransferred = i + 1;
+                                if (!fixReu) _reuAddr = (_reuAddr + 1) & 0xFFFFFF;
+                                if (!fixCpu) _cpuAddr = (_cpuAddr + 1) & 0xFFFF;
+                                goto CompareEarlyExit;
                             }
                             break;
                         }
                 }
 
-                if (!fixReu)
-                    _reuAddr = (_reuAddr + 1) & 0xFFFFFF;
-
-                if (!fixCpu)
-                    _cpuAddr = (_cpuAddr + 1) & 0xFFFF;
-
-                _dmaBytesRemaining--;
-
-                if (_dmaBytesRemaining == 0)
-                {
-                    _dmaActive = false;
-                    _endOfBlock = true;
-
-                    /// AUTOLOAD: when bit 5 is clear, restore the start
-                    /// values so the next EXECUTE / FF00 repeats the same
-                    /// transfer. When set, leave the registers showing the
-                    /// final post-DMA values.
-                    if ((_commandReg & 0x20) == 0)
-                    {
-                        _reuAddr = _reuAddrShadow;
-                        _cpuAddr = _cpuAddrShadow;
-                        _transferLen = _transferLenShadow;
-                    }
-
-                    /// Clear the EXECUTE bit; FF00-trigger bit is also
-                    /// cleared so the next write to $FF00 won't re-arm.
-                    _commandReg &= 0x6F;
-
-                    /// IRQ assertion: end-of-block always latches; fault
-                    /// latches if compare mismatched. Master + per-source
-                    /// enables in IMR gate the actual line.
-                    bool irq = false;
-                    if (_endOfBlock && (_imrReg & 0x40) != 0) irq = true;
-                    if (_fault && (_imrReg & 0x20) != 0) irq = true;
-                    if (irq && (_imrReg & 0x80) != 0)
-                    {
-                        _irqPending = true;
-                        UpdateIrqLine();
-                    }
-                }
+                if (!fixReu) _reuAddr = (_reuAddr + 1) & 0xFFFFFF;
+                if (!fixCpu) _cpuAddr = (_cpuAddr + 1) & 0xFFFF;
+                bytesTransferred = i + 1;
             }
+
+CompareEarlyExit:
+            _endOfBlock = true;
+
+            /// AUTOLOAD: when bit 5 is clear, restore the start values so the
+            /// next EXECUTE / FF00 repeats the same transfer. When set, leave
+            /// the registers showing the final post-DMA values.
+            if ((_commandReg & 0x20) == 0)
+            {
+                _reuAddr = _reuAddrShadow;
+                _cpuAddr = _cpuAddrShadow;
+                _transferLen = _transferLenShadow;
+            }
+
+            /// Clear EXECUTE and FF00-trigger bits.
+            _commandReg &= 0x6F;
+
+            /// Cycle cost. Real REU rates: swap = 2 cycles/byte (read + write
+            /// on both buses), stash/fetch/compare = 1 cycle/byte. Plus a
+            /// fixed 4-cycle setup overhead the 8726 takes to acquire the bus.
+            int perByte = (_dmaType == 2) ? 2 : 1;
+            _pendingStallCycles += 4 + (bytesTransferred * perByte);
+
+            /// IRQ assertion: end-of-block always latches; fault latches if
+            /// compare mismatched. Master + per-source enables in IMR gate
+            /// the actual line.
+            bool irq = false;
+            if (_endOfBlock && (_imrReg & 0x40) != 0) irq = true;
+            if (_fault && (_imrReg & 0x20) != 0) irq = true;
+            if (irq && (_imrReg & 0x80) != 0)
+            {
+                _irqPending = true;
+                UpdateIrqLine();
+            }
+        }
+
+        /// <summary>
+        /// Returns and clears any CPU stall cycles owed to the host from the
+        /// most recent DMA burst. The host should bill these to the CPU via
+        /// its external-stall API and step the other peripherals by the same
+        /// count so their timing stays aligned.
+        /// </summary>
+        public int ConsumePendingStallCycles()
+        {
+            int cycles = _pendingStallCycles;
+            _pendingStallCycles = 0;
+            return cycles;
         }
 
         /// <summary>Fires the IRQ callback while a pending IRQ is latched.</summary>
