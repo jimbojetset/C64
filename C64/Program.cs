@@ -2408,6 +2408,7 @@ namespace C64
             string? audioDevice = Sound.GetDefaultDeviceName();
             display.Init();
             keyboard.InitGameControllers();
+            SDL_StartTextInput();
             sound.Init(audioDevice);
 
             var token = cts.Token;
@@ -2465,6 +2466,7 @@ namespace C64
 
                         case SDL_EventType.SDL_KEYDOWN:
                         case SDL_EventType.SDL_KEYUP:
+                        case SDL_EventType.SDL_TEXTINPUT:
                         case SDL_EventType.SDL_CONTROLLERDEVICEADDED:
                         case SDL_EventType.SDL_CONTROLLERDEVICEREMOVED:
                         case SDL_EventType.SDL_CONTROLLERBUTTONDOWN:

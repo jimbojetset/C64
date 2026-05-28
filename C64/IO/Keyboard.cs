@@ -44,6 +44,57 @@ namespace C64
         private bool shiftLockActive;
         private const short ControllerDeadZone = 12000;
 
+        /// <summary>
+        /// Tracks matrix cells (and synthetic SHIFT obligation) latched by an
+        /// <c>SDL_TEXTINPUT</c> event keyed by the SDL scancode of the physical
+        /// key that produced the character, so the matching <c>SDL_KEYUP</c> can
+        /// release exactly what was pressed even if the host modifier state has
+        /// since changed.
+        /// </summary>
+        private readonly Dictionary<SDL_Scancode, TextInputBinding> textInputHeld = new();
+
+        /// <summary>SHIFT policy applied by a symbolic key mapping.</summary>
+        private enum ShiftPolicy
+        {
+            /// <summary>Pass the physical host SHIFT through unchanged.</summary>
+            Passthrough,
+            /// <summary>Force the C64 SHIFT bits to be asserted while this key is held.</summary>
+            ForceShift,
+            /// <summary>Force the C64 SHIFT bits to be released while this key is held.</summary>
+            ForceUnshift,
+        }
+
+        /// <summary>Latched binding from an <c>SDL_TEXTINPUT</c> event.</summary>
+        private readonly struct TextInputBinding
+        {
+            public readonly int Row;
+            public readonly int Column;
+            public readonly ShiftPolicy Shift;
+            public TextInputBinding(int row, int col, ShiftPolicy shift) { Row = row; Column = col; Shift = shift; }
+        }
+
+        /// <summary>Tracks how many text-input pressed keys want SHIFT asserted.</summary>
+        private int syntheticShiftCount;
+
+        /// <summary>Tracks how many text-input pressed keys want SHIFT released.</summary>
+        private int syntheticUnshiftCount;
+
+        /// <summary>Tracks the host LSHIFT physical key state.</summary>
+        private bool physicalLShift;
+
+        /// <summary>Tracks the host RSHIFT physical key state.</summary>
+        private bool physicalRShift;
+
+        /// <summary>
+        /// Scancode of the most recent non-repeat KEYDOWN that fell through to
+        /// the symbolic / matrix routing. SDL fires <c>SDL_TEXTINPUT</c> for the
+        /// same physical key immediately after its KEYDOWN, so the text-input
+        /// handler can use this value to key its binding by the originating
+        /// physical key (not by the produced character, whose scancode would
+        /// belong to a different key on the host layout).
+        /// </summary>
+        private SDL_Scancode pendingTextInputScancode = SDL_Scancode.SDL_SCANCODE_UNKNOWN;
+
         /// ?? Callbacks wired by C64Emulator after construction ?????????????????
 
         /// <summary>Invoked when F12 / Ctrl+R is pressed.</summary>
@@ -140,19 +191,27 @@ namespace C64
         }
 
         /// <summary>
-        /// Drains the PETSCII key queue into the C64 keyboard buffer ($0277�$0280 / $C6).
+        /// Drains the PETSCII key queue into the C64 keyboard buffer ($0277-$0280 / $C6).
         /// Call once per CIA tick from the IRQ thread.
+        ///
+        /// Injects only a single byte per call, and only when the buffer is
+        /// empty, so the BASIC screen editor processes each keystroke
+        /// (including RETURN's line-tokenise / quote-mode bookkeeping) before
+        /// the next one arrives. This matches the cadence of a real user
+        /// typing and prevents characters being lost when long listings are
+        /// pasted from the host clipboard.
         /// </summary>
         public void DrainQueue()
         {
-            while (!keyQueue.IsEmpty)
-            {
-                byte count = cpu.memory.ReadByte(0x00C6);
-                if (count >= 10) return;
-                if (!keyQueue.TryDequeue(out byte pet)) return;
-                cpu.memory.WriteByte((ulong)(0x0277 + count), pet);
-                cpu.memory.WriteByte(0x00C6, (byte)(count + 1));
-            }
+            if (keyQueue.IsEmpty) return;
+
+            byte count = cpu.memory.ReadByte(0x00C6);
+            if (count != 0) return;
+
+            if (!keyQueue.TryDequeue(out byte pet)) return;
+
+            cpu.memory.WriteByte(0x0277, pet);
+            cpu.memory.WriteByte(0x00C6, 1);
         }
 
         /// <summary>
@@ -171,6 +230,12 @@ namespace C64
                 keyboardMatrix[i] = 0xFF;
             while (keyQueue.TryDequeue(out _)) { }
             shiftLockActive = false;
+            textInputHeld.Clear();
+            syntheticShiftCount = 0;
+            syntheticUnshiftCount = 0;
+            physicalLShift = false;
+            physicalRShift = false;
+            pendingTextInputScancode = SDL_Scancode.SDL_SCANCODE_UNKNOWN;
         }
 
         /// <summary>Enqueues a raw PETSCII byte for typed-text injection (e.g. from file load).</summary>
@@ -310,8 +375,12 @@ namespace C64
                 SetMatrixKey(7, 2, false);
                 SetMatrixKey(0, 2, false);
                 SetMatrixKey(0, 7, false);
-                SetMatrixKey(1, 7, false);
-                SetMatrixKey(6, 4, false);
+                physicalLShift = false;
+                physicalRShift = false;
+                syntheticShiftCount = 0;
+                syntheticUnshiftCount = 0;
+                shiftLockActive = false;
+                RecomputeShiftCells();
             }
             return activeJoystickPort;
         }
@@ -331,6 +400,10 @@ namespace C64
 
                 case SDL_EventType.SDL_KEYUP:
                     HandleKeyUp(ev.key);
+                    return false;
+
+                case SDL_EventType.SDL_TEXTINPUT:
+                    HandleTextInput(ev.text);
                     return false;
 
                 case SDL_EventType.SDL_CONTROLLERDEVICEADDED:
@@ -386,8 +459,7 @@ namespace C64
             if (sym == SDL_Keycode.SDLK_CAPSLOCK)
             {
                 shiftLockActive = !shiftLockActive;
-                SetMatrixKey(1, 7, shiftLockActive);
-                SetMatrixKey(6, 4, shiftLockActive);
+                RecomputeShiftCells();
                 return false;
             }
 
@@ -397,38 +469,9 @@ namespace C64
                 return false;
             }
 
-            /// Let common text-entry punctuation land in the BASIC input buffer
-            /// as the character the user typed on the host keyboard.
-            if (!ctrl && !alt && shift)
-            {
-                char? typed = sym switch
-                {
-                    SDL_Keycode.SDLK_8 => '*',
-                    SDL_Keycode.SDLK_9 => '(',
-                    SDL_Keycode.SDLK_0 => ')',
-                    SDL_Keycode.SDLK_MINUS => '_',
-                    SDL_Keycode.SDLK_EQUALS => '+',
-                    _ => null
-                };
-
-                if (typed.HasValue)
-                {
-                    keyQueue.Enqueue((byte)typed.Value);
-                    return false;
-                }
-            }
-
-            if (!ctrl && !alt && sym == SDL_Keycode.SDLK_KP_MULTIPLY)
-            {
-                keyQueue.Enqueue((byte)'*');
-                return false;
-            }
-
-            if (!ctrl && !alt && sym == SDL_Keycode.SDLK_KP_PLUS)
-            {
-                keyQueue.Enqueue((byte)'+');
-                return false;
-            }
+            /// Symbol/punctuation/shifted-digit keys are routed via SDL_TEXTINPUT
+            /// (see HandleTextInput) so the C64 matrix entry matches the printable
+            /// character the host layout actually produced.
 
             if (sym == SDL_Keycode.SDLK_q && (shift || alt) && !ctrl)
             {
@@ -483,7 +526,8 @@ namespace C64
             if (jmask != 0 && activeJoystickPort != 0)
                 keyboardJoystick = (byte)(keyboardJoystick & ~jmask);
 
-            UpdateKeyboardState(sym, true);
+            pendingTextInputScancode = ke.keysym.scancode;
+            UpdateKeyboardState(sym, true, shift);
             return false;
         }
 
@@ -495,20 +539,25 @@ namespace C64
             if (jmask != 0 && activeJoystickPort != 0)
                 keyboardJoystick = (byte)(keyboardJoystick | jmask);
 
-            UpdateKeyboardState(ke.keysym.sym, false);
+            ReleaseTextInputBinding(ke.keysym.scancode);
+            UpdateKeyboardState(ke.keysym.sym, false, (ke.keysym.mod & SDL_Keymod.KMOD_SHIFT) != 0);
         }
 
         /// <summary>Updates keyboard state.</summary>
         /// <param name="sym">The SDL key code to update.</param>
         /// <param name="pressed">Whether the key or button is currently pressed.</param>
-        private void UpdateKeyboardState(SDL_Keycode sym, bool pressed)
+        /// <param name="shiftHeld">Whether either host SHIFT key is currently held.</param>
+        private void UpdateKeyboardState(SDL_Keycode sym, bool pressed, bool shiftHeld)
         {
             switch (sym)
             {
                 case SDL_Keycode.SDLK_LSHIFT:
+                    physicalLShift = pressed;
+                    RecomputeShiftCells();
+                    return;
                 case SDL_Keycode.SDLK_RSHIFT:
-                    SetMatrixKey(1, 7, pressed);
-                    SetMatrixKey(6, 4, pressed);
+                    physicalRShift = pressed;
+                    RecomputeShiftCells();
                     return;
 
                 case SDL_Keycode.SDLK_LCTRL:
@@ -553,8 +602,7 @@ namespace C64
                     return;
 
                 case SDL_Keycode.SDLK_F2:
-                    SetMatrixKey(1, 7, pressed);
-                    SetMatrixKey(6, 4, pressed);
+                    AdjustSyntheticShift(pressed, force: true);
                     SetMatrixKey(0, 4, pressed);
                     return;
 
@@ -563,8 +611,7 @@ namespace C64
                     return;
 
                 case SDL_Keycode.SDLK_F4:
-                    SetMatrixKey(1, 7, pressed);
-                    SetMatrixKey(6, 4, pressed);
+                    AdjustSyntheticShift(pressed, force: true);
                     SetMatrixKey(0, 5, pressed);
                     return;
 
@@ -573,8 +620,7 @@ namespace C64
                     return;
 
                 case SDL_Keycode.SDLK_F6:
-                    SetMatrixKey(1, 7, pressed);
-                    SetMatrixKey(6, 4, pressed);
+                    AdjustSyntheticShift(pressed, force: true);
                     SetMatrixKey(0, 6, pressed);
                     return;
 
@@ -583,16 +629,14 @@ namespace C64
                     return;
 
                 case SDL_Keycode.SDLK_F8:
-                    SetMatrixKey(1, 7, pressed);
-                    SetMatrixKey(6, 4, pressed);
+                    AdjustSyntheticShift(pressed, force: true);
                     SetMatrixKey(0, 3, pressed);
                     return;
 
                 case SDL_Keycode.SDLK_LEFT:
                     if (activeJoystickPort == 0)
                     {
-                        SetMatrixKey(1, 7, pressed);
-                        SetMatrixKey(6, 4, pressed);
+                        AdjustSyntheticShift(pressed, force: true);
                         SetMatrixKey(0, 2, pressed);
                     }
                     return;
@@ -605,8 +649,7 @@ namespace C64
                 case SDL_Keycode.SDLK_UP:
                     if (activeJoystickPort == 0)
                     {
-                        SetMatrixKey(1, 7, pressed);
-                        SetMatrixKey(6, 4, pressed);
+                        AdjustSyntheticShift(pressed, force: true);
                         SetMatrixKey(0, 7, pressed);
                     }
                     return;
@@ -650,7 +693,7 @@ namespace C64
                 }
             }
 
-            if (sym >= SDL_Keycode.SDLK_0 && sym <= SDL_Keycode.SDLK_9)
+            if (sym >= SDL_Keycode.SDLK_0 && sym <= SDL_Keycode.SDLK_9 && !shiftHeld)
             {
                 switch (sym)
                 {
@@ -669,18 +712,26 @@ namespace C64
 
             switch (sym)
             {
-                case SDL_Keycode.SDLK_MINUS: SetMatrixKey(5, 3, pressed); return;
-                case SDL_Keycode.SDLK_EQUALS: SetMatrixKey(6, 5, pressed); return;
-                case SDL_Keycode.SDLK_COMMA: SetMatrixKey(5, 7, pressed); return;
-                case SDL_Keycode.SDLK_PERIOD: SetMatrixKey(5, 4, pressed); return;
-                case SDL_Keycode.SDLK_SLASH: SetMatrixKey(6, 7, pressed); return;
-                /// UK punctuation mode: host ';:' key targets C64 ':' key.
-                case SDL_Keycode.SDLK_SEMICOLON: SetMatrixKey(5, 5, pressed); return;
-                /// UK punctuation mode: host ''@' key targets C64 ';' key.
-                case SDL_Keycode.SDLK_QUOTE: SetMatrixKey(6, 2, pressed); return;
-                case SDL_Keycode.SDLK_LEFTBRACKET: SetMatrixKey(6, 0, pressed); return;
-                case SDL_Keycode.SDLK_RIGHTBRACKET: SetMatrixKey(6, 3, pressed); return;
-                case SDL_Keycode.SDLK_BACKSLASH: SetMatrixKey(5, 6, pressed); return;
+                /// Punctuation, symbol and shifted-digit keys are routed via
+                /// SDL_TEXTINPUT (see HandleTextInput) so the C64 matrix entry
+                /// matches the printable character the host layout produced.
+                case SDL_Keycode.SDLK_MINUS:
+                case SDL_Keycode.SDLK_EQUALS:
+                case SDL_Keycode.SDLK_COMMA:
+                case SDL_Keycode.SDLK_PERIOD:
+                case SDL_Keycode.SDLK_SLASH:
+                case SDL_Keycode.SDLK_SEMICOLON:
+                case SDL_Keycode.SDLK_QUOTE:
+                case SDL_Keycode.SDLK_LEFTBRACKET:
+                case SDL_Keycode.SDLK_RIGHTBRACKET:
+                case SDL_Keycode.SDLK_BACKSLASH:
+                case SDL_Keycode.SDLK_BACKQUOTE:
+                case SDL_Keycode.SDLK_KP_MULTIPLY:
+                case SDL_Keycode.SDLK_KP_PLUS:
+                case SDL_Keycode.SDLK_KP_MINUS:
+                case SDL_Keycode.SDLK_KP_DIVIDE:
+                case SDL_Keycode.SDLK_KP_PERIOD:
+                    return;
             }
         }
 
@@ -695,6 +746,153 @@ namespace C64
                 keyboardMatrix[row] = (byte)(keyboardMatrix[row] & ~mask);
             else
                 keyboardMatrix[row] = (byte)(keyboardMatrix[row] | mask);
+        }
+
+        /// <summary>
+        /// Recomputes the two C64 SHIFT cells (LSHIFT at row 1 col 7 and RSHIFT
+        /// at row 6 col 4) from the combined physical shift, shift-lock and
+        /// synthetic shift obligations driven by text-input / cursor / function
+        /// keys.
+        /// </summary>
+        private void RecomputeShiftCells()
+        {
+            bool shift = physicalLShift || physicalRShift || shiftLockActive || syntheticShiftCount > 0;
+            if (shift && syntheticUnshiftCount > 0 && syntheticShiftCount == 0 && !shiftLockActive)
+                shift = false;
+            SetMatrixKey(1, 7, shift);
+            SetMatrixKey(6, 4, shift);
+        }
+
+        /// <summary>Increments or decrements a synthetic shift / unshift obligation counter.</summary>
+        /// <param name="pressed">True to add the obligation, false to remove it.</param>
+        /// <param name="force">True to force SHIFT asserted, false to force SHIFT released.</param>
+        private void AdjustSyntheticShift(bool pressed, bool force)
+        {
+            ref int counter = ref (force ? ref syntheticShiftCount : ref syntheticUnshiftCount);
+            if (pressed) counter++;
+            else if (counter > 0) counter--;
+            RecomputeShiftCells();
+        }
+
+        /// <summary>
+        /// Handles SDL_TEXTINPUT events. Maps the printable character produced
+        /// by the host keyboard layout to a C64 matrix cell (plus a synthetic
+        /// SHIFT obligation if needed) so the C64 sees the same symbol the user
+        /// typed, regardless of the host layout. Letters, unshifted digits and
+        /// cursor / function keys are intentionally not handled here; they are
+        /// driven from the position-based path in <see cref="UpdateKeyboardState"/>.
+        /// </summary>
+        private void HandleTextInput(SDL_TextInputEvent ev)
+        {
+            string text = ReadTextInputString(ev);
+            if (string.IsNullOrEmpty(text))
+                return;
+
+            char ch = text[0];
+
+            /// Letters and plain digits are handled by the position-based path
+            /// (UpdateKeyboardState) so the host SHIFT state controls C64 case.
+            if (ch >= 'a' && ch <= 'z') return;
+            if (ch >= 'A' && ch <= 'Z') return;
+            if (ch >= '0' && ch <= '9') return;
+            if (ch == ' ') return;
+
+            if (!TryMapCharacterToMatrix(ch, out int row, out int col, out ShiftPolicy shift))
+                return;
+
+            SDL_Scancode scancode = pendingTextInputScancode;
+
+            /// If we don't have a recent KEYDOWN to attribute the text input to
+            /// (e.g. composed input, IME) fall back to keying the binding by the
+            /// character itself in the high range so it can't collide with real
+            /// SDL_Scancode values.
+            if (scancode == SDL_Scancode.SDL_SCANCODE_UNKNOWN)
+                scancode = (SDL_Scancode)(0x10000 + ch);
+
+            /// Replace any binding currently held for the same physical key.
+            if (textInputHeld.TryGetValue(scancode, out TextInputBinding prev))
+                ReleaseBinding(prev);
+
+            SetMatrixKey(row, col, true);
+            if (shift == ShiftPolicy.ForceShift)
+                AdjustSyntheticShift(true, force: true);
+            else if (shift == ShiftPolicy.ForceUnshift)
+                AdjustSyntheticShift(true, force: false);
+
+            textInputHeld[scancode] = new TextInputBinding(row, col, shift);
+            pendingTextInputScancode = SDL_Scancode.SDL_SCANCODE_UNKNOWN;
+        }
+
+        /// <summary>Releases any text-input matrix binding currently latched for the given scancode.</summary>
+        private void ReleaseTextInputBinding(SDL_Scancode scancode)
+        {
+            if (!textInputHeld.TryGetValue(scancode, out TextInputBinding binding))
+                return;
+            textInputHeld.Remove(scancode);
+            ReleaseBinding(binding);
+        }
+
+        /// <summary>Releases a single latched text-input binding.</summary>
+        private void ReleaseBinding(TextInputBinding binding)
+        {
+            SetMatrixKey(binding.Row, binding.Column, false);
+            if (binding.Shift == ShiftPolicy.ForceShift)
+                AdjustSyntheticShift(false, force: true);
+            else if (binding.Shift == ShiftPolicy.ForceUnshift)
+                AdjustSyntheticShift(false, force: false);
+        }
+
+        /// <summary>Reads the UTF-8 text payload from an SDL_TextInputEvent.</summary>
+        private static unsafe string ReadTextInputString(SDL_TextInputEvent ev)
+        {
+            byte* p = ev.text;
+            int len = 0;
+            while (len < 32 && p[len] != 0) len++;
+            if (len == 0) return string.Empty;
+            return System.Text.Encoding.UTF8.GetString(p, len);
+        }
+
+        /// <summary>
+        /// Maps a printable character produced by the host keyboard layout to a
+        /// C64 keyboard-matrix cell and a SHIFT policy that overrides the host
+        /// SHIFT state when needed. Mirrors VICE's symbolic mapping for the
+        /// subset of ASCII / Latin-1 characters that exist on a real C64.
+        /// </summary>
+        private static bool TryMapCharacterToMatrix(char ch, out int row, out int col, out ShiftPolicy shift)
+        {
+            row = col = 0;
+            shift = ShiftPolicy.Passthrough;
+            switch (ch)
+            {
+                case '!': row = 7; col = 0; shift = ShiftPolicy.ForceShift; return true;
+                case '"': row = 7; col = 3; shift = ShiftPolicy.ForceShift; return true;
+                case '#': row = 1; col = 0; shift = ShiftPolicy.ForceShift; return true;
+                case '$': row = 1; col = 3; shift = ShiftPolicy.ForceShift; return true;
+                case '%': row = 2; col = 0; shift = ShiftPolicy.ForceShift; return true;
+                case '&': row = 2; col = 3; shift = ShiftPolicy.ForceShift; return true;
+                case '\'': row = 3; col = 0; shift = ShiftPolicy.ForceShift; return true;
+                case '(': row = 3; col = 3; shift = ShiftPolicy.ForceShift; return true;
+                case ')': row = 4; col = 0; shift = ShiftPolicy.ForceShift; return true;
+                case '*': row = 6; col = 1; shift = ShiftPolicy.ForceUnshift; return true;
+                case '+': row = 5; col = 0; shift = ShiftPolicy.ForceUnshift; return true;
+                case ',': row = 5; col = 7; shift = ShiftPolicy.ForceUnshift; return true;
+                case '-': row = 5; col = 3; shift = ShiftPolicy.ForceUnshift; return true;
+                case '.': row = 5; col = 4; shift = ShiftPolicy.ForceUnshift; return true;
+                case '/': row = 6; col = 7; shift = ShiftPolicy.ForceUnshift; return true;
+                case ':': row = 5; col = 5; shift = ShiftPolicy.ForceUnshift; return true;
+                case ';': row = 6; col = 2; shift = ShiftPolicy.ForceUnshift; return true;
+                case '<': row = 5; col = 7; shift = ShiftPolicy.ForceShift; return true;
+                case '=': row = 6; col = 5; shift = ShiftPolicy.ForceUnshift; return true;
+                case '>': row = 5; col = 4; shift = ShiftPolicy.ForceShift; return true;
+                case '?': row = 6; col = 7; shift = ShiftPolicy.ForceShift; return true;
+                case '@': row = 5; col = 6; shift = ShiftPolicy.ForceUnshift; return true;
+                case '[': row = 5; col = 5; shift = ShiftPolicy.ForceShift; return true;
+                case ']': row = 6; col = 2; shift = ShiftPolicy.ForceShift; return true;
+                case '\u00A3': row = 6; col = 0; shift = ShiftPolicy.ForceUnshift; return true; /// '£' (UK pound)
+                case '^': row = 6; col = 6; shift = ShiftPolicy.ForceUnshift; return true; /// C64 up-arrow
+                case '_': row = 7; col = 1; shift = ShiftPolicy.ForceUnshift; return true; /// C64 left-arrow
+                default: return false;
+            }
         }
 
         /// <summary>Opens first available controller.</summary>
