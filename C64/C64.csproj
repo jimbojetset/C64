@@ -1,53 +1,42 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <OutputType>WinExe</OutputType>
-    <TargetFramework>net8.0-windows</TargetFramework>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
     <Nullable>enable</Nullable>
-    <UseWindowsForms>true</UseWindowsForms>
     <ImplicitUsings>enable</ImplicitUsings>
     <AllowUnsafeBlocks>True</AllowUnsafeBlocks>
+    <RootNamespace>C64</RootNamespace>
+    <Platforms>AnyCPU;x64</Platforms>
+    <StartupObject></StartupObject>
   </PropertyGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\6502CPU\6502CPU.csproj" />
+    <PackageReference Include="ImGui.NET" Version="1.91.6.1" />
+    <PackageReference Include="Sayers.SDL2.Core" Version="1.0.11" />
+    <PackageReference Include="Silk.NET.OpenGL" Version="2.23.0" />
   </ItemGroup>
 
   <ItemGroup>
-    <None Update="ROMS\BASIC.ROM">
+    <None Update="Display\monitor.png">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
-    <None Update="ROMS\basic_rom.rom">
+    <None Update="ROMS\basic.bin">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
-    <None Update="ROMS\CHAR.ROM">
+    <None Update="ROMS\characters.bin">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
-    <None Update="ROMS\Electron\adfs.rom">
+    <None Update="ROMS\kernal.bin">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
-    <None Update="ROMS\Electron\basic.rom">
+    <None Update="ROMS\1541*.bin">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
-    <None Update="ROMS\Electron\dfs.rom">
+    <None Update="Software\**\*">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
-    <None Update="ROMS\Electron\os">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </None>
-    <None Update="ROMS\Electron\os300.rom">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </None>
-    <None Update="ROMS\Electron\plus1.rom">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </None>
-    <None Update="ROMS\Electron\sndrom">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </None>
-    <None Update="ROMS\KERNAL.ROM">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </None>
-    <None Update="ROMS\kernel_rom.rom">
+    <None Update="Display\monitor2.png">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
   </ItemGroup>
