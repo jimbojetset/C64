@@ -251,10 +251,6 @@ namespace C64
             {
                 display.TakeViewportScreenshot();
             };
-            keyboard.OnSpriteDebugScreenshot = () =>
-            {
-                display.TakeSpriteDebugScreenshot();
-            };
             keyboard.OnToggleFullscreenViewport = () =>
             {
                 display.ToggleFullscreenViewportMode();

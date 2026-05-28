@@ -79,8 +79,6 @@ namespace C64
         private byte[] displayBuf = new byte[FrameW * FrameH * 4];
         private readonly byte[] presentationBuf = new byte[FrameW * FrameH * 4];
         private readonly byte[] statusOverlayBuf = new byte[StatusOverlayW * StatusOverlayH * 4];
-        private byte[] spriteOwnerRenderBuf = new byte[FrameW * FrameH];
-        private byte[] spriteOwnerDisplayBuf = new byte[FrameW * FrameH];
         private readonly object swapLock = new object();
 
         private readonly bool[] fgLine = new bool[ScreenW];
@@ -316,8 +314,6 @@ namespace C64
             {
                 Array.Clear(renderBuf, 0, renderBuf.Length);
                 Array.Clear(displayBuf, 0, displayBuf.Length);
-                Array.Clear(spriteOwnerRenderBuf, 0, spriteOwnerRenderBuf.Length);
-                Array.Clear(spriteOwnerDisplayBuf, 0, spriteOwnerDisplayBuf.Length);
             }
         }
 
@@ -1332,8 +1328,6 @@ namespace C64
                         lock (swapLock)
                         {
                             (renderBuf, displayBuf) = (displayBuf, renderBuf);
-                            (spriteOwnerRenderBuf, spriteOwnerDisplayBuf) = (spriteOwnerDisplayBuf, spriteOwnerRenderBuf);
-                            Array.Clear(spriteOwnerRenderBuf, 0, spriteOwnerRenderBuf.Length);
                         }
                     }
 
@@ -2509,7 +2503,6 @@ namespace C64
             renderBuf[p + 1] = (byte)(color >> 8);
             renderBuf[p + 2] = (byte)(color >> 16);
             renderBuf[p + 3] = 0xFF;
-            spriteOwnerRenderBuf[frameY * FrameW + frameX] = (byte)(spriteIdx + 1);
         }
 
         /// <summary>Determines whether a closed border should cover a sprite pixel.</summary>
@@ -2593,85 +2586,20 @@ namespace C64
             try
             {
                 string timestamp = DateTime.Now.ToString("yyyyMMdd_HHmmss_fff");
-                TakeViewportScreenshots(timestamp, includeSpriteDebug: true);
+                byte[] snapshot = new byte[FrameW * FrameH * 4];
+                lock (swapLock)
+                {
+                    System.Buffer.BlockCopy(displayBuf, 0, snapshot, 0, displayBuf.Length);
+                }
+
+                string viewportFilename = $"c64_viewport_screenshot_{timestamp}.png";
+                WritePng(viewportFilename, snapshot, FrameW, FrameH);
+                Console.Error.WriteLine($"[VIEWPORT SCREENSHOT] Saved to {viewportFilename}");
             }
             catch (Exception ex)
             {
                 Console.Error.WriteLine($"Viewport screenshot failed: {ex.Message}");
             }
-        }
-
-        /// <summary>Takes a raw viewport screenshot with sprite pixels color-coded by hardware sprite index.</summary>
-        public void TakeSpriteDebugScreenshot()
-        {
-            try
-            {
-                string timestamp = DateTime.Now.ToString("yyyyMMdd_HHmmss_fff");
-                TakeViewportScreenshots(timestamp, includeSpriteDebug: true);
-            }
-            catch (Exception ex)
-            {
-                Console.Error.WriteLine($"Sprite debug screenshot failed: {ex.Message}");
-            }
-        }
-
-        /// <summary>Writes raw viewport screenshots using a shared timestamp.</summary>
-        /// <param name="timestamp">The timestamp text to include in generated filenames.</param>
-        /// <param name="includeSpriteDebug">Whether to also write the sprite-index debug image.</param>
-        private void TakeViewportScreenshots(string timestamp, bool includeSpriteDebug)
-        {
-            byte[] snapshot = new byte[FrameW * FrameH * 4];
-            byte[] owners = includeSpriteDebug ? new byte[FrameW * FrameH] : Array.Empty<byte>();
-            lock (swapLock)
-            {
-                System.Buffer.BlockCopy(displayBuf, 0, snapshot, 0, displayBuf.Length);
-                if (includeSpriteDebug)
-                    System.Buffer.BlockCopy(spriteOwnerDisplayBuf, 0, owners, 0, spriteOwnerDisplayBuf.Length);
-            }
-
-            string viewportFilename = $"c64_viewport_screenshot_{timestamp}.png";
-            WritePng(viewportFilename, snapshot, FrameW, FrameH);
-            Console.Error.WriteLine($"[VIEWPORT SCREENSHOT] Saved to {viewportFilename}");
-
-            if (!includeSpriteDebug)
-                return;
-
-            byte[] debugSnapshot = BuildSpriteDebugScreenshot(owners);
-            string debugFilename = $"c64_sprite_debug_screenshot_{timestamp}.png";
-            WritePng(debugFilename, debugSnapshot, FrameW, FrameH);
-            Console.Error.WriteLine($"[SPRITE DEBUG SCREENSHOT] Saved to {debugFilename}");
-        }
-
-        /// <summary>Builds a BGRA debug image from per-pixel sprite ownership.</summary>
-        /// <param name="owners">One-based hardware sprite owners for each frame pixel.</param>
-        /// <returns>The BGRA debug image.</returns>
-        private static byte[] BuildSpriteDebugScreenshot(byte[] owners)
-        {
-            int[] debugColors =
-            {
-                unchecked((int)0xFF000000),
-                unchecked((int)0xFF2B5BFF),
-                unchecked((int)0xFF2BCB45),
-                unchecked((int)0xFFFF3D3D),
-                unchecked((int)0xFFFFC640),
-                unchecked((int)0xFFFF4BCE),
-                unchecked((int)0xFF40E4FF),
-                unchecked((int)0xFFFFFFFF),
-                unchecked((int)0xFFFF8A2B),
-            };
-
-            byte[] snapshot = new byte[FrameW * FrameH * 4];
-            for (int i = 0; i < owners.Length; i++)
-            {
-                int c = debugColors[owners[i]];
-                int p = i * 4;
-                snapshot[p] = (byte)c;
-                snapshot[p + 1] = (byte)(c >> 8);
-                snapshot[p + 2] = (byte)(c >> 16);
-                snapshot[p + 3] = 0xFF;
-            }
-
-            return snapshot;
         }
 
         /// <summary>Writes png.</summary>

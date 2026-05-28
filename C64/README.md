@@ -180,7 +180,6 @@ At startup, the emulator automatically opens playback device `[0]` from SDL's au
 | `Ctrl+V` or `Shift+Insert` | Paste host clipboard text into the C64 keyboard buffer as PETSCII (see Clipboard Paste below) |
 | `Shift+S` | Full SDL window screenshot (saved as `c64_screenshot_*.png`) |
 | `Ctrl+Shift+S` | Undistorted viewport screenshot (saved as `c64_viewport_screenshot_*.png`) |
-| `Ctrl+Alt+Shift+S` | Sprite-index debug screenshot (saved as `c64_sprite_debug_screenshot_*.png`) |
 | `Shift+Q` or `Alt+Q` or `Ctrl+W` | Quit emulator |
 | `Caps Lock` | Toggle C64 SHIFT LOCK |
 | `Page Up` or `Pause` | Trigger RESTORE NMI |
