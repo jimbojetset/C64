@@ -237,6 +237,7 @@ namespace C64
             datasette = new DatasetteDevice();
             reu = new REU(128);
             reu.OnIrqRequest = () => cpu.InitiateIRQ(0xFFFE);
+            cpu.memory.OnFF00Write = _ => reu.NotifyFF00Write();
             keyboard.OnHardReset = HardResetFromKeyboard;
             keyboard.OnNativeLoad = LoadProgramFromNativeFileDialog;
             keyboard.OnSave = SaveProgram;

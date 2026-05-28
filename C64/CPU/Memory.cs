@@ -97,6 +97,11 @@ namespace C64.CPU
         /// that do not use C64 banking, such as the 1541 drive CPU memory map.
         public Func<ulong, byte, byte>? OnMemoryRead;
 
+        /// Optional notification fired whenever the CPU writes to $FF00.
+        /// Used by the REU (8726) to detect FF00-triggered DMA. The hook does
+        /// not suppress the actual store; the write proceeds normally.
+        public Action<byte>? OnFF00Write;
+
         /// <summary>Initializes a new Memory instance.</summary>
         /// <param name="size">The size of the emulated memory in bytes.</param>
         public Memory(int size)
@@ -190,6 +195,9 @@ namespace C64.CPU
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void WriteByte(ulong addr, byte value)
         {
+            if (addr == 0xFF00 && OnFF00Write is not null)
+                OnFF00Write(value);
+
             if (!bankingEnabled)
             {
                 if (OnMemoryWrite is not null && OnMemoryWrite(addr, value))
