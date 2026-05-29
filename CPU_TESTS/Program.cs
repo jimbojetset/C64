@@ -39,15 +39,12 @@ testDictionary.Add("J__Tests", ["4c", "6c", "20"]);
 testDictionary.Add("RT_Tests", ["40", "60"]);
 testDictionary.Add("Illegal_Opcodes", [
     "02", "03", "04", "07", "0b", "0c", "0f", "12", "13", "14", "17", "1a", "1b", "1c", "1f",
-    "22",
-    "23", "27", "2b", "2f", "33", "34", "37", "3a", "3b", "3c", "3f",
-    "42", "43", "44", "47", "4b", "4f", "52", "53", "54", "57", "5a", "5b", "5c", "5f",
-    "62", "63", "64", "67", "6b", "6f", "72", "73", "74", "77", "7a", "7b", "7c", "7f",
-    "80", "82", "83", "87", "89", "8b", "8f", "92", "93", "97", "9b", "9c", "9e", "9f",
-    "a3", "a7", "ab", "af", "b3", "b7", "bb", "bf",
-    "b2", "c2", "c3", "c7", "cb", "cf", "d2", "d3", "d4", "d7", "da", "db", "dc", "df",
-    "e2", "e3", "e7", "eb", "ef", "f2", "f3", "f4", "f7", "fa", "fb", "fc", "ff",
-    "6b", "8b", "93", "9b", "9c", "9e", "9f", "ab"
+    "22", "23", "27", "2b", "2f", "33", "34", "37", "3a", "3b", "3c", "3f", "42", "43", "44",
+    "47", "4b", "4f", "52", "53", "54", "57", "5a", "5b", "5c", "5f", "62", "63", "64", "67",
+    "6b", "6f", "72", "73", "74", "77", "7a", "7b", "7c", "7f", "80", "82", "83", "87", "89",
+    "8b", "8f", "92", "93", "97", "9b", "9c", "9e", "9f", "a3", "a7", "ab", "af", "b3", "b7",
+    "bb", "bf", "b2", "c2", "c3", "c7", "cb", "cf", "d2", "d3", "d4", "d7", "da", "db", "dc",
+    "df", "e2", "e3", "e7", "eb", "ef", "f2", "f3", "f4", "f7", "fa", "fb", "fc", "ff"
     ]);
 
 //testDictionary.Add("Test", ["00",]);
@@ -223,12 +220,12 @@ static async Task<string> LoadTestDataAsync(string opcode, string? testDataDirec
 internal class Data
 {
     public string? name { get; set; }
-    public Initial? initial { get; set; }
-    public Final? final { get; set; }
+    public CpuState? initial { get; set; }
+    public CpuState? final { get; set; }
     public List<List<object>>? cycles { get; set; }
 }
 
-internal class Final
+internal class CpuState
 {
     public ulong pc { get; set; }
     public byte s { get; set; }
@@ -239,13 +236,3 @@ internal class Final
     public List<List<int>>? ram { get; set; }
 }
 
-internal class Initial
-{
-    public ulong pc { get; set; }
-    public byte s { get; set; }
-    public byte a { get; set; }
-    public byte x { get; set; }
-    public byte y { get; set; }
-    public byte p { get; set; }
-    public List<List<int>>? ram { get; set; }
-}
