@@ -1,11 +1,10 @@
-﻿
-Microsoft Visual Studio Solution File, Format Version 12.00
+﻿Microsoft Visual Studio Solution File, Format Version 12.00
 # Visual Studio Version 17
 VisualStudioVersion = 17.11.35327.3
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "C64", "C64\C64.csproj", "{D5C3E8C6-F0C9-4885-8469-DCEB427C3D74}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "CPU_TESTS", "C:\Users\james\source\repos\CPU_TESTS\CPU_TESTS.csproj", "{917D0BD9-A87E-7074-4665-A082351A6240}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "CPU_TESTS", "CPU_TESTS\CPU_TESTS.csproj", "{917D0BD9-A87E-7074-4665-A082351A6240}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
