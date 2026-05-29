@@ -109,6 +109,9 @@ namespace C64
         private const int Clock_PAL = 985248;
 
         private const int KeyboardDrainPeriodCycles = 5000;
+        private const int KernalFastBootPatchOffset = 0xFCF5 - 0xE000;
+        private static readonly byte[] KernalRamInitCall = [0x20, 0x50, 0xFD];
+        private static readonly byte[] KernalFastBootPatch = [0xEA, 0xEA, 0xEA];
 
         private bool lastDatasetteReadHigh;
 
@@ -124,9 +127,12 @@ namespace C64
         private readonly REU reu;
         private readonly object cia1Lock = new();
         private readonly object cia2Lock = new();
+        private readonly object kernalPatchLock = new();
         private readonly ConcurrentQueue<(string Path, bool AutoRun)> pendingLoads = new();
         private CrtCartridge? cartridge;
         private string? lastHostLoadedFile;
+        private bool kernalFastBootPatchActive;
+        private int kernalFastBootRestoreScheduled;
         private byte cia1PortA = 0xFF;
         private byte cia1PortB = 0xFF;
         private byte cia1Ddra = 0x00;
@@ -266,11 +272,6 @@ namespace C64
             {
                 Console.WriteLine("Turbo mode enabled: CPU pacing disabled.");
             }
-
-            byte[] kernal = cpu.memory.GetBankedROM(Memory.BankSlot.Kernal)!;
-            kernal[0xFCF5 - 0xE000] = 0xEA;
-            kernal[0xFCF6 - 0xE000] = 0xEA;
-            kernal[0xFCF7 - 0xE000] = 0xEA;
 
             InitHardware();
 
@@ -2531,8 +2532,58 @@ namespace C64
         /// <summary>Performs a full emulator hardware reset.</summary>
         private void HardReset()
         {
+            ApplyTemporaryKernalFastBootPatch();
             ResetHostPeripheralsForCpuReset();
             cpu.RequestReset();
+            ScheduleKernalFastBootPatchRestoreAtReady();
+        }
+
+        /// <summary>Applies the temporary KERNAL boot shortcut used only for normal BASIC resets.</summary>
+        private void ApplyTemporaryKernalFastBootPatch()
+        {
+            lock (kernalPatchLock)
+            {
+                byte[]? kernal = cpu.memory.GetBankedROM(Memory.BankSlot.Kernal);
+                if (kernal is null) return;
+
+                KernalFastBootPatch.CopyTo(kernal, KernalFastBootPatchOffset);
+                kernalFastBootPatchActive = true;
+            }
+        }
+
+        /// <summary>Restores the real KERNAL bytes after BASIC has reached READY.</summary>
+        private void RestoreTemporaryKernalFastBootPatch()
+        {
+            lock (kernalPatchLock)
+            {
+                if (!kernalFastBootPatchActive) return;
+
+                byte[]? kernal = cpu.memory.GetBankedROM(Memory.BankSlot.Kernal);
+                if (kernal is not null)
+                    KernalRamInitCall.CopyTo(kernal, KernalFastBootPatchOffset);
+
+                kernalFastBootPatchActive = false;
+            }
+        }
+
+        /// <summary>Schedules restoration of the temporary KERNAL patch once BASIC reaches READY.</summary>
+        private void ScheduleKernalFastBootPatchRestoreAtReady()
+        {
+            if (Interlocked.Exchange(ref kernalFastBootRestoreScheduled, 1) == 1)
+                return;
+
+            _ = Task.Run(async () =>
+            {
+                try
+                {
+                    if (await WaitForReadyPromptAsync(timeoutMs: 10000).ConfigureAwait(false))
+                        RestoreTemporaryKernalFastBootPatch();
+                }
+                finally
+                {
+                    Interlocked.Exchange(ref kernalFastBootRestoreScheduled, 0);
+                }
+            });
         }
 
         /// <summary>Performs the host-side portion of a C64 reset before resetting CPU registers.</summary>
@@ -2637,6 +2688,9 @@ namespace C64
         /// <returns>A task that completes when the asynchronous operation finishes.</returns>
         private async Task ResetLoadRun(string path)
         {
+            if (!IsCartridgePath(path))
+                DetachCartridge();
+
             HardReset();
 
             /// Wait until reset is complete and BASIC reaches READY.
@@ -2876,7 +2930,7 @@ namespace C64
                 }
                 else if (ext == ".d64")
                 {
-                    DetachCartridge();
+                    EjectDriveMedia();
                     drive.AttachD64(path);
                     iecBus.AttachD64(path);
                     SetLastHostLoadedFile(path);
@@ -2926,6 +2980,7 @@ namespace C64
                 Thread.Sleep(20);
                 iecBus.EjectD64();
                 display.DriveActivityLightOn = false;
+                RestoreTemporaryKernalFastBootPatch();
                 DetachCartridge();
 
                 cartridge = cart;
