@@ -1323,8 +1323,27 @@ namespace C64.CPU
             byte r = (byte)((v >> 1) | (registers.Flags.C ? 0x80 : 0));
             registers.A = r;
             Set_FlagsNZ(r);
-            registers.Flags.C = (r & 0x40) != 0;
-            registers.Flags.V = ((r ^ (r << 1)) & 0x40) != 0;
+            if (registers.Flags.D)
+            {
+                registers.Flags.V = ((v ^ r) & 0x40) != 0;
+                if (((v & 0x0F) + (v & 0x01)) > 0x05)
+                    registers.A = (byte)((registers.A & 0xF0) | ((registers.A + 0x06) & 0x0F));
+
+                if (((v & 0xF0) + (v & 0x10)) > 0x50)
+                {
+                    registers.Flags.C = true;
+                    registers.A += 0x60;
+                }
+                else
+                {
+                    registers.Flags.C = false;
+                }
+            }
+            else
+            {
+                registers.Flags.C = (r & 0x40) != 0;
+                registers.Flags.V = ((r ^ (r << 1)) & 0x40) != 0;
+            }
         }
 
         /// AXS: X = (A AND X) - immediate. No borrow input; C set normally.
@@ -1346,7 +1365,7 @@ namespace C64.CPU
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private void XAA_IM()
         {
-            registers.A = (byte)(registers.X & Immediate());
+            registers.A = (byte)((registers.A | 0xEE) & registers.X & Immediate());
             Set_FlagsNZ(registers.A);
         }
 
@@ -1356,7 +1375,7 @@ namespace C64.CPU
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private void LAX_IM()
         {
-            byte v = Immediate();
+            byte v = (byte)((registers.A | 0xEE) & Immediate());
             registers.A = v;
             registers.X = v;
             Set_FlagsNZ(v);
@@ -1382,49 +1401,67 @@ namespace C64.CPU
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private void AHX_IY()
         {
-            ulong addr = Zero_Page_Indirect_Y_Indexed(false);
-            /// Undocumented behavior: high byte of address + 1 becomes a mask
-            byte m = (byte)(((addr >> 8) + 1) & 0xFF);
-            WriteByteToMemory(addr, (byte)(registers.A & registers.X & m));
+            (ulong addr, byte value) = StoreHighIndirectY((byte)(registers.A & registers.X));
+            WriteByteToMemory(addr, value);
         }
 
         /// <summary>Executes the AHX instruction using absolute Y-indexed addressing.</summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private void AHX_AY()
         {
-            ulong addr = Y_Indexed_Absolute(false);
-            /// When Y crossing causes page boundary, this high-byte mask reflects actual page
-            byte m = (byte)(((addr >> 8) + 1) & 0xFF);
-            WriteByteToMemory(addr, (byte)(registers.A & registers.X & m));
+            (ulong addr, byte value) = StoreHighIndexedAbsolute((byte)(registers.A & registers.X), registers.Y);
+            WriteByteToMemory(addr, value);
         }
 
         /// <summary>Executes the TAS instruction using absolute Y-indexed addressing.</summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private void TAS_AY()
         {
-            ulong addr = Y_Indexed_Absolute(false);
             byte s = (byte)(registers.A & registers.X);
             registers.S = s;
-            byte m = (byte)(((addr >> 8) + 1) & 0xFF);
-            WriteByteToMemory(addr, (byte)(s & m));
+            (ulong addr, byte value) = StoreHighIndexedAbsolute(s, registers.Y);
+            WriteByteToMemory(addr, value);
         }
 
         /// <summary>Executes the SHY instruction using absolute X-indexed addressing.</summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private void SHY_AX()
         {
-            ulong addr = X_Indexed_Absolute(false);
-            byte m = (byte)(((addr >> 8) + 1) & 0xFF);
-            WriteByteToMemory(addr, (byte)(registers.Y & m));
+            (ulong addr, byte value) = StoreHighIndexedAbsolute(registers.Y, registers.X);
+            WriteByteToMemory(addr, value);
         }
 
         /// <summary>Executes the SHX instruction using absolute Y-indexed addressing.</summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private void SHX_AY()
         {
-            ulong addr = Y_Indexed_Absolute(false);
-            byte m = (byte)(((addr >> 8) + 1) & 0xFF);
-            WriteByteToMemory(addr, (byte)(registers.X & m));
+            (ulong addr, byte value) = StoreHighIndexedAbsolute(registers.X, registers.Y);
+            WriteByteToMemory(addr, value);
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private (ulong Address, byte Value) StoreHighIndexedAbsolute(byte source, byte index)
+        {
+            ulong baseAddr = Absolute();
+            ulong indexedAddr = baseAddr + index;
+            byte value = (byte)(source & (((baseAddr >> 8) + 1) & 0xFF));
+            byte writeHigh = CrossBoundary(indexedAddr, baseAddr) ? value : (byte)((indexedAddr >> 8) & 0xFF);
+            ulong writeAddr = ((ulong)writeHigh << 8) | (indexedAddr & 0xFF);
+            return (writeAddr, value);
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private (ulong Address, byte Value) StoreHighIndirectY(byte source)
+        {
+            byte zeroPage = GetNextByteInstruction();
+            byte low = ReadByteFromMemory(zeroPage);
+            byte high = ReadByteFromMemory((byte)(zeroPage + 1));
+            ulong baseAddr = (ulong)((high << 8) | low);
+            ulong indexedAddr = baseAddr + registers.Y;
+            byte value = (byte)(source & (((baseAddr >> 8) + 1) & 0xFF));
+            byte writeHigh = CrossBoundary(indexedAddr, baseAddr) ? value : (byte)((indexedAddr >> 8) & 0xFF);
+            ulong writeAddr = ((ulong)writeHigh << 8) | (indexedAddr & 0xFF);
+            return (writeAddr, value);
         }
 
         #endregion Illegal opcode helpers
