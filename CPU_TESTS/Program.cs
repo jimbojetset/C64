@@ -1,10 +1,14 @@
-﻿using _6502CPU;
+﻿using C64.CPU;
 using JsonSerializer = System.Text.Json.JsonSerializer;
 
+const string TestDataBaseUrl = "https://raw.githubusercontent.com/SingleStepTests/65x02/main/6502/v1/";
 
-_6502_CPU cpu = new _6502_CPU();
+using HttpClient httpClient = new HttpClient();
+string? testDataDirectory = ParseTestDataDirectory(args);
 
-// https://github.com/SingleStepTests/65x02/blob/main/6502/v1/28.json
+CPU_6510 cpu = new CPU_6510();
+
+// https://github.com/SingleStepTests/65x02/blob/main/6502/v1
 
 Dictionary<string, string[]> testDictionary = new Dictionary<string, string[]>();
 
@@ -61,7 +65,7 @@ foreach (KeyValuePair<string, string[]> testPlan in testDictionary)
 
         Console.Write("\r{0}   ", "Opcode " + opcodes + " of " + totalOpcodeCount);
 
-        string testData = File.ReadAllText(@"E:\6502\v1\" + test + ".json");
+        string testData = await LoadTestDataAsync(test, testDataDirectory, httpClient);
 
         List<Data>? testList = JsonSerializer.Deserialize<List<Data>>(testData);
 
@@ -107,7 +111,7 @@ foreach (KeyValuePair<string, string[]> testPlan in testDictionary)
             ram = data.final!.ram;
 
             // execute a single instruction
-            cpu.GetNextInstruction();
+            cpu.GetNextByteInstruction();
             cpu.Execute((byte)Convert.ToByte(test, 16));
 
             bool pass = true;
@@ -156,6 +160,55 @@ Console.WriteLine("Total Fail: " + totalFailure + " tests");
 Console.WriteLine("Failed Opcodes = " + failedOpcodes.ToUpper());
 Console.WriteLine("Time Taken: " + watch.ElapsedMilliseconds / 1000 + " Seconds");
 
+static string? ParseTestDataDirectory(string[] args)
+{
+    for (int i = 0; i < args.Length; i++)
+    {
+        string arg = args[i];
+        if (arg.Equals("--test-dir", StringComparison.OrdinalIgnoreCase) ||
+            arg.Equals("-t", StringComparison.OrdinalIgnoreCase))
+        {
+            if (i + 1 >= args.Length)
+                throw new ArgumentException("Missing value for --test-dir.");
+
+            return args[i + 1];
+        }
+
+        const string switchPrefix = "--test-dir=";
+        if (arg.StartsWith(switchPrefix, StringComparison.OrdinalIgnoreCase))
+            return arg[switchPrefix.Length..];
+
+        if (!arg.StartsWith("-", StringComparison.Ordinal))
+            return arg;
+    }
+
+    return null;
+}
+
+static async Task<string> LoadTestDataAsync(string opcode, string? testDataDirectory, HttpClient httpClient)
+{
+    string fileName = opcode + ".json";
+    if (!string.IsNullOrWhiteSpace(testDataDirectory))
+    {
+        string localPath = Path.Combine(testDataDirectory, fileName);
+        if (File.Exists(localPath))
+            return await File.ReadAllTextAsync(localPath);
+    }
+
+    string url = TestDataBaseUrl + fileName;
+    try
+    {
+        return await httpClient.GetStringAsync(url);
+    }
+    catch (HttpRequestException ex)
+    {
+        string localHint = string.IsNullOrWhiteSpace(testDataDirectory)
+            ? "No local test directory was provided."
+            : $"Local test file was not found in '{testDataDirectory}'.";
+        throw new InvalidOperationException($"{localHint} Failed to download required test data from {url}.", ex);
+    }
+}
+
 
 
 
@@ -194,4 +247,3 @@ internal class Initial
     public byte p { get; set; }
     public List<List<int>>? ram { get; set; }
 }
-

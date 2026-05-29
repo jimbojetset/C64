@@ -12,7 +12,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\6502CPU\6502CPU.csproj" />
+    <ProjectReference Include="..\C64\C64.csproj" />
   </ItemGroup>
 
 </Project>
