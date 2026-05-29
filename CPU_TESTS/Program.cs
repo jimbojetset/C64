@@ -209,15 +209,6 @@ static async Task<string> LoadTestDataAsync(string opcode, string? testDataDirec
     }
 }
 
-
-
-
-
-
-
-
-
-
 internal class Data
 {
     public string? name { get; set; }
