@@ -1825,6 +1825,16 @@ namespace C64
             int firstVisibleY = row25 ? 0 : 4;
             int lastVisibleYExclusive = row25 ? ScreenH : (ScreenH - 4);
 
+            // Keep the normal 24-row top inner border covered even when the
+            // opened-border approximation is active for games that draw scores
+            // in the top border, such as Ikari Warriors.
+            if (verticalBorderOpen && playY >= 0 && playY < 4)
+            {
+                FillLineRangeWithBorderEvents(frameY, 0, ScreenW - 1, borderIdx);
+                Array.Clear(fgLine, 0, fgLine.Length);
+                return;
+            }
+
             if (!verticalBorderOpen && (playY < firstVisibleY || playY >= lastVisibleYExclusive))
             {
                 FillLineRangeWithBorderEvents(frameY, 0, ScreenW - 1, borderIdx);
