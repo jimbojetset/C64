@@ -6,7 +6,7 @@ const string TestDataBaseUrl = "https://raw.githubusercontent.com/SingleStepTest
 using HttpClient httpClient = new HttpClient();
 string? testDataDirectory = ParseTestDataDirectory(args);
 
-CPU_6510 cpu = new CPU_6510();
+CPU_6502 cpu = new CPU_6502();
 
 // https://github.com/SingleStepTests/65x02/blob/main/6502/v1
 
@@ -97,7 +97,8 @@ foreach (KeyValuePair<string, string[]> testPlan in testDictionary)
             // prime the CPU
             cpu.registers = new Registers();
             cpu.registers.Clear();
-            cpu.memory = new Memory(0x10000);
+            FlatMemoryBus bus = new FlatMemoryBus();
+            cpu.Bus = bus;
 
             // load the CPU
             cpu.registers.PC = data.initial!.pc;
@@ -107,7 +108,7 @@ foreach (KeyValuePair<string, string[]> testPlan in testDictionary)
             cpu.registers.Y = data.initial!.y;
             cpu.registers.S = data.initial!.s;
             foreach (List<int> ramData in data.initial.ram!)
-                cpu.memory.WriteByte((ulong)ramData[0], (byte)ramData[1]);
+                bus.WriteByte((ulong)ramData[0], (byte)ramData[1]);
 
             // assertion values
             outPC = data.final!.pc;
@@ -124,7 +125,7 @@ foreach (KeyValuePair<string, string[]> testPlan in testDictionary)
 
             bool pass = true;
             foreach (List<int> ramData in ram!)
-                if (ramData[1] != cpu.memory.ReadByte((ulong)ramData[0]))
+                if (ramData[1] != bus.ReadByte((ulong)ramData[0]))
                     pass = false;
 
             // check asserted values
@@ -143,7 +144,7 @@ foreach (KeyValuePair<string, string[]> testPlan in testDictionary)
                 //    Console.WriteLine();
                 //    foreach (List<int> ramData in ram!)
                 //    {
-                //        Console.WriteLine(ramData[0] + " " + ramData[1] + " " + cpu.memory.ReadByte((ulong)ramData[0]));
+                //        Console.WriteLine(ramData[0] + " " + ramData[1] + " " + bus.ReadByte((ulong)ramData[0]));
                 //    }
                // }
 
@@ -235,4 +236,3 @@ internal class CpuState
     public byte p { get; set; }
     public List<List<int>>? ram { get; set; }
 }
-
