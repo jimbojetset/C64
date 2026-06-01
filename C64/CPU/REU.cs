@@ -270,7 +270,7 @@ namespace C64
         /// a real memory reference so the DMA can be executed in-place.
         /// </summary>
         /// <param name="memory">The CPU memory map used by the operation.</param>
-        public void NotifyFF00Write(CPU.Memory memory)
+        public void NotifyFF00Write(CPU.C64MemoryBus memory)
         {
             if (!_ff00Armed) return;
             _ff00Armed = false;
@@ -284,7 +284,7 @@ namespace C64
         /// the CPU loses these cycles to the REU bus master.
         /// </summary>
         /// <param name="memory">The CPU memory map used by the operation.</param>
-        public void RunDmaTransfer(CPU.Memory memory)
+        public void RunDmaTransfer(CPU.C64MemoryBus memory)
         {
             _reuAddrShadow = _reuAddr;
             _cpuAddrShadow = _cpuAddr;

@@ -1,6 +1,6 @@
 // ============================================================================
 // Project:     C64
-// File:        Memory.cs
+// File:        C64MemoryBus.cs
 // Description: C64 memory map implementation with 6510 ROM banking,
 //              RAM-under-ROM behavior, I/O hooks, color RAM, and VIC-visible
 //              reads.
@@ -19,7 +19,7 @@ namespace C64.CPU
     /// <summary>
     /// Models the C64 address space, including RAM-under-ROM, 6510 banking, I/O hooks, color RAM behavior, and VIC-visible reads.
     /// </summary>
-    public class Memory
+    public class C64MemoryBus : ICpuBus
     {
         /// The flat 64K address space. After banking is enabled, this
         /// buffer always holds the RAM-under-ROM; reads in banked-out
@@ -102,11 +102,11 @@ namespace C64.CPU
         /// not suppress the actual store; the write proceeds normally. The
         /// memory reference is supplied so the hook can perform DMA against
         /// the live CPU bus.
-        public Action<Memory, byte>? OnFF00Write;
+        public Action<C64MemoryBus, byte>? OnFF00Write;
 
-        /// <summary>Initializes a new Memory instance.</summary>
+        /// <summary>Initializes a new C64MemoryBus instance.</summary>
         /// <param name="size">The size of the emulated memory in bytes.</param>
-        public Memory(int size)
+        public C64MemoryBus(int size)
         {
             memory = new byte[size];
         }
@@ -443,5 +443,19 @@ namespace C64.CPU
 
         /// <summary>Gets or sets the length value.</summary>
         public int Length { get; set; }
+    }
+
+    /// <summary>
+    /// Compatibility alias for the C64-specific memory bus used by existing emulator code.
+    /// New non-C64 projects should use ICpuBus directly, typically with FlatMemoryBus.
+    /// </summary>
+    public class Memory : C64MemoryBus
+    {
+        /// <summary>Initializes a new Memory instance.</summary>
+        /// <param name="size">The size of the emulated memory in bytes.</param>
+        public Memory(int size)
+            : base(size)
+        {
+        }
     }
 }
