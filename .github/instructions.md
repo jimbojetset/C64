@@ -2,7 +2,7 @@
 
 ## Project Overview
 
-This is a cycle-accurate MOS 6502 CPU emulator written in C# (.NET 8.0). The project implements the complete 6502 instruction set including documented and undocumented opcodes.
+This is a cycle-accurate MOS 6502 CPU emulator written in C# (.NET 10.0). The project implements the complete 6502 instruction set including documented and undocumented opcodes.
 
 ## Architecture
 

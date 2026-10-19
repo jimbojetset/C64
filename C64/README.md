@@ -1,6 +1,6 @@
 # C64 Emulator
 
-A cycle-accurate MOS 6510 CPU emulator written in C# (.NET 8.0) with comprehensive instruction set support including all documented and undocumented opcodes.
+A cycle-accurate MOS 6510 CPU emulator written in C# (.NET 10.0) with comprehensive instruction set support including all documented and undocumented opcodes.
 
 This repository now contains a full C64 emulator stack built on top of the CPU core, including VIC-II video, SID audio, CIA timers/IO, keyboard/joystick input, IEC/disk support, and datasette support.
 
@@ -72,8 +72,8 @@ These opcodes are implemented with behaviour that reflects authentic hardware va
 
 ## Requirements
 
-- .NET 8.0 SDK
-- C# 12.0
+- .NET 10.0 SDK
+- C# 14.0
 
 For the C64 emulator application:
 - Native SDL2 runtime library available to the OS dynamic loader
