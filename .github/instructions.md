@@ -6,7 +6,7 @@ This is a cycle-accurate MOS 6502 CPU emulator written in C# (.NET 10.0). The pr
 
 ## Architecture
 
-### Two-Project Solution Structure
+### Project Structure
 
 1. **6502CPU** - Core CPU emulation library
    - [`6502_CPU.cs`](6502CPU/6502_CPU.cs) - Main CPU class with Execute() method containing ~256 opcode cases
@@ -14,10 +14,6 @@ This is a cycle-accurate MOS 6502 CPU emulator written in C# (.NET 10.0). The pr
    - [`Registers.cs`](6502CPU/Registers.cs) - PC, S, P, A, X, Y registers
    - [`Flags.cs`](6502CPU/Flags.cs) - Processor status flags (C, Z, I, D, B, V, N)
    
-2. **CPU_TESTS** - JSON-based test suite using SingleStepTests format
-   - Tests from https://github.com/SingleStepTests/65x02/
-   - Validates initial/final register state and memory for each opcode
-
 ## Critical Patterns
 
 ### Opcode Implementation Pattern
@@ -79,22 +75,9 @@ Two interrupt types in [`6502_CPU.cs`](6502CPU/6502_CPU.cs):
 # Build entire solution
 dotnet build 6502CPU.sln
 
-# Run CPU tests
-dotnet run --project CPU_TESTS/CPU_TESTS.csproj
-
 # Run standalone CPU (basic test loop)
 dotnet run --project 6502CPU/6502CPU.csproj
 ```
-
-### Testing Strategy
-
-Tests in [`CPU_TESTS/Program.cs`](CPU_TESTS/Program.cs):
-1. Load JSON test files from SingleStepTests repository
-2. Set initial CPU state (PC, registers, flags, memory)
-3. Execute single instruction: `cpu.GetNextInstruction()` then `cpu.Execute(opcode)`
-4. Assert final state matches expected (registers, flags, memory, cycle count)
-
-To add new opcode tests, update `testDictionary` with opcode hex values (e.g., `["a9", "ad"]`).
 
 ## Project-Specific Conventions
 
@@ -145,5 +128,4 @@ Follow same implementation pattern as documented opcodes: addressing mode helper
 ## Key Files for Onboarding
 
 1. [`6502CPU/6502_CPU.cs`](6502CPU/6502_CPU.cs) - Start here, read `Execute()` switch and instruction implementations
-2. [`CPU_TESTS/Program.cs`](CPU_TESTS/Program.cs) - Understand test harness before modifying opcodes
-3. [`6502CPU/Memory.cs`](6502CPU/Memory.cs) - Memory model with ROM protection
+2. [`6502CPU/Memory.cs`](6502CPU/Memory.cs) - Memory model with ROM protection
