@@ -14,7 +14,7 @@
 //              rights holders. This emulator is for educational purposes only.
 // ============================================================================
 
-namespace C64
+namespace C64.CPU
 {
     /// <summary>
     /// Commodore 17xx-series RAM Expansion Unit (REU) emulator.
