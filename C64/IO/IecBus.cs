@@ -69,9 +69,6 @@ namespace C64
             this.fullDrive = fullDrive;
         }
 
-        /// <summary>Gets or sets the callback invoked for drive activity.</summary>
-        public Action? OnDriveActivity { get; set; }
-
         /// <summary>Updates the host-side CIA2 IEC port pins.</summary>
         /// <param name="dd00">The CIA2 port A data latch value.</param>
         /// <param name="dd02">The CIA2 port A data direction register value.</param>
@@ -120,9 +117,6 @@ namespace C64
 
         /// <summary>Gets whether a full drive-side 1541 emulator is attached to the IEC bus.</summary>
         public bool HasFullDrive => fullDrive is not null;
-
-        /// <summary>Gets whether the attached drive activity light should appear lit for UI polling.</summary>
-        public bool DriveActivityLightOn => fullDrive?.ActivityLightOn ?? false;
 
         /// <summary>Steps the optional full 1541 drive path by the supplied number of elapsed C64 cycles.</summary>
         /// <param name="cycles">The number of C64 CPU cycles that elapsed.</param>
@@ -401,7 +395,6 @@ namespace C64
 
             if (talkQueue.Count == 0)
                 return 0;
-            OnDriveActivity?.Invoke();
             return talkQueue.Dequeue();
         }
 
@@ -446,14 +439,12 @@ namespace C64
 
             if (directChannels.TryGetValue(channel, out DirectChannel? directChannel))
             {
-                OnDriveActivity?.Invoke();
                 return directChannel.ReadByte();
             }
 
             if (talkQueue.Count == 0)
                 return 0;
 
-            OnDriveActivity?.Invoke();
             return talkQueue.Dequeue();
         }
 
@@ -466,8 +457,6 @@ namespace C64
             string? requested = pendingFilename;
             pendingFilename = null;
             bool ok = drive.TryLoadPrg(requested, out prg, out resolvedName);
-            if (ok)
-                OnDriveActivity?.Invoke();
             return ok;
         }
 
@@ -479,8 +468,6 @@ namespace C64
         public bool TryLoadFromDrive(string? requestedName, out byte[] prg, out string resolvedName)
         {
             bool ok = drive.TryLoadPrg(requestedName, out prg, out resolvedName);
-            if (ok)
-                OnDriveActivity?.Invoke();
             return ok;
         }
 
@@ -507,7 +494,6 @@ namespace C64
                 return;
             }
 
-            OnDriveActivity?.Invoke();
             talkQueue = new Queue<byte>(prg);
             devDataRelease = true;
             devClockRelease = true;
@@ -570,7 +556,6 @@ namespace C64
             }
 
             directChannels[channel] = new DirectChannel(sectorBytes);
-            OnDriveActivity?.Invoke();
             SetDriveOk(track, sector);
         }
 

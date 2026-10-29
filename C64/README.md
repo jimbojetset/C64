@@ -173,8 +173,9 @@ At startup, the emulator automatically opens playback device `[0]` from SDL's au
 | `F12` or `Ctrl+R` | Hard reset CPU and peripherals |
 | `Ctrl+A` | Open audio-device selector |
 | `Ctrl+F` | Toggle fullscreen undistorted C64 viewport |
+| `Ctrl+J` | Cycle keyboard joystick input through keyboard-only, joystick port 1, and joystick port 2 |
 | `Ctrl+P` | Pause/unpause emulator |
-| `Ctrl+Q` | Toggle audio mute; shows a small mute icon in the bottom-left corner while muted |
+| `Ctrl+Q` | Toggle audio mute |
 | `Ctrl+L` | Open native file picker to load and run software, disks, tapes, cartridges, or SID files |
 | `Ctrl+S` | Open save dialog for current BASIC program; saves a `.prg` into `Software` |
 | `Ctrl+V` or `Shift+Insert` | Paste host clipboard text into the C64 keyboard buffer as PETSCII (see Clipboard Paste below) |
@@ -184,14 +185,7 @@ At startup, the emulator automatically opens playback device `[0]` from SDL's au
 | `Caps Lock` | Toggle C64 SHIFT LOCK |
 | `Page Up` or `Pause` | Trigger RESTORE NMI |
 
-### Display Overlays
-
-The emulator keeps small transparent status glyphs in the lower-left corner:
-
-| Glyph | Meaning |
-|---|---|
-| Muted speaker | Audio is muted via `Ctrl+Q` |
-| Green activity LED | Virtual drive activity on device 8 |
+Joystick and sound changes are briefly shown over the C64 display.
 
 ### Disk / 1541 Notes
 

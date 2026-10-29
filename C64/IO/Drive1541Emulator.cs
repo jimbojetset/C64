@@ -142,9 +142,6 @@ namespace C64
         /// <summary>Gets whether the emulated drive releases the IEC CLOCK line.</summary>
         public bool DeviceClockRelease => via1.DeviceClockRelease;
 
-        /// <summary>Gets whether the drive activity light should appear lit for UI polling.</summary>
-        public bool ActivityLightOn => disk.ActivityLedOn;
-
         /// <summary>Steps the drive CPU for approximately the supplied number of host cycles.</summary>
         /// <param name="hostCycles">The number of C64 CPU cycles that have elapsed.</param>
         public void Step(int hostCycles)
@@ -375,12 +372,8 @@ namespace C64
             private int cycleRemainder;
             private int stepperPhase = -1;
             private bool motorOn;
-            private bool activityLedOn;
             private bool byteReadyHigh = true;
             private byte currentByte = 0x55;
-
-            /// <summary>Gets whether the drive activity LED output is currently active.</summary>
-            public bool ActivityLedOn => activityLedOn;
 
             /// <summary>Resets the mechanism to a plausible power-on head position and clears cached track data.</summary>
             public void Reset()
@@ -391,7 +384,6 @@ namespace C64
                 cycleRemainder = 0;
                 stepperPhase = -1;
                 motorOn = false;
-                activityLedOn = false;
                 byteReadyHigh = true;
                 currentByte = 0x55;
                 trackBytes = Array.Empty<byte>();
@@ -414,7 +406,6 @@ namespace C64
                 byteIndex = 0;
                 cycleRemainder = 0;
                 motorOn = false;
-                activityLedOn = false;
                 byteReadyHigh = true;
                 trackBytes = Array.Empty<byte>();
                 currentByte = 0x55;
@@ -428,8 +419,6 @@ namespace C64
                 bool newMotorOn = (portB & 0x04) == 0;
                 if (newMotorOn != motorOn)
                     motorOn = newMotorOn;
-                activityLedOn = (portB & 0x08) != 0;
-
                 int phase = portB & 0x03;
                 if (stepperPhase < 0)
                 {

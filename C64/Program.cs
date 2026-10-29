@@ -239,7 +239,6 @@ namespace C64
             if (fullDrive is not null)
                 Console.WriteLine("1541 drive ROM found; full drive emulation path enabled.");
             iecBus = new IecBus(drive, fullDrive);
-            iecBus.OnDriveActivity = display.PulseDriveActivity;
             datasette = new DatasetteDevice();
             reu = new REU(128);
             reu.OnIrqRequest = () => cpu.InitiateIRQ(0xFFFE);
@@ -266,7 +265,6 @@ namespace C64
             keyboard.OnToggleJoystickPort = ToggleJoystickPort;
             keyboard.OnToggleTurbo = ToggleTurbo;
             keyboard.OnSelectAudioDevice = SelectAudioDevice;
-            display.JoystickPortOverlay = keyboard.ActiveJoystickPort;
 
             if (turbo)
             {
@@ -1778,7 +1776,6 @@ namespace C64
             bool iecClockHigh = (iecExternal & 0x40) != 0;
             SetCia2SerialPins(iecDataHigh, iecClockHigh);
             iecBus.StepDriveCycles((int)elapsed);
-            display.DriveActivityLightOn = iecBus.DriveActivityLightOn;
 
             StepCia1Timers(elapsed);
             StepCia2Timers(elapsed);
@@ -2592,11 +2589,9 @@ namespace C64
             display.BeginReset();
 
             keyboard.Reset();
-            display.JoystickPortOverlay = keyboard.ActiveJoystickPort;
             reu.Reset();
             iecBus.SetHostLooseProgramPresent(IsLooseHostProgram(lastHostLoadedFile));
             iecBus.ResetDrive();
-            display.DriveActivityLightOn = false;
         }
 
         /// <summary>Handles a keyboard-triggered hard reset.</summary>
@@ -2618,7 +2613,7 @@ namespace C64
         {
             bool muted = !sound.Muted;
             sound.Muted = muted;
-            display.MuteOverlayVisible = muted;
+            display.ShowTemporaryMessage(muted ? "SOUND:OFF" : "SOUND:ON", 2000);
         }
 
         /// <summary>Gets whether the emulator is currently paused.</summary>
@@ -2642,7 +2637,13 @@ namespace C64
         private void ToggleJoystickPort()
         {
             int port = keyboard.ToggleJoystickPort();
-            display.JoystickPortOverlay = port;
+            string message = port switch
+            {
+                1 => "JOYSTICK 1",
+                2 => "JOYSTICK 2",
+                _ => "KEYBOARD",
+            };
+            display.ShowTemporaryMessage(message, 2000);
         }
 
         /// <summary>Selects audio device.</summary>
@@ -2979,7 +2980,6 @@ namespace C64
             {
                 Thread.Sleep(20);
                 iecBus.EjectD64();
-                display.DriveActivityLightOn = false;
                 RestoreTemporaryKernalFastBootPatch();
                 DetachCartridge();
 
@@ -3021,7 +3021,6 @@ namespace C64
         private void EjectDriveMedia()
         {
             iecBus.EjectD64();
-            display.DriveActivityLightOn = false;
             DetachCartridge();
         }
 
