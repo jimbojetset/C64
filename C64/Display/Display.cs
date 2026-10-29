@@ -281,7 +281,7 @@ namespace C64
             }
         }
 
-        /// <summary>Initializes this component.</summary>
+        /// <summary>Initializes SDL component.</summary>
         public void Init()
         {
             if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_GAMECONTROLLER) != 0)
