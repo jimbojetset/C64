@@ -29,6 +29,7 @@ Most-used non-standard key mappings:
 | SHIFT LOCK | `Caps Lock` (toggle) |
 | CLR/HOME | `Home` |
 | INST/DEL | `Insert` or `Backspace/Delete` |
+| Power cycle / cold boot | `F12` or `Ctrl+R` |
 | Load software / ROM | `Ctrl+L` |
 | Save BASIC program | `Ctrl+S` |
 | Pause/unpause emulator | `Ctrl+P` |
@@ -104,6 +105,8 @@ cd C64
 dotnet run -c Release
 ```
 
+The monitor appears first with a black screen, then the C64 powers on after a short delay.
+
 ### Software Loading And Saving
 
 Press `Ctrl+L` while the emulator is running to open the OS-native file picker for supported C64 software, disks, tapes, cartridges, and SID files. The emulator pauses while the picker is open; selecting a file unpauses the emulator and uses the existing extension-based loader to reset, load, and run the selected software. Closing or cancelling the picker restores the previous pause state. `.sid`, `.psid`, and `.rsid` files are parsed as SID tunes and started directly with a small in-memory player driver. `.crt` files are inserted as cartridges and reset into, with standard 8K/16K/Ultimax, EasyFlash, and Magic Desk banking supported.
@@ -170,7 +173,7 @@ At startup, the emulator automatically opens playback device `[0]` from SDL's au
 
 | Keyboard Shortcut | Action |
 |---|---|
-| `F12` or `Ctrl+R` | Hard reset CPU and peripherals |
+| `F12` or `Ctrl+R` | Power cycle: show the black monitor briefly, then cold boot the C64 |
 | `Ctrl+A` | Open audio-device selector |
 | `Ctrl+F` | Toggle fullscreen undistorted C64 viewport |
 | `Ctrl+J` | Cycle keyboard joystick input through keyboard-only, joystick port 1, and joystick port 2 |

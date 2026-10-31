@@ -421,6 +421,13 @@ namespace C64.Display
             PresentFrame();
         }
 
+        /// <summary>Displays the powered monitor before the C64 starts producing video.</summary>
+        public void ShowPoweredOffMonitor()
+        {
+            ApplyPendingWindowTitle();
+            PresentFrame(showC64Screen: false);
+        }
+
         /// <summary>Creates presentation objects.</summary>
         private unsafe void CreatePresentationObjects()
         {
@@ -723,17 +730,20 @@ namespace C64.Display
         }
 
         /// <summary>Presents frame.</summary>
-        private unsafe void PresentFrame()
+        private unsafe void PresentFrame(bool showC64Screen = true)
         {
             GL glApi = gl ?? throw new InvalidOperationException("OpenGL API is not initialized.");
 
             SDL_GL_MakeCurrent(window, glContext);
             SDL_GetWindowSize(window, out int windowW, out int windowH);
 
-            fixed (byte* p = presentationBuf)
+            if (showC64Screen)
             {
-                glApi.BindTexture(TextureTarget.Texture2D, frameTexture);
-                glApi.TexSubImage2D(TextureTarget.Texture2D, 0, 0, 0, FrameW, FrameH, PixelFormat.Bgra, PixelType.UnsignedByte, p);
+                fixed (byte* p = presentationBuf)
+                {
+                    glApi.BindTexture(TextureTarget.Texture2D, frameTexture);
+                    glApi.TexSubImage2D(TextureTarget.Texture2D, 0, 0, 0, FrameW, FrameH, PixelFormat.Bgra, PixelType.UnsignedByte, p);
+                }
             }
 
             glApi.Viewport(0, 0, (uint)Math.Max(1, windowW), (uint)Math.Max(1, windowH));
@@ -743,8 +753,11 @@ namespace C64.Display
 
             if (fullscreenViewportMode)
             {
-                (int vx, int vy, int vw, int vh) = CalculateFrameViewport(windowW, windowH);
-                DrawPresentationQuad(frameTexture, vx, vy, vw, vh, effectMode: 0);
+                if (showC64Screen)
+                {
+                    (int vx, int vy, int vw, int vh) = CalculateFrameViewport(windowW, windowH);
+                    DrawPresentationQuad(frameTexture, vx, vy, vw, vh, effectMode: 0);
+                }
 
                 SDL_GL_SwapWindow(window);
                 return;
@@ -762,7 +775,8 @@ namespace C64.Display
             int sy = (int)Math.Round(screenCenterY - screenH * 0.5);
             int sw = (int)Math.Round(screenW);
             int sh = (int)Math.Round(screenH);
-            DrawPresentationQuad(frameTexture, sx, sy, sw, sh, effectMode: 1);
+            if (showC64Screen)
+                DrawPresentationQuad(frameTexture, sx, sy, sw, sh, effectMode: 1);
             DrawPresentationQuad(monitorTexture, mx, my, mw, mh, effectMode: 0);
             SDL_GL_SwapWindow(window);
         }

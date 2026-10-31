@@ -112,6 +112,7 @@ namespace C64
         /// --- Constants ---
         private const int Clock_PAL = 985248;
 
+        private const uint C64PowerOnDelayMs = 500;
         private const int KeyboardDrainPeriodCycles = 5000;
         private const int KernalFastBootPatchOffset = 0xFCF5 - 0xE000;
         private static readonly byte[] KernalRamInitCall = [0x20, 0x50, 0xFD];
@@ -137,6 +138,7 @@ namespace C64
         private string? lastHostLoadedFile;
         private bool kernalFastBootPatchActive;
         private int kernalFastBootRestoreScheduled;
+        private int powerCycleRequested;
         private byte cia1PortA = 0xFF;
         private byte cia1PortB = 0xFF;
         private byte cia1Ddra = 0x00;
@@ -248,7 +250,7 @@ namespace C64
             };
             reu.OnExecuteNow = () => reu.RunDmaTransfer(cpu.memory);
             cpu.memory.OnFF00Write = (mem, _) => reu.NotifyFF00Write(mem);
-            keyboard.OnHardReset = HardResetFromKeyboard;
+            keyboard.OnHardReset = RequestPowerCycle;
             keyboard.OnNativeLoad = LoadProgramFromNativeFileDialog;
             keyboard.OnSave = SaveProgram;
             keyboard.OnRestoreNmi = TriggerRestoreNmi;
@@ -2410,6 +2412,7 @@ namespace C64
             SDL_StartTextInput();
             sound.Init(audioDevice);
 
+            display.ShowPoweredOffMonitor();
             var token = cts.Token;
 
             var cpuThread = new Thread(() =>
@@ -2422,35 +2425,12 @@ namespace C64
                 Name = "6502",
                 Priority = ThreadPriority.AboveNormal
             };
-            cpuThread.Start();
-
-            display.Start();
-            sound.Start(token);
-
-            /// Run the exact same reset path used by Ctrl+R after all worker
-            /// threads are alive. This avoids startup-only races where the
-            /// display can remain in reset on first launch.
-            HardReset();
-
-            var startupWait = Stopwatch.StartNew();
-            while (display.IsResetting && startupWait.ElapsedMilliseconds < 3000)
-                SDL_Delay(1);
-
-            if (display.IsResetting)
-            {
-                Console.Error.WriteLine("[BOOT] initial reset timed out; retrying startup reset");
-                HardReset();
-
-                startupWait.Restart();
-                while (display.IsResetting && startupWait.ElapsedMilliseconds < 3000)
-                    SDL_Delay(1);
-
-                if (display.IsResetting)
-                    Console.Error.WriteLine("[BOOT] startup reset still pending; Ctrl+R will force another reset");
-            }
 
             bool quit = false;
             uint nextDraw = SDL_GetTicks();
+            uint powerOnAt = nextDraw + C64PowerOnDelayMs;
+            bool c64PoweredOn = false;
+            bool c64ThreadsStarted = false;
             const uint drawIntervalMs = 16; /// ~60 Hz upper bound; vsync paces actual present
 
             while (!quit)
@@ -2485,7 +2465,35 @@ namespace C64
                     }
                 }
 
-                while (pendingLoads.TryDequeue(out var entry))
+                uint now = SDL_GetTicks();
+                if (Interlocked.Exchange(ref powerCycleRequested, 0) == 1)
+                {
+                    if (c64PoweredOn)
+                    {
+                        BeginPowerCycle();
+                        c64PoweredOn = false;
+                    }
+
+                    powerOnAt = now + C64PowerOnDelayMs;
+                    nextDraw = now;
+                }
+
+                if (!quit && !c64PoweredOn && (int)(now - powerOnAt) >= 0)
+                {
+                    if (c64ThreadsStarted)
+                        CompletePowerCycle();
+                    else
+                    {
+                        PowerOnC64(cpuThread, token);
+                        c64ThreadsStarted = true;
+                    }
+
+                    c64PoweredOn = true;
+                    now = SDL_GetTicks();
+                    nextDraw = now;
+                }
+
+                while (c64PoweredOn && pendingLoads.TryDequeue(out var entry))
                 {
                     if (entry.AutoRun && !IsCartridgePath(entry.Path))
                         _ = Task.Run(() => ResetLoadRun(entry.Path));
@@ -2493,10 +2501,12 @@ namespace C64
                         DoLoad(entry.Path);
                 }
 
-                uint now = SDL_GetTicks();
                 if ((int)(now - nextDraw) >= 0)
                 {
-                    display.RedrawScreen();
+                    if (c64PoweredOn)
+                        display.RedrawScreen();
+                    else
+                        display.ShowPoweredOffMonitor();
                     nextDraw = now + drawIntervalMs;
                 }
                 else
@@ -2506,6 +2516,63 @@ namespace C64
             }
 
             cts.Cancel();
+        }
+
+        /// <summary>Starts the C64 hardware after the monitor-only startup period.</summary>
+        /// <param name="cpuThread">The thread that runs the 6510.</param>
+        /// <param name="token">The cancellation token used by the SID synthesis thread.</param>
+        private void PowerOnC64(Thread cpuThread, CancellationToken token)
+        {
+            cpuThread.Start();
+            display.Start();
+            sound.Start(token);
+
+            // Use the same hardware reset path as Ctrl+R once all worker threads are alive.
+            HardReset();
+            WaitForHardwareReset();
+        }
+
+        /// <summary>Waits for the CPU thread to finish resetting the C64 hardware and display.</summary>
+        private void WaitForHardwareReset()
+        {
+            var startupWait = Stopwatch.StartNew();
+            while (display.IsResetting && startupWait.ElapsedMilliseconds < 3000)
+                SDL_Delay(1);
+
+            if (!display.IsResetting)
+                return;
+
+            Console.Error.WriteLine("[BOOT] initial reset timed out; retrying startup reset");
+            HardReset();
+
+            startupWait.Restart();
+            while (display.IsResetting && startupWait.ElapsedMilliseconds < 3000)
+                SDL_Delay(1);
+
+            if (display.IsResetting)
+                Console.Error.WriteLine("[BOOT] startup reset still pending; Ctrl+R will force another reset");
+        }
+
+        /// <summary>Requests a monitor-preserving C64 power cycle from the SDL event loop.</summary>
+        private void RequestPowerCycle()
+        {
+            Interlocked.Exchange(ref powerCycleRequested, 1);
+        }
+
+        /// <summary>Pauses the C64 hardware while the powered monitor displays a black screen.</summary>
+        private void BeginPowerCycle()
+        {
+            DetachCartridge();
+            ClearLastHostLoadedFile();
+            SetPaused(true);
+        }
+
+        /// <summary>Cold boots the C64 and resumes execution after the monitor-only delay.</summary>
+        private void CompletePowerCycle()
+        {
+            HardReset();
+            SetPaused(false);
+            WaitForHardwareReset();
         }
 
         /// <summary>Releases resources owned by this instance.</summary>
@@ -2585,14 +2652,6 @@ namespace C64
             reu.Reset();
             iecBus.SetHostLooseProgramPresent(IsLooseHostProgram(lastHostLoadedFile));
             iecBus.ResetDrive();
-        }
-
-        /// <summary>Handles a keyboard-triggered hard reset.</summary>
-        private void HardResetFromKeyboard()
-        {
-            DetachCartridge();
-            ClearLastHostLoadedFile();
-            HardReset();
         }
 
         /// <summary>Raises the RESTORE-key NMI.</summary>
