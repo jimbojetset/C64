@@ -1119,8 +1119,8 @@ namespace C64.Display
 
             bool den = (mem[0xD011] & 0x10) != 0;
             int yScroll = mem[0xD011] & 0x07;
-            /// Badline detection: DEN=1, line in 0x30-0xF7, and raster line & 0x07 == fine Y scroll
-            /// When badline condition is true, VIC steals cycles during character/sprite data fetch
+            // Badline detection: DEN=1, line in 0x30-0xF7, and raster line & 0x07 == fine Y scroll.
+            // When the condition is true, the VIC steals cycles for character and sprite data fetches.
             bool badline = den && line >= 0x30 && line <= 0xF7 && ((line & 0x07) == yScroll);
             if (badline)
             {

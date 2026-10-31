@@ -11,9 +11,7 @@
 // Copyright:   (c) 2024-2026 James Booth
 // ============================================================================
 
-using System.Collections.Generic;
 using System.Globalization;
-using System.Text;
 
 namespace C64.IO
 {

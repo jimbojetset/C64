@@ -305,13 +305,13 @@ namespace C64.CPU
             {
                 switch (_dmaType)
                 {
-                    case 0: /// Stash: C64 -> REU
+                    case 0: // Stash: C64 -> REU
                         WriteReuByte(_reuAddr, memory.ReadByte((ulong)_cpuAddr));
                         break;
-                    case 1: /// Fetch: REU -> C64
+                    case 1: // Fetch: REU -> C64
                         memory.WriteByte((ulong)_cpuAddr, ReadReuByte(_reuAddr));
                         break;
-                    case 2: /// Swap: C64 <-> REU
+                    case 2: // Swap: C64 <-> REU
                         {
                             byte cpuByte = memory.ReadByte((ulong)_cpuAddr);
                             byte reuByte = ReadReuByte(_reuAddr);

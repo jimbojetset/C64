@@ -890,7 +890,7 @@ namespace C64.Sound
 
             if (pulse)
             {
-                /// SID pulse output is high while phase < pulse width.
+                // SID pulse output is high while phase is below the pulse width.
                 uint phase = accum >> 12; /// 0..4095
                 bool high = test || (phase < (uint)(pw12 & 0x0FFF));
 
