@@ -1,23 +1,10 @@
-// ============================================================================
-// Project:     C64
-// File:        D64Image.cs
-// Description: D64 disk image parser with directory decoding, PRG loading,
-//              disk-name handling, and raw sector access.
-// Author:      James Booth
-// Created:     2025
-// License:     MIT License - See LICENSE file in the project root
-// Copyright:   (c) 2024-2026 James Booth
-// Notice:      Commodore 64 and related ROMs are property of their respective
-//              rights holders. This emulator is for educational purposes only.
-// ============================================================================
+
 
 using System.Text;
 
 namespace C64.IO
 {
-    /// <summary>
-    /// Parses a D64 disk image and exposes directory, PRG loading, disk-name, and raw sector access helpers.
-    /// </summary>
+
     internal sealed class D64Image
     {
         private static readonly int[] SectorsPerTrack =
@@ -32,19 +19,17 @@ namespace C64.IO
 
         private readonly byte[] raw;
 
-        /// <summary>Initializes a new D64Image instance.</summary>
+        /// <summary>Wraps raw D64 bytes for directory, sector-chain, and BAM access.</summary>
         /// <param name="raw">The raw D64 image bytes.</param>
         private D64Image(byte[] raw)
         {
             this.raw = raw;
         }
 
-        /// <summary>Gets or sets the source image path.</summary>
         public string SourcePath { get; private set; } = string.Empty;
 
-        /// <summary>Loads a D64 disk image from disk.</summary>
+        /// <summary>Reads and validates a host D64 file before exposing its raw sector image.</summary>
         /// <param name="path">The path of the file to use.</param>
-        /// <returns>The opened disk image.</returns>
         public static D64Image Load(string path)
         {
             byte[] raw = File.ReadAllBytes(path);
@@ -56,13 +41,12 @@ namespace C64.IO
         }
 
         /// <summary>Lists PRG directory entries in the image.</summary>
-        /// <returns>The available file names.</returns>
         public IReadOnlyList<string> ListPrgFiles()
         {
             var files = new List<string>();
             foreach (var e in ReadDirectoryEntries())
             {
-                if (!IsLoadableFileType(e.FileType)) /// Accept PRG-like files
+                if (!IsLoadableFileType(e.FileType))
                     continue;
                 files.Add(e.Name);
             }
@@ -71,17 +55,15 @@ namespace C64.IO
 
         /// <summary>Determines whether a directory file type is loadable.</summary>
         /// <param name="fileType">The Commodore directory file type byte.</param>
-        /// <returns>True when the operation succeeds; otherwise, false.</returns>
         private static bool IsLoadableFileType(byte fileType)
         {
             return (fileType & 0x07) == 0x02;
         }
 
-        /// <summary>Attempts to load prg.</summary>
+        /// <summary>Finds a matching PRG directory entry and follows its D64 sector chain into a loadable byte stream.</summary>
         /// <param name="requestedName">The C64 filename requested by the caller, or null to select a default.</param>
         /// <param name="prgBytes">Receives or contains the PRG bytes for the operation.</param>
         /// <param name="resolvedName">Receives the resolved C64 filename when the operation succeeds.</param>
-        /// <returns>True when the operation succeeds; otherwise, false.</returns>
         public bool TryLoadPrg(string? requestedName, out byte[] prgBytes, out string resolvedName)
         {
             prgBytes = [];
@@ -95,12 +77,12 @@ namespace C64.IO
             string wanted = NormalizeName(requestedName ?? string.Empty);
             if (string.IsNullOrEmpty(wanted) || wanted == "*")
             {
-                /// CBM DOS: empty name or "*" means the first file on the disk.
+
                 selected = entries.FirstOrDefault(e => IsLoadableFileType(e.FileType));
             }
             else if (wanted.EndsWith("*", StringComparison.Ordinal))
             {
-                /// Prefix wildcard, e.g. LOAD"ELI*",8
+
                 string prefix = wanted.Substring(0, wanted.Length - 1);
                 selected = entries.FirstOrDefault(e => IsLoadableFileType(e.FileType) && NormalizeName(e.Name).StartsWith(prefix, StringComparison.Ordinal));
             }
@@ -147,9 +129,8 @@ namespace C64.IO
             return prgBytes.Length >= 3;
         }
 
-        /// <summary>Attempts to load directory.</summary>
+        /// <summary>Builds a BASIC-format Commodore directory listing from the D64 directory sectors.</summary>
         /// <param name="prgBytes">Receives or contains the PRG bytes for the operation.</param>
-        /// <returns>True when the operation succeeds; otherwise, false.</returns>
         public bool TryLoadDirectory(out byte[] prgBytes)
         {
             prgBytes = [];
@@ -175,11 +156,10 @@ namespace C64.IO
             return true;
         }
 
-        /// <summary>Attempts to read sector.</summary>
+        /// <summary>Copies one validated 256-byte D64 track and sector into a new buffer.</summary>
         /// <param name="track">The disk track number.</param>
         /// <param name="sector">The disk sector number.</param>
         /// <param name="sectorBytes">Receives the sector bytes when the read succeeds.</param>
-        /// <returns>True when the operation succeeds; otherwise, false.</returns>
         public bool TryReadSector(int track, int sector, out byte[] sectorBytes)
         {
             sectorBytes = [];
@@ -194,7 +174,6 @@ namespace C64.IO
 
         /// <summary>Gets the number of sectors present on a D64 track.</summary>
         /// <param name="track">The one-based disk track number.</param>
-        /// <returns>The sector count for the track, or 0 when the track is outside the image geometry.</returns>
         public static int GetSectorCount(int track)
         {
             if (track <= 0 || track >= SectorsPerTrack.Length)
@@ -206,7 +185,6 @@ namespace C64.IO
         /// <summary>Attempts to read the two-byte disk ID from the BAM sector.</summary>
         /// <param name="id1">Receives the first disk ID byte.</param>
         /// <param name="id2">Receives the second disk ID byte.</param>
-        /// <returns>True when the disk ID is present; otherwise, false.</returns>
         public bool TryGetDiskId(out byte id1, out byte id2)
         {
             id1 = 0x30;
@@ -221,8 +199,7 @@ namespace C64.IO
             return true;
         }
 
-        /// <summary>Reads directory entries.</summary>
-        /// <returns>The directory entries decoded from the D64 image.</returns>
+        /// <summary>Walks the D64 directory-sector chain and decodes its active file entries.</summary>
         private List<DirectoryEntry> ReadDirectoryEntries()
         {
             var list = new List<DirectoryEntry>();
@@ -264,7 +241,6 @@ namespace C64.IO
         }
 
         /// <summary>Reads the disk name from the directory sector.</summary>
-        /// <returns>The string value produced by the operation.</returns>
         private string GetDiskName()
         {
             int bam = Offset(18, 0);
@@ -275,7 +251,7 @@ namespace C64.IO
             return string.IsNullOrWhiteSpace(name) ? "DISK" : name;
         }
 
-        /// <summary>Appends one BASIC directory listing line.</summary>
+        /// <summary>Appends a token-free BASIC line with the correct next-line pointer for a directory listing.</summary>
         /// <param name="body">The BASIC directory body being built.</param>
         /// <param name="lineAddress">The next BASIC line address to write and advance.</param>
         /// <param name="lineNumber">The BASIC line number to emit.</param>
@@ -299,9 +275,8 @@ namespace C64.IO
             lineAddress = next;
         }
 
-        /// <summary>Converts an ASCII character to PETSCII.</summary>
+        /// <summary>Converts printable ASCII to the uppercase PETSCII subset used by directory listings.</summary>
         /// <param name="ch">The character to convert or write.</param>
-        /// <returns>The byte value produced by the operation.</returns>
         private static byte CharToPetscii(char ch)
         {
             if (ch >= 'a' && ch <= 'z')
@@ -309,9 +284,8 @@ namespace C64.IO
             return ch >= ' ' && ch <= '~' ? (byte)ch : (byte)'?';
         }
 
-        /// <summary>Formats a D64 file type byte.</summary>
+        /// <summary>Decodes the low three Commodore directory-type bits as DEL, SEQ, PRG, USR, or REL.</summary>
         /// <param name="fileType">The Commodore directory file type byte.</param>
-        /// <returns>The string value produced by the operation.</returns>
         private static string FileTypeName(byte fileType)
         {
             return (fileType & 0x07) switch
@@ -325,11 +299,10 @@ namespace C64.IO
             };
         }
 
-        /// <summary>Decodes petscii name.</summary>
+        /// <summary>Decodes a padded PETSCII disk or file name into trimmed host text.</summary>
         /// <param name="src">The source byte buffer to read from.</param>
         /// <param name="offset">The starting offset within the buffer.</param>
         /// <param name="len">The number of bytes to decode.</param>
-        /// <returns>The string value produced by the operation.</returns>
         private static string DecodePetsciiName(byte[] src, int offset, int len)
         {
             var sb = new StringBuilder(len);
@@ -348,9 +321,8 @@ namespace C64.IO
             return sb.ToString().Trim();
         }
 
-        /// <summary>Normalizes name.</summary>
+        /// <summary>Trims quotes and whitespace and folds a requested disk filename to uppercase for matching.</summary>
         /// <param name="s">The string to normalize.</param>
-        /// <returns>The string value produced by the operation.</returns>
         private static string NormalizeName(string s)
         {
             return s.Trim().Trim('"', '\'').ToUpperInvariant();
@@ -359,7 +331,6 @@ namespace C64.IO
         /// <summary>Calculates the byte offset of a D64 sector.</summary>
         /// <param name="track">The disk track number.</param>
         /// <param name="sector">The disk sector number.</param>
-        /// <returns>The numeric value produced by the operation.</returns>
         private static int Offset(int track, int sector)
         {
             if (track <= 0 || track >= SectorsPerTrack.Length)
@@ -374,7 +345,6 @@ namespace C64.IO
             return (sectorsBefore + sector) * 256;
         }
 
-        /// <summary>Represents Directory Entry.</summary>
         private sealed record DirectoryEntry(string Name, byte FileType, byte StartTrack, byte StartSector, ushort Blocks);
     }
 }

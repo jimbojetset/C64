@@ -1,15 +1,4 @@
-// ============================================================================
-// Project:     C64
-// File:        Keyboard.cs
-// Description: SDL keyboard and controller input handler for the C64 keyboard
-//              matrix, joystick port, hotkeys, and queued key injection.
-// Author:      James Booth
-// Created:     2025
-// License:     MIT License - See LICENSE file in the project root
-// Copyright:   (c) 2024-2026 James Booth
-// Notice:      Commodore 64 and related ROMs are property of their respective
-//              rights holders. This emulator is for educational purposes only.
-// ============================================================================
+
 
 using C64.CPU;
 using System.Collections.Concurrent;
@@ -17,19 +6,13 @@ using static SDL2.SDL;
 
 namespace C64.IO
 {
-    /// <summary>
-    /// Standalone keyboard and joystick port 2 controller.
-    /// Owns the C64 keyboard matrix, the PETSCII key queue, and the
-    /// joystick port 2 byte.  The SDL main loop hands every key event
-    /// to <see cref="HandleSdlEvent"/> and calls nothing else.
-    /// </summary>
+
     internal sealed class Keyboard : IDisposable
     {
         private readonly CPU_6510 cpu;
 
         private readonly ConcurrentQueue<byte> keyQueue = new();
 
-        /// C64 keyboard matrix: 8 rows, each column bit is active-low.
         private readonly byte[] keyboardMatrix = [0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF];
 
         private volatile byte keyboardJoystick = 0xFF;
@@ -43,27 +26,18 @@ namespace C64.IO
         private bool shiftLockActive;
         private const short ControllerDeadZone = 12000;
 
-        /// <summary>
-        /// Tracks matrix cells (and synthetic SHIFT obligation) latched by an
-        /// <c>SDL_TEXTINPUT</c> event keyed by the SDL scancode of the physical
-        /// key that produced the character, so the matching <c>SDL_KEYUP</c> can
-        /// release exactly what was pressed even if the host modifier state has
-        /// since changed.
-        /// </summary>
         private readonly Dictionary<SDL_Scancode, TextInputBinding> textInputHeld = [];
 
-        /// <summary>SHIFT policy applied by a symbolic key mapping.</summary>
         private enum ShiftPolicy
         {
-            /// <summary>Pass the physical host SHIFT through unchanged.</summary>
+
             Passthrough,
-            /// <summary>Force the C64 SHIFT bits to be asserted while this key is held.</summary>
+
             ForceShift,
-            /// <summary>Force the C64 SHIFT bits to be released while this key is held.</summary>
+
             ForceUnshift,
         }
 
-        /// <summary>Latched binding from an <c>SDL_TEXTINPUT</c> event.</summary>
         private readonly struct TextInputBinding
         {
             public readonly int Row;
@@ -72,90 +46,58 @@ namespace C64.IO
             public TextInputBinding(int row, int col, ShiftPolicy shift) { Row = row; Column = col; Shift = shift; }
         }
 
-        /// <summary>Tracks how many text-input pressed keys want SHIFT asserted.</summary>
         private int syntheticShiftCount;
 
-        /// <summary>Tracks how many text-input pressed keys want SHIFT released.</summary>
         private int syntheticUnshiftCount;
 
-        /// <summary>Tracks the host LSHIFT physical key state.</summary>
         private bool physicalLShift;
 
-        /// <summary>Tracks the host RSHIFT physical key state.</summary>
         private bool physicalRShift;
 
-        /// <summary>
-        /// Scancode of the most recent non-repeat KEYDOWN that fell through to
-        /// the symbolic / matrix routing. SDL fires <c>SDL_TEXTINPUT</c> for the
-        /// same physical key immediately after its KEYDOWN, so the text-input
-        /// handler can use this value to key its binding by the originating
-        /// physical key (not by the produced character, whose scancode would
-        /// belong to a different key on the host layout).
-        /// </summary>
         private SDL_Scancode pendingTextInputScancode = SDL_Scancode.SDL_SCANCODE_UNKNOWN;
 
-        /// ?? Callbacks wired by C64Emulator after construction ?????????????????
-
-        /// <summary>Invoked when F12 / Ctrl+R is pressed.</summary>
         public Action? OnHardReset { get; set; }
 
-        /// <summary>Invoked when Ctrl+L is pressed.</summary>
         public Action? OnNativeLoad { get; set; }
 
-        /// <summary>Invoked when Ctrl+S is pressed.</summary>
         public Action? OnSave { get; set; }
 
-        /// <summary>Invoked when RESTORE key equivalent is pressed.</summary>
         public Action? OnRestoreNmi { get; set; }
 
-        /// <summary>Invoked when Shift+S is pressed (screenshot).</summary>
         public Action? OnScreenshot { get; set; }
 
-        /// <summary>Invoked when Ctrl+Shift+S is pressed (raw viewport screenshot).</summary>
         public Action? OnViewportScreenshot { get; set; }
 
-        /// <summary>Invoked when Ctrl+F is pressed (fullscreen viewport toggle).</summary>
         public Action? OnToggleFullscreenViewport { get; set; }
 
-        /// <summary>Invoked when Ctrl+Q is pressed.</summary>
         public Action? OnToggleMute { get; set; }
 
-        /// <summary>Invoked when Ctrl+P is pressed.</summary>
         public Action? OnTogglePause { get; set; }
 
-        /// <summary>Invoked when Ctrl+J is pressed.</summary>
         public Action? OnToggleJoystickPort { get; set; }
 
-        /// <summary>Invoked when Ctrl+T is pressed.</summary>
         public Action? OnToggleTurbo { get; set; }
 
-        /// <summary>Invoked when Ctrl+A is pressed.</summary>
         public Action? OnSelectAudioDevice { get; set; }
 
-        /// <summary>Initializes a new Keyboard instance.</summary>
+        /// <summary>Creates the C64 keyboard matrix and joystick input state connected to the 6510.</summary>
         /// <param name="cpu">The CPU instance connected to this component.</param>
         public Keyboard(CPU_6510 cpu)
         {
             this.cpu = cpu;
         }
 
-        /// ?? Public API ????????????????????????????????????????????????????????
-
-        /// <summary>Gets the selected joystick port number used by keyboard joystick mapping, or 0 when keyboard mapping is disabled.</summary>
         public int ActiveJoystickPort => activeJoystickPort;
 
-        /// <summary>CIA-1 port B ($DC01) joystick port 1 byte (active-low).</summary>
         public byte Joystick1 => (byte)(KeyboardJoystickForPort(1) & controllerJoystick);
 
-        /// <summary>CIA-1 port A ($DC00) joystick port 2 byte (active-low).</summary>
         public byte Joystick2 => (byte)(KeyboardJoystickForPort(2) & controllerJoystick);
 
         /// <summary>Gets the active-low keyboard joystick byte for the requested port.</summary>
         /// <param name="port">The C64 joystick port number to query.</param>
-        /// <returns>The keyboard joystick byte for that port, or neutral when keyboard mapping is disabled or routed elsewhere.</returns>
         private byte KeyboardJoystickForPort(int port) => activeJoystickPort == port ? keyboardJoystick : (byte)0xFF;
 
-        /// <summary>Initializes SDL game controller support.</summary>
+        /// <summary>Discovers the first SDL game controller and begins joystick event processing.</summary>
         public void InitGameControllers()
         {
             SDL_GameControllerEventState(SDL_ENABLE);
@@ -169,7 +111,6 @@ namespace C64.IO
         /// </summary>
         /// <param name="rowLatch">The CIA row latch value used for keyboard scanning.</param>
         /// <param name="rowDdr">The CIA row data direction register used for keyboard scanning.</param>
-        /// <returns>The byte value produced by the operation.</returns>
         public byte ScanMatrix(byte rowLatch, byte rowDdr)
         {
             byte activeRows = (byte)(~rowLatch & rowDdr);
@@ -243,7 +184,6 @@ namespace C64.IO
         /// exactly as if the user had typed it. Each line is terminated with
         /// RETURN ($0D) so multi-line BASIC listings auto-enter.
         /// </summary>
-        /// <returns>True if any characters were enqueued; otherwise false.</returns>
         public bool PasteClipboardText()
         {
             if (SDL_HasClipboardText() == SDL_bool.SDL_FALSE)
@@ -253,15 +193,8 @@ namespace C64.IO
             if (string.IsNullOrEmpty(text))
                 return false;
 
-            /// Normalize line endings so CRLF / CR / LF all become single RETURNs.
             text = text.Replace("\r\n", "\n").Replace('\r', '\n');
 
-            /// Heuristic: if the clipboard mixes lowercase and uppercase letters,
-            /// assume the listing follows the C64 abbreviation convention where
-            /// UPPERCASE means a SHIFTED keystroke (PETSCII $C1-$DA, used for
-            /// keyword abbreviations like tA -> TAB(, rN -> RND, gO -> GOTO).
-            /// Otherwise fall back to the case-insensitive mapping used for
-            /// ordinary listings (everything -> $41-$5A).
             bool abbreviationMode = DetectAbbreviationMode(text);
 
             bool any = false;
@@ -270,9 +203,6 @@ namespace C64.IO
             {
                 string line = lines[i];
 
-                /// Expand VICE-style {tokens} (e.g. {home}, {right*39}, {5 space},
-                /// {shift-a}, {$93}, {147}) before falling back to the literal
-                /// ASCII-to-PETSCII path used for ordinary characters.
                 foreach (var tok in VicePetsciiTokenParser.Parse(line))
                 {
                     if (tok.IsPetscii)
@@ -291,7 +221,6 @@ namespace C64.IO
                     }
                 }
 
-                /// Terminate every line except a trailing empty one with RETURN.
                 if (i < lines.Length - 1 || line.Length > 0)
                 {
                     keyQueue.Enqueue(0x0D);
@@ -355,7 +284,6 @@ namespace C64.IO
         }
 
         /// <summary>Toggles keyboard joystick input between C64 port 1, port 2, and keyboard-only mode.</summary>
-        /// <returns>The newly selected keyboard joystick port number, or 0 when keyboard mapping is disabled.</returns>
         public int ToggleJoystickPort()
         {
             int previousPort = activeJoystickPort;
@@ -386,7 +314,6 @@ namespace C64.IO
         /// Returns <c>true</c> if the emulator should quit.
         /// </summary>
         /// <param name="ev">The SDL event to process.</param>
-        /// <returns>True when the operation succeeds; otherwise, false.</returns>
         public bool HandleSdlEvent(SDL_Event ev)
         {
             switch (ev.type)
@@ -424,17 +351,14 @@ namespace C64.IO
             }
         }
 
-        /// <summary>Releases resources owned by this instance.</summary>
+        /// <summary>Stops SDL text input and closes the active game controller handle.</summary>
         public void Dispose()
         {
             CloseController();
         }
 
-        /// ?? Private implementation ????????????????????????????????????????????
-
-        /// <summary>Handles key down.</summary>
+        /// <summary>Maps an SDL key press to the C64 matrix, text-input latch, or emulator shortcut.</summary>
         /// <param name="ke">The SDL keyboard event to process.</param>
-        /// <returns>True when the operation succeeds; otherwise, false.</returns>
         private bool HandleKeyDown(SDL_KeyboardEvent ke)
         {
             if (ke.repeat != 0) return false;
@@ -451,7 +375,6 @@ namespace C64.IO
                 return false;
             }
 
-            /// C64 SHIFT LOCK on a modern keyboard.
             if (sym == SDL_Keycode.SDLK_CAPSLOCK)
             {
                 shiftLockActive = !shiftLockActive;
@@ -464,10 +387,6 @@ namespace C64.IO
                 OnRestoreNmi?.Invoke();
                 return false;
             }
-
-            /// Symbol/punctuation/shifted-digit keys are routed via SDL_TEXTINPUT
-            /// (see HandleTextInput) so the C64 matrix entry matches the printable
-            /// character the host layout actually produced.
 
             if (sym == SDL_Keycode.SDLK_q && (shift || alt) && !ctrl)
             {
@@ -505,7 +424,6 @@ namespace C64.IO
                 }
             }
 
-            /// Shift+Insert is a common host-side "paste" shortcut.
             if (shift && !ctrl && !alt && sym == SDL_Keycode.SDLK_INSERT)
             {
                 PasteClipboardText();
@@ -521,7 +439,7 @@ namespace C64.IO
             return false;
         }
 
-        /// <summary>Handles key up.</summary>
+        /// <summary>Releases the C64 matrix and text-input bindings associated with an SDL key.</summary>
         /// <param name="ke">The SDL keyboard event to process.</param>
         private void HandleKeyUp(SDL_KeyboardEvent ke)
         {
@@ -533,7 +451,7 @@ namespace C64.IO
             UpdateKeyboardState(ke.keysym.sym, false, (ke.keysym.mod & SDL_Keymod.KMOD_SHIFT) != 0);
         }
 
-        /// <summary>Updates keyboard state.</summary>
+        /// <summary>Applies a host key transition to its C64 matrix position with synthetic shift handling.</summary>
         /// <param name="sym">The SDL key code to update.</param>
         /// <param name="pressed">Whether the key or button is currently pressed.</param>
         /// <param name="shiftHeld">Whether either host SHIFT key is currently held.</param>
@@ -551,13 +469,13 @@ namespace C64.IO
                     return;
 
                 case SDL_Keycode.SDLK_LCTRL:
-                    SetMatrixKey(7, 2, pressed); /// C64 CTRL key
+                    SetMatrixKey(7, 2, pressed);
                     return;
 
                 case SDL_Keycode.SDLK_RCTRL:
-                    return; /// joystick-only to avoid game keyboard side-effects
+                    return;
                 case SDL_Keycode.SDLK_RALT:
-                    SetMatrixKey(7, 5, pressed); /// COMMODORE (C=)
+                    SetMatrixKey(7, 5, pressed);
                     return;
 
                 case SDL_Keycode.SDLK_RETURN:
@@ -566,7 +484,7 @@ namespace C64.IO
                     return;
 
                 case SDL_Keycode.SDLK_ESCAPE:
-                    SetMatrixKey(7, 7, pressed); /// RUN/STOP
+                    SetMatrixKey(7, 7, pressed);
                     return;
 
                 case SDL_Keycode.SDLK_BACKSPACE:
@@ -575,11 +493,11 @@ namespace C64.IO
                     return;
 
                 case SDL_Keycode.SDLK_INSERT:
-                    SetMatrixKey(0, 0, pressed); /// INST/DEL shares key
+                    SetMatrixKey(0, 0, pressed);
                     return;
 
                 case SDL_Keycode.SDLK_HOME:
-                    SetMatrixKey(6, 6, pressed); /// CLR/HOME
+                    SetMatrixKey(6, 6, pressed);
                     return;
 
                 case SDL_Keycode.SDLK_SPACE:
@@ -702,9 +620,7 @@ namespace C64.IO
 
             switch (sym)
             {
-                /// Punctuation, symbol and shifted-digit keys are routed via
-                /// SDL_TEXTINPUT (see HandleTextInput) so the C64 matrix entry
-                /// matches the printable character the host layout produced.
+
                 case SDL_Keycode.SDLK_MINUS:
                 case SDL_Keycode.SDLK_EQUALS:
                 case SDL_Keycode.SDLK_COMMA:
@@ -725,7 +641,7 @@ namespace C64.IO
             }
         }
 
-        /// <summary>Sets matrix key.</summary>
+        /// <summary>Sets or clears one active-low C64 keyboard-matrix row and column position.</summary>
         /// <param name="row">The matrix row or image row to process.</param>
         /// <param name="column">The matrix column to update.</param>
         /// <param name="pressed">Whether the key or button is currently pressed.</param>
@@ -780,8 +696,6 @@ namespace C64.IO
 
             char ch = text[0];
 
-            /// Letters and plain digits are handled by the position-based path
-            /// (UpdateKeyboardState) so the host SHIFT state controls C64 case.
             if (ch >= 'a' && ch <= 'z') return;
             if (ch >= 'A' && ch <= 'Z') return;
             if (ch >= '0' && ch <= '9') return;
@@ -792,14 +706,9 @@ namespace C64.IO
 
             SDL_Scancode scancode = pendingTextInputScancode;
 
-            /// If we don't have a recent KEYDOWN to attribute the text input to
-            /// (e.g. composed input, IME) fall back to keying the binding by the
-            /// character itself in the high range so it can't collide with real
-            /// SDL_Scancode values.
             if (scancode == SDL_Scancode.SDL_SCANCODE_UNKNOWN)
                 scancode = (SDL_Scancode)(0x10000 + ch);
 
-            /// Replace any binding currently held for the same physical key.
             if (textInputHeld.TryGetValue(scancode, out TextInputBinding prev))
                 ReleaseBinding(prev);
 
@@ -878,14 +787,14 @@ namespace C64.IO
                 case '@': row = 5; col = 6; shift = ShiftPolicy.ForceUnshift; return true;
                 case '[': row = 5; col = 5; shift = ShiftPolicy.ForceShift; return true;
                 case ']': row = 6; col = 2; shift = ShiftPolicy.ForceShift; return true;
-                case '\u00A3': row = 6; col = 0; shift = ShiftPolicy.ForceUnshift; return true; /// '£' (UK pound)
-                case '^': row = 6; col = 6; shift = ShiftPolicy.ForceUnshift; return true; /// C64 up-arrow
-                case '_': row = 7; col = 1; shift = ShiftPolicy.ForceUnshift; return true; /// C64 left-arrow
+                case '\u00A3': row = 6; col = 0; shift = ShiftPolicy.ForceUnshift; return true;
+                case '^': row = 6; col = 6; shift = ShiftPolicy.ForceUnshift; return true;
+                case '_': row = 7; col = 1; shift = ShiftPolicy.ForceUnshift; return true;
                 default: return false;
             }
         }
 
-        /// <summary>Opens first available controller.</summary>
+        /// <summary>Finds and opens the first SDL device recognized as a game controller.</summary>
         private void OpenFirstAvailableController()
         {
             if (gameController != IntPtr.Zero)
@@ -903,7 +812,7 @@ namespace C64.IO
             }
         }
 
-        /// <summary>Opens controller.</summary>
+        /// <summary>Opens an SDL game controller and records its joystick identity.</summary>
         /// <param name="deviceIndex">The SDL controller device index.</param>
         private void OpenController(int deviceIndex)
         {
@@ -923,7 +832,7 @@ namespace C64.IO
             UpdateControllerJoystick();
         }
 
-        /// <summary>Closes controller.</summary>
+        /// <summary>Closes the active SDL game controller and clears its joystick state.</summary>
         private void CloseController()
         {
             if (gameController != IntPtr.Zero)
@@ -938,7 +847,7 @@ namespace C64.IO
             UpdateControllerJoystick();
         }
 
-        /// <summary>Handles controller added.</summary>
+        /// <summary>Opens a newly connected SDL controller when no controller is active.</summary>
         /// <param name="ev">The SDL event to process.</param>
         private void HandleControllerAdded(SDL_ControllerDeviceEvent ev)
         {
@@ -946,7 +855,7 @@ namespace C64.IO
                 OpenController(ev.which);
         }
 
-        /// <summary>Handles controller removed.</summary>
+        /// <summary>Closes the active SDL controller when its joystick instance is disconnected.</summary>
         /// <param name="ev">The SDL event to process.</param>
         private void HandleControllerRemoved(SDL_ControllerDeviceEvent ev)
         {
@@ -957,7 +866,7 @@ namespace C64.IO
             OpenFirstAvailableController();
         }
 
-        /// <summary>Handles controller button.</summary>
+        /// <summary>Maps an SDL controller button transition to C64 joystick fire or direction state.</summary>
         /// <param name="ev">The SDL event to process.</param>
         private void HandleControllerButton(SDL_ControllerButtonEvent ev)
         {
@@ -976,7 +885,7 @@ namespace C64.IO
             UpdateControllerJoystick();
         }
 
-        /// <summary>Handles controller axis.</summary>
+        /// <summary>Converts an SDL analog-axis event into thresholded C64 joystick directions.</summary>
         /// <param name="ev">The SDL event to process.</param>
         private void HandleControllerAxis(SDL_ControllerAxisEvent ev)
         {
@@ -1014,7 +923,7 @@ namespace C64.IO
             UpdateControllerJoystick();
         }
 
-        /// <summary>Updates controller joystick.</summary>
+        /// <summary>Combines controller axes and buttons into the active-low C64 joystick byte.</summary>
         private void UpdateControllerJoystick()
         {
             controllerJoystick = (byte)~(controllerButtonMask | controllerAxisMask);
@@ -1043,8 +952,8 @@ namespace C64.IO
             SDL_Keycode.SDLK_DOWN => 0x02,
             SDL_Keycode.SDLK_LEFT => 0x04,
             SDL_Keycode.SDLK_RIGHT => 0x08,
-            SDL_Keycode.SDLK_SPACE => 0x10, /// fire
-            SDL_Keycode.SDLK_RCTRL => 0x10, /// fire
+            SDL_Keycode.SDLK_SPACE => 0x10,
+            SDL_Keycode.SDLK_RCTRL => 0x10,
             _ => 0
         };
     }

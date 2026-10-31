@@ -1,16 +1,4 @@
-﻿// ============================================================================
-// Project:     C64
-// File:        Display.cs
-// Description: VIC-II display emulation and SDL/OpenGL presentation, including
-//              raster timing, text and bitmap modes, sprites, borders, and
-//              screenshots.
-// Author:      James Booth
-// Created:     2025
-// License:     MIT License - See LICENSE file in the project root
-// Copyright:   (c) 2024-2026 James Booth
-// Notice:      Commodore 64 and related ROMs are property of their respective
-//              rights holders. This emulator is for educational purposes only.
-// ============================================================================
+﻿
 
 using C64.CPU;
 using Silk.NET.OpenGL;
@@ -20,9 +8,7 @@ using static SDL2.SDL;
 
 namespace C64.Display
 {
-    /// <summary>
-    /// Emulates enough VIC-II display behavior to render C64 frames, track raster timing, handle sprite/text/bitmap modes, and present through SDL/OpenGL.
-    /// </summary>
+
     internal sealed class Display : IDisposable
     {
         public const int ScreenW = 320;
@@ -50,22 +36,22 @@ namespace C64.Display
 
         private static readonly int[] C64Palette =
         [
-            unchecked((int)0xFF000000), ///  0 BLACK
-            unchecked((int)0xFFFFFFFF), ///  1 WHITE
-            unchecked((int)0xFF68372B), ///  2 RED
-            unchecked((int)0xFF70A4B2), ///  3 CYAN
-            unchecked((int)0xFF6F3D86), ///  4 PURPLE
-            unchecked((int)0xFF588D43), ///  5 GREEN
-            unchecked((int)0xFF352879), ///  6 BLUE
-            unchecked((int)0xFFB8C76F), ///  7 YELLOW
-            unchecked((int)0xFF6F4F25), ///  8 ORANGE
-            unchecked((int)0xFF433900), ///  9 BROWN
-            unchecked((int)0xFF9A6759), /// 10 LIGHT RED
-            unchecked((int)0xFF444444), /// 11 DARK GREY
-            unchecked((int)0xFF6C6C6C), /// 12 MEDIUM GREY
-            unchecked((int)0xFF9AD284), /// 13 LIGHT GREEN
-            unchecked((int)0xFF6C5EB5), /// 14 LIGHT BLUE
-            unchecked((int)0xFF959595), /// 15 LIGHT GREY
+            unchecked((int)0xFF000000),
+            unchecked((int)0xFFFFFFFF),
+            unchecked((int)0xFF68372B),
+            unchecked((int)0xFF70A4B2),
+            unchecked((int)0xFF6F3D86),
+            unchecked((int)0xFF588D43),
+            unchecked((int)0xFF352879),
+            unchecked((int)0xFFB8C76F),
+            unchecked((int)0xFF6F4F25),
+            unchecked((int)0xFF433900),
+            unchecked((int)0xFF9A6759),
+            unchecked((int)0xFF444444),
+            unchecked((int)0xFF6C6C6C),
+            unchecked((int)0xFF9AD284),
+            unchecked((int)0xFF6C5EB5),
+            unchecked((int)0xFF959595),
         ];
 
         private readonly CPU_6510 cpu;
@@ -132,12 +118,9 @@ namespace C64.Display
         private readonly List<RasterWriteEvent>[] rasterWriteEvents = new List<RasterWriteEvent>[PalRasterLines];
         private readonly object rasterWriteEventLock = new();
 
-        /// <summary>
-        /// Captures a VIC register write and the raster cycle where it occurred so late writes can affect only the remaining pixels on the line.
-        /// </summary>
         private readonly struct RasterWriteEvent
         {
-            /// <summary>Initializes a captured raster write event.</summary>
+            /// <summary>Captures a VIC register transition at its raster-cycle position.</summary>
             /// <param name="cycle">The raster cycle where the write occurred.</param>
             /// <param name="address">The VIC register address that was written.</param>
             /// <param name="oldValue">The value before the write occurred.</param>
@@ -150,20 +133,16 @@ namespace C64.Display
                 NewValue = newValue;
             }
 
-            /// <summary>Gets the raster cycle where the write occurred.</summary>
             public int Cycle { get; }
 
-            /// <summary>Gets the VIC register address that was written.</summary>
             public ushort Address { get; }
 
-            /// <summary>Gets the register value before the raster write.</summary>
             public byte OldValue { get; }
 
-            /// <summary>Gets the register value after the raster write.</summary>
             public byte NewValue { get; }
         }
 
-        /// <summary>Initializes a captured raster write event.</summary>
+        /// <summary>Creates the SDL/VIC display pipeline connected to the emulated CPU and memory.</summary>
         /// <param name="cpu">The CPU instance connected to this component.</param>
         public Display(CPU_6510 cpu)
         {
@@ -172,27 +151,23 @@ namespace C64.Display
                 rasterWriteEvents[i] = new List<RasterWriteEvent>(8);
         }
 
-        /// <summary>Gets or sets the VIC raster compare line.</summary>
         public int RasterCompare
         {
             get => rasterCompare;
             set => rasterCompare = value;
         }
 
-        /// <summary>Gets the current VIC raster line.</summary>
         public int CurrentRasterLine => currentRasterLine;
 
-        /// <summary>Gets whether the display is currently resetting.</summary>
         public bool IsResetting => isResetting;
 
-        /// <summary>Gets or sets whether the pause overlay is visible.</summary>
         public bool PausedOverlayVisible
         {
             get => pausedOverlayVisible;
             set => pausedOverlayVisible = value;
         }
 
-        /// <summary>Records raster write.</summary>
+        /// <summary>Records a mid-line VIC register write so raster effects can be reproduced during rendering.</summary>
         /// <param name="address">The emulated address to access.</param>
         /// <param name="oldValue">The value before the write occurred.</param>
         /// <param name="newValue">The value after the write occurred.</param>
@@ -226,7 +201,7 @@ namespace C64.Display
                 horizontalBorderOpenedThisFrame = true;
         }
 
-        /// <summary>Begins reset.</summary>
+        /// <summary>Suspends raster event capture and marks the display for frame resynchronization during reset.</summary>
         public void BeginReset()
         {
             isResetting = true;
@@ -235,7 +210,7 @@ namespace C64.Display
             ClearRasterWriteEvents();
         }
 
-        /// <summary>Ends reset.</summary>
+        /// <summary>Clears VIC raster and sprite latches, then resumes rendering from raster line zero.</summary>
         public void EndReset()
         {
             currentRasterLine = 0;
@@ -265,13 +240,13 @@ namespace C64.Display
             Array.Clear(spriteDisplayCrunchLinesRemaining, 0, spriteDisplayCrunchLinesRemaining.Length);
             ClearRasterWriteEvents();
             ClearFramebuffers();
-            /// Invalidate bitmap row cache on reset
+
             for (int i = 0; i < cachedBitmapRowNum.Length; i++)
                 cachedBitmapRowNum[i] = -1;
             isResetting = false;
         }
 
-        /// <summary>Clears framebuffers.</summary>
+        /// <summary>Clears both the VIC render buffer and the frame currently presented by SDL.</summary>
         public void ClearFramebuffers()
         {
             lock (swapLock)
@@ -281,7 +256,7 @@ namespace C64.Display
             }
         }
 
-        /// <summary>Initializes SDL component.</summary>
+        /// <summary>Creates the SDL window, OpenGL context, monitor assets, shaders, and character-ROM data.</summary>
         public void Init()
         {
             if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_GAMECONTROLLER) != 0)
@@ -326,7 +301,6 @@ namespace C64.Display
         /// Loads the character ROM.
         /// Prefer a char ROM provided by the memory backend (BankedROM) if available.
         /// </summary>
-        /// <returns>byte array containing char ROM data</returns>
         private byte[] LoadCharROM()
         {
             try
@@ -345,16 +319,16 @@ namespace C64.Display
             }
             catch
             {
-                /// Fallback to direct file load if anything goes wrong inspecting memory.
+
                 return File.ReadAllBytes(Path.Combine("ROMS", "characters.bin"));
             }
         }
 
-        /// <summary>Starts this component.</summary>
+        /// <summary>Completes the display start hook; rendering is ready after SDL initialization.</summary>
         public void Start()
         { }
 
-        /// <summary>Sets loaded file in title.</summary>
+        /// <summary>Queues the loaded file name for inclusion in the SDL window title.</summary>
         /// <param name="filePath">The path of the file to load.</param>
         public void SetLoadedFileInTitle(string? filePath)
         {
@@ -391,7 +365,7 @@ namespace C64.Display
             }
         }
 
-        /// <summary>Applies pending window title.</summary>
+        /// <summary>Updates the SDL title only when the loaded-file label has changed.</summary>
         private void ApplyPendingWindowTitle()
         {
             if (!windowTitleDirty || window == IntPtr.Zero)
@@ -404,7 +378,7 @@ namespace C64.Display
             windowTitleDirty = false;
         }
 
-        /// <summary>Redraws the current emulator frame.</summary>
+        /// <summary>Copies the latest completed VIC frame, adds transient overlays, and presents it through SDL.</summary>
         public void RedrawScreen()
         {
             ApplyPendingWindowTitle();
@@ -428,7 +402,7 @@ namespace C64.Display
             PresentFrame(showC64Screen: false);
         }
 
-        /// <summary>Creates presentation objects.</summary>
+        /// <summary>Builds the OpenGL shaders, textures, and fullscreen quad used to present C64 video.</summary>
         private unsafe void CreatePresentationObjects()
         {
             GL glApi = gl ?? throw new InvalidOperationException("OpenGL API is not initialized.");
@@ -538,10 +512,9 @@ namespace C64.Display
             glApi.BindVertexArray(0);
         }
 
-        /// <summary>Compiles presentation shader.</summary>
+        /// <summary>Compiles one OpenGL presentation shader and reports the driver log on failure.</summary>
         /// <param name="type">The OpenGL shader or PNG chunk type.</param>
         /// <param name="source">The shader source code to compile.</param>
-        /// <returns>The numeric value produced by the operation.</returns>
         private uint CompilePresentationShader(ShaderType type, string source)
         {
             GL glApi = gl ?? throw new InvalidOperationException("OpenGL API is not initialized.");
@@ -555,8 +528,7 @@ namespace C64.Display
             return shader;
         }
 
-        /// <summary>Creates monitor texture.</summary>
-        /// <returns>The numeric value produced by the operation.</returns>
+        /// <summary>Loads the monitor artwork into an OpenGL texture for the normal presentation mode.</summary>
         private unsafe uint CreateMonitorTexture()
         {
             GL glApi = gl ?? throw new InvalidOperationException("OpenGL API is not initialized.");
@@ -576,9 +548,8 @@ namespace C64.Display
             return texture;
         }
 
-        /// <summary>Finds display asset.</summary>
+        /// <summary>Locates a packaged display asset from source-tree or application output paths.</summary>
         /// <param name="fileName">The asset or file name to locate.</param>
-        /// <returns>The string value produced by the operation.</returns>
         private static string FindDisplayAsset(string fileName)
         {
             string[] candidates =
@@ -592,11 +563,10 @@ namespace C64.Display
                 ?? throw new FileNotFoundException($"Display asset not found: {fileName}");
         }
 
-        /// <summary>Loads png bgra.</summary>
+        /// <summary>Decodes the monitor PNG into the BGRA byte order expected by OpenGL uploads.</summary>
         /// <param name="path">The path of the file to use.</param>
         /// <param name="width">The width in pixels.</param>
         /// <param name="height">The height in pixels.</param>
-        /// <returns>The decoded image pixels in BGRA byte order.</returns>
         private static byte[] LoadPngBgra(string path, out int width, out int height)
         {
             byte[] file = File.ReadAllBytes(path);
@@ -639,7 +609,7 @@ namespace C64.Display
                     break;
                 }
 
-                offset += length + 4; /// data + CRC
+                offset += length + 4;
             }
 
             if (width <= 0 || height <= 0 || bitDepth != 8 || colorType != 6)
@@ -713,11 +683,10 @@ namespace C64.Display
             }
         }
 
-        /// <summary>Computes the PNG Paeth predictor.</summary>
+        /// <summary>Selects the neighboring byte closest to the PNG Paeth linear prediction.</summary>
         /// <param name="left">The reconstructed byte immediately to the left.</param>
         /// <param name="up">The reconstructed byte from the previous row.</param>
         /// <param name="upLeft">The up left value used by the operation.</param>
-        /// <returns>The numeric value produced by the operation.</returns>
         private static int PaethPredictor(int left, int up, int upLeft)
         {
             int p = left + up - upLeft;
@@ -729,7 +698,7 @@ namespace C64.Display
             return pb <= pc ? up : upLeft;
         }
 
-        /// <summary>Presents frame.</summary>
+        /// <summary>Composites the C64 framebuffer into the monitor artwork or fullscreen viewport and swaps the SDL window.</summary>
         private unsafe void PresentFrame(bool showC64Screen = true)
         {
             GL glApi = gl ?? throw new InvalidOperationException("OpenGL API is not initialized.");
@@ -781,7 +750,7 @@ namespace C64.Display
             SDL_GL_SwapWindow(window);
         }
 
-        /// <summary>Draws presentation quad.</summary>
+        /// <summary>Draws one OpenGL textured quad at the requested viewport with the selected CRT effect.</summary>
         /// <param name="texture">The OpenGL texture to present.</param>
         /// <param name="x">The X coordinate in pixels.</param>
         /// <param name="y">The Y coordinate in pixels.</param>
@@ -810,7 +779,6 @@ namespace C64.Display
         /// <summary>Draws the pause overlay text into the presentation buffer.</summary>
         /// <param name="windowW">The window width in pixels.</param>
         /// <param name="windowH">The window height in pixels.</param>
-        /// <returns>The viewport rectangle as X, Y, width, and height values.</returns>
         private static (int X, int Y, int W, int H) CalculateMonitorViewport(int windowW, int windowH)
         {
             if (windowW <= 0 || windowH <= 0)
@@ -831,7 +799,6 @@ namespace C64.Display
         /// <summary>Calculates the aspect-fit viewport for the raw C64 framebuffer.</summary>
         /// <param name="windowW">The window width in pixels.</param>
         /// <param name="windowH">The window height in pixels.</param>
-        /// <returns>The viewport rectangle as X, Y, width, and height values.</returns>
         private static (int X, int Y, int W, int H) CalculateFrameViewport(int windowW, int windowH)
         {
             if (windowW <= 0 || windowH <= 0)
@@ -849,7 +816,7 @@ namespace C64.Display
             return ((windowW - w) / 2, (windowH - h) / 2, Math.Max(1, w), Math.Max(1, h));
         }
 
-        /// <summary>Draws paused overlay.</summary>
+        /// <summary>Copies the current frame and draws the centered pause indicator over it.</summary>
         private void DrawPausedOverlay()
         {
             BlendRect(0, 0, FrameW, FrameH, 0, 0, 0, 90);
@@ -881,7 +848,7 @@ namespace C64.Display
             DrawBlockTextCentered(text, 1);
         }
 
-        /// <summary>Draws block text centered.</summary>
+        /// <summary>Rasterizes centered overlay text with the built-in block glyph set.</summary>
         /// <param name="text">The text to write.</param>
         /// <param name="scale">The integer pixel scale used for block text.</param>
         private void DrawBlockTextCentered(string text, int scale)
@@ -913,9 +880,8 @@ namespace C64.Display
             }
         }
 
-        /// <summary>Gets block glyph.</summary>
+        /// <summary>Returns the five-row bitmap used to draw an overlay character.</summary>
         /// <param name="ch">The character to convert or write.</param>
-        /// <returns>The bitmap rows used to draw the block glyph.</returns>
         private static byte[] GetBlockGlyph(char ch)
         {
             return char.ToUpperInvariant(ch) switch
@@ -993,7 +959,7 @@ namespace C64.Display
             };
         }
 
-        /// <summary>Blends rect.</summary>
+        /// <summary>Alpha-blends a solid rectangle into the presentation buffer.</summary>
         /// <param name="x">The X coordinate in pixels.</param>
         /// <param name="y">The Y coordinate in pixels.</param>
         /// <param name="w">The width in pixels.</param>
@@ -1014,7 +980,7 @@ namespace C64.Display
                     BlendPixel(px, py, r, g, b, a);
         }
 
-        /// <summary>Blends pixel.</summary>
+        /// <summary>Alpha-blends one clipped BGRA pixel into the presentation buffer.</summary>
         /// <param name="x">The X coordinate in pixels.</param>
         /// <param name="y">The Y coordinate in pixels.</param>
         /// <param name="r">The red channel value.</param>
@@ -1034,7 +1000,7 @@ namespace C64.Display
             presentationBuf[p + 3] = 0xFF;
         }
 
-        /// <summary>Releases resources owned by this instance.</summary>
+        /// <summary>Deletes OpenGL resources and destroys the SDL context and window.</summary>
         public void Dispose()
         {
             if (gl is not null)
@@ -1055,7 +1021,6 @@ namespace C64.Display
         /// </summary>
         /// <param name="cycles">The number of emulated CPU cycles to advance.</param>
         /// <param name="accountBusSteal">The account bus steal value used by the operation.</param>
-        /// <returns>The numeric value produced by the operation.</returns>
         public uint StepCycles(uint cycles, bool accountBusSteal)
         {
             if (cycles == 0 || isResetting)
@@ -1123,7 +1088,7 @@ namespace C64.Display
             return stolen;
         }
 
-        /// <summary>Builds line bus steal mask.</summary>
+        /// <summary>Marks VIC-II bad-line and sprite DMA cycles that steal the bus from the 6510.</summary>
         /// <param name="line">The raster line to process.</param>
         /// <param name="mem">The emulated memory buffer to inspect or update.</param>
         /// <param name="mask">The bus-steal mask to populate.</param>
@@ -1133,15 +1098,11 @@ namespace C64.Display
 
             bool den = (mem[0xD011] & 0x10) != 0;
             int yScroll = mem[0xD011] & 0x07;
-            // Badline detection: DEN=1, line in 0x30-0xF7, and raster line & 0x07 == fine Y scroll.
-            // When the condition is true, the VIC steals cycles for character and sprite data fetches.
+
             bool badline = den && line >= 0x30 && line <= 0xF7 && ((line & 0x07) == yScroll);
             if (badline)
             {
-                /// Character matrix fetch on badlines: VIC access $2400-$3FFF (or banked equivalent)
-                /// Steals cycles 15-54 (40 cycles) during 63-cycle PAL line for character data + color lookups
-                /// Precise cycle windows based on documented C64 behavior:
-                /// - Cycles 15-54: character/color RAM fetch and graphics data prefetch
+
                 for (int c = 15; c <= 54 && c < mask.Length; c++)
                     mask[c] = true;
             }
@@ -1159,10 +1120,7 @@ namespace C64.Display
                 int spriteRow = (line & 0xFF) - spriteY - 1;
                 if (spriteRow >= 0 && spriteRow < height)
                 {
-                    /// Approximate VIC-II sprite pointer/data DMA slots. This
-                    /// is still not a full BA/AEC sequencer, but it places the
-                    /// steals in the late-line sprite fetch window instead of
-                    /// at cycle 0, which is closer for raster-sensitive code.
+
                     int baseCycle = 55 + s;
                     if (baseCycle < mask.Length)
                         mask[baseCycle] = true;
@@ -1179,7 +1137,7 @@ namespace C64.Display
             ProcessRasterLine(currentRasterLine, cpu.memory.memory);
         }
 
-        /// <summary>Clears raster write events.</summary>
+        /// <summary>Discards all captured mid-frame VIC register writes.</summary>
         private void ClearRasterWriteEvents()
         {
             lock (rasterWriteEventLock)
@@ -1189,7 +1147,7 @@ namespace C64.Display
             }
         }
 
-        /// <summary>Clears raster write events for line.</summary>
+        /// <summary>Discards captured VIC register writes for one raster line.</summary>
         /// <param name="line">The raster line to process.</param>
         private void ClearRasterWriteEventsForLine(int line)
         {
@@ -1200,11 +1158,10 @@ namespace C64.Display
                 rasterWriteEvents[line].Clear();
         }
 
-        /// <summary>Gets raster line start value.</summary>
+        /// <summary>Reconstructs a VIC register value at the start of a raster line from captured writes.</summary>
         /// <param name="line">The raster line to process.</param>
         /// <param name="address">The emulated address to access.</param>
         /// <param name="fallback">The fallback value to return when no device handles the read.</param>
-        /// <returns>The byte value produced by the operation.</returns>
         private byte GetRasterLineStartValue(int line, int address, byte fallback)
         {
             if (line < 0 || line >= rasterWriteEvents.Length)
@@ -1223,9 +1180,6 @@ namespace C64.Display
                     if (IsSpriteRasterRegister(vicAddress))
                         return evt.OldValue;
 
-                    /// If a raster split writes before the visible playfield starts,
-                    /// use the new value for this line. Late writes still keep the
-                    /// old value so they don't repaint pixels that were already drawn.
                     return RasterCycleToFrameX(evt.Cycle) <= FramePlayfieldX
                         ? evt.NewValue
                         : evt.OldValue;
@@ -1235,9 +1189,8 @@ namespace C64.Display
             return fallback;
         }
 
-        /// <summary>Determines whether sprite raster register.</summary>
+        /// <summary>Identifies VIC registers whose mid-line writes can alter sprite rendering.</summary>
         /// <param name="address">The emulated address to access.</param>
-        /// <returns>True when the operation succeeds; otherwise, false.</returns>
         private static bool IsSpriteRasterRegister(ushort address)
         {
             return address switch
@@ -1253,7 +1206,7 @@ namespace C64.Display
             };
         }
 
-        /// <summary>Raises raster irq for line.</summary>
+        /// <summary>Sets the VIC raster interrupt latch when the current line matches $D011/$D012.</summary>
         /// <param name="line">The raster line to process.</param>
         /// <param name="mem">The emulated memory buffer to inspect or update.</param>
         private void RaiseRasterIrqForLine(int line, byte[] mem)
@@ -1298,8 +1251,7 @@ namespace C64.Display
 
             int playY = line - VisibleTop;
             int fineY = d011 & 0x07;
-            /// VisibleTop is calibrated around the normal C64 text baseline (yscroll=3).
-            /// Apply only the delta from that baseline so we don't wrap/crop the 25x8 matrix.
+
             int fineYOffset = fineY - 3;
             int scrolledY = playY - fineYOffset;
             int row = scrolledY >> 3;
@@ -1400,19 +1352,18 @@ namespace C64.Display
             RenderSpritesScanline(frameY, d011, d016, horizontalBorderOpen, verticalBorderOpen, bank, spritePtrs);
         }
 
-        /// <summary>Gets vic bank base.</summary>
+        /// <summary>Derives the VIC-II 16 KiB bank base from the active-low CIA2 port bits.</summary>
         /// <param name="dd00">The CIA2 port A data latch value.</param>
         /// <param name="dd02">The CIA2 port A data direction register value.</param>
-        /// <returns>The numeric value produced by the operation.</returns>
         private static int GetVicBankBase(byte dd00, byte dd02)
         {
-            /// CIA2 port A controls VIC bank on PA0/PA1. Input bits read high.
+
             byte effectivePortA = (byte)((dd00 & dd02) | (~dd02 & 0xFF));
             int sel = effectivePortA & 0x03;
             return (3 - sel) * 0x4000;
         }
 
-        /// <summary>Resolves char source.</summary>
+        /// <summary>Selects character ROM or VIC-visible RAM for the current character-generator address.</summary>
         /// <param name="charAddr">The VIC character generator base address.</param>
         /// <param name="bank">The active VIC memory bank base.</param>
         /// <param name="src">The source byte buffer to read from.</param>
@@ -1438,7 +1389,7 @@ namespace C64.Display
             }
         }
 
-        /// <summary>Fills line solid.</summary>
+        /// <summary>Fills one complete output line with a C64 palette color.</summary>
         /// <param name="y">The Y coordinate in pixels.</param>
         /// <param name="colorIdx">The C64 palette color index.</param>
         private void FillLineSolid(int y, byte colorIdx)
@@ -1456,7 +1407,7 @@ namespace C64.Display
             }
         }
 
-        /// <summary>Fills frame line with border events.</summary>
+        /// <summary>Paints a frame-line span while replaying captured border-color writes at their raster positions.</summary>
         /// <param name="y">The Y coordinate in pixels.</param>
         /// <param name="rasterLine">The VIC raster line to inspect.</param>
         /// <param name="xStart">The first X coordinate in the range.</param>
@@ -1511,7 +1462,7 @@ namespace C64.Display
             }
         }
 
-        /// <summary>Fills frame line range.</summary>
+        /// <summary>Fills a clipped horizontal span in the rendered C64 frame.</summary>
         /// <param name="y">The Y coordinate in pixels.</param>
         /// <param name="xStart">The first X coordinate in the range.</param>
         /// <param name="xEnd">The X coordinate just after the range.</param>
@@ -1536,7 +1487,6 @@ namespace C64.Display
 
         /// <summary>Maps a raster cycle to a frame X coordinate.</summary>
         /// <param name="cycle">The raster cycle to convert.</param>
-        /// <returns>The numeric value produced by the operation.</returns>
         private static int RasterCycleToFrameX(int cycle)
         {
             if (cycle <= 0)
@@ -1547,7 +1497,7 @@ namespace C64.Display
             return cycle * FrameW / CyclesPerRasterLine;
         }
 
-        /// <summary>Fills line range with border events.</summary>
+        /// <summary>Paints a foreground-line span while replaying captured border-color changes.</summary>
         /// <param name="y">The Y coordinate in pixels.</param>
         /// <param name="xStart">The first X coordinate in the range.</param>
         /// <param name="xEnd">The X coordinate just after the range.</param>
@@ -1567,7 +1517,7 @@ namespace C64.Display
                 fallbackBorderIdx);
         }
 
-        /// <summary>Applies inner borders.</summary>
+        /// <summary>Covers the active display edges according to the VIC horizontal and vertical border latches.</summary>
         /// <param name="frameY">The frame-buffer scanline to render.</param>
         /// <param name="playY">The current VIC playfield line.</param>
         /// <param name="d011">The VIC D011 control register value.</param>
@@ -1576,14 +1526,10 @@ namespace C64.Display
         {
             byte borderIdx = (byte)(cpu.memory.memory[0xD020] & 0x0F);
 
-            /// RSEL=0 selects 24-row display: 4px inner border at top and bottom.
             bool row25 = (d011 & 0x08) != 0;
             int firstVisibleY = row25 ? 0 : 4;
             int lastVisibleYExclusive = row25 ? ScreenH : (ScreenH - 4);
 
-            // Keep the normal 24-row top inner border covered even when the
-            // opened-border approximation is active for games that draw scores
-            // in the top border, such as Ikari Warriors.
             if (verticalBorderOpen && playY >= 0 && playY < 4)
             {
                 FillLineRangeWithBorderEvents(frameY, 0, ScreenW - 1, borderIdx);
@@ -1598,7 +1544,6 @@ namespace C64.Display
                 return;
             }
 
-            /// CSEL=0 selects 38-column display: 7px inner border on each side.
             bool col40 = (d016 & 0x08) != 0;
             if (!horizontalBorderOpen && !col40)
             {
@@ -1609,7 +1554,7 @@ namespace C64.Display
             }
         }
 
-        /// <summary>Applies outer borders.</summary>
+        /// <summary>Paints the overscan region outside the VIC active display.</summary>
         /// <param name="frameY">The frame-buffer scanline to render.</param>
         private void ApplyOuterBorders(int frameY, bool horizontalBorderOpen)
         {
@@ -1627,7 +1572,6 @@ namespace C64.Display
         /// <param name="line">The raster line to inspect.</param>
         /// <param name="address">The VIC register address to inspect.</param>
         /// <param name="mask">The bits that affect the border latch approximation.</param>
-        /// <returns>True when a matching write changed one of the selected bits.</returns>
         private bool HasRasterBitChange(int line, ushort address, byte mask)
         {
             if (line < 0 || line >= rasterWriteEvents.Length)
@@ -1652,7 +1596,6 @@ namespace C64.Display
         /// <param name="address">The VIC register address to inspect.</param>
         /// <param name="mask">The bits that affect the latch approximation.</param>
         /// <param name="maxLinesBack">The number of previous raster lines to inspect, wrapping across the frame.</param>
-        /// <returns>True when a matching recent write changed one of the selected bits.</returns>
         private bool HasRecentRasterBitChange(int line, ushort address, byte mask, int maxLinesBack)
         {
             if (line < 0 || line >= rasterWriteEvents.Length)
@@ -1676,7 +1619,6 @@ namespace C64.Display
         /// <param name="line">The raster line to inspect.</param>
         /// <param name="playY">The raster line relative to the normal playfield top.</param>
         /// <param name="d011">The VIC D011 control register value.</param>
-        /// <returns>True when vertical border pixels should remain visible.</returns>
         private bool IsVerticalBorderOpenForLine(int line, int playY, byte d011)
         {
             if (HasRecentRasterBitChange(line, 0xD011, 0x08, PalRasterLines - 1))
@@ -1696,7 +1638,6 @@ namespace C64.Display
         /// <param name="address">The VIC register address to inspect.</param>
         /// <param name="firstLine">The first raster line in the range.</param>
         /// <param name="lastLine">The last raster line in the range.</param>
-        /// <returns>True when the register was written in the requested line range.</returns>
         private bool HasRasterWriteInRange(ushort address, int firstLine, int lastLine)
         {
             firstLine = Math.Max(0, firstLine);
@@ -1720,7 +1661,7 @@ namespace C64.Display
             return false;
         }
 
-        /// <summary>Clears fg line range.</summary>
+        /// <summary>Clears a clipped span in the foreground-occupancy mask used for sprite priority.</summary>
         /// <param name="xStart">The first X coordinate in the range.</param>
         /// <param name="xEnd">The X coordinate just after the range.</param>
         private void ClearFgLineRange(int xStart, int xEnd)
@@ -1731,7 +1672,7 @@ namespace C64.Display
             Array.Clear(fgLine, xStart, xEnd - xStart + 1);
         }
 
-        /// <summary>Renders line standard text.</summary>
+        /// <summary>Renders one VIC standard-text raster row from screen, color, and character memory.</summary>
         /// <param name="y">The Y coordinate in pixels.</param>
         /// <param name="charAddr">The VIC character generator base address.</param>
         /// <param name="bg">The background color index.</param>
@@ -1773,7 +1714,7 @@ namespace C64.Display
             }
         }
 
-        /// <summary>Renders line multicolor text.</summary>
+        /// <summary>Renders one VIC multicolor-text raster row with shared and per-character colors.</summary>
         /// <param name="y">The Y coordinate in pixels.</param>
         /// <param name="charAddr">The VIC character generator base address.</param>
         /// <param name="bg0">The background color 0 index.</param>
@@ -1844,7 +1785,7 @@ namespace C64.Display
             }
         }
 
-        /// <summary>Renders line extended bg text.</summary>
+        /// <summary>Renders one VIC extended-background text row using the character-code background selection bits.</summary>
         /// <param name="y">The Y coordinate in pixels.</param>
         /// <param name="charAddr">The VIC character generator base address.</param>
         /// <param name="bg0">The background color 0 index.</param>
@@ -1867,7 +1808,7 @@ namespace C64.Display
             for (int col = 0; col < 40; col++)
             {
                 byte code = cachedScreenRow[col];
-                /// Color RAM provides the foreground color; upper code bits select bg0-bg3.
+
                 int fgC = C64Palette[colorRow[col] & 0x0F];
                 int bgIdx = (code >> 6) & 0x03;
                 int bgColor = bgC[bgIdx];
@@ -1892,7 +1833,7 @@ namespace C64.Display
             }
         }
 
-        /// <summary>Renders line hires bitmap.</summary>
+        /// <summary>Renders one VIC high-resolution bitmap row using screen-memory foreground and background colors.</summary>
         /// <param name="y">The Y coordinate in pixels.</param>
         /// <param name="cachedScreenRow">The cached screen RAM row for this scanline.</param>
         /// <param name="cachedBitmapRows">The cached bitmap rows for this character row.</param>
@@ -1925,7 +1866,7 @@ namespace C64.Display
             }
         }
 
-        /// <summary>Renders line multicolor bitmap.</summary>
+        /// <summary>Renders one VIC multicolor bitmap row from bitmap, screen, color RAM, and $D021.</summary>
         /// <param name="y">The Y coordinate in pixels.</param>
         /// <param name="bg0">The background color 0 index.</param>
         /// <param name="colorRow">The cached color RAM row for this scanline.</param>
@@ -2200,7 +2141,7 @@ namespace C64.Display
             }
         }
 
-        /// <summary>Paints sprite pixel line.</summary>
+        /// <summary>Composites a sprite pixel run with VIC border, foreground-priority, and collision rules.</summary>
         /// <param name="frameX">The frame-buffer X coordinate.</param>
         /// <param name="frameY">The frame-buffer scanline to render.</param>
         /// <param name="color">The palette color index to draw.</param>
@@ -2257,7 +2198,6 @@ namespace C64.Display
         /// <param name="d016">The VIC D016 control register value.</param>
         /// <param name="horizontalBorderOpen">Whether this raster line opened the horizontal border.</param>
         /// <param name="verticalBorderOpen">Whether this raster line opened the vertical border.</param>
-        /// <returns>True when the sprite pixel is behind a closed border.</returns>
         private static bool IsSpritePixelHiddenByBorder(int frameX, int frameY, byte d011, byte d016, bool horizontalBorderOpen, bool verticalBorderOpen)
         {
             int playY = frameY + FrameFirstRasterLine - VisibleTop;
@@ -2278,7 +2218,7 @@ namespace C64.Display
             return false;
         }
 
-        /// <summary>Takes screenshot.</summary>
+        /// <summary>Prompts for a path and saves the current raw C64 framebuffer as PNG.</summary>
         public void TakeScreenshot()
         {
             try
@@ -2347,7 +2287,7 @@ namespace C64.Display
             }
         }
 
-        /// <summary>Writes png.</summary>
+        /// <summary>Encodes a BGRA framebuffer as a minimal non-interlaced RGBA PNG file.</summary>
         /// <param name="path">The path of the file to use.</param>
         /// <param name="argbData">The ARGB pixel data to encode.</param>
         /// <param name="width">The width in pixels.</param>
@@ -2356,31 +2296,29 @@ namespace C64.Display
         {
             using (var fs = File.Create(path))
             {
-                /// PNG signature
+
                 fs.Write([137, 80, 78, 71, 13, 10, 26, 10]);
 
-                /// IHDR
                 byte[] ihdr = new byte[13];
                 WriteUInt32BigEndian(ihdr, 0, (uint)width);
                 WriteUInt32BigEndian(ihdr, 4, (uint)height);
-                ihdr[8] = 8;  /// Bit depth
-                ihdr[9] = 6;  /// Color type RGBA
-                ihdr[10] = 0; /// Compression method
-                ihdr[11] = 0; /// Filter method
-                ihdr[12] = 0; /// Interlace method
+                ihdr[8] = 8;
+                ihdr[9] = 6;
+                ihdr[10] = 0;
+                ihdr[11] = 0;
+                ihdr[12] = 0;
                 WritePngChunk(fs, "IHDR", ihdr);
 
-                /// Prepare raw scanlines: one filter byte (0) + RGBA pixels per row.
                 int stride = width * 4;
                 byte[] raw = new byte[height * (stride + 1)];
                 int dst = 0;
                 for (int y = 0; y < height; y++)
                 {
-                    raw[dst++] = 0; /// Filter: None
+                    raw[dst++] = 0;
                     for (int x = 0; x < width; x++)
                     {
                         int idx = (y * width + x) * 4;
-                        /// Internal buffer is BGRA; PNG needs RGBA.
+
                         raw[dst++] = argbData[idx + 2];
                         raw[dst++] = argbData[idx + 1];
                         raw[dst++] = argbData[idx];
@@ -2404,7 +2342,7 @@ namespace C64.Display
             }
         }
 
-        /// <summary>Writes png chunk.</summary>
+        /// <summary>Writes a length-prefixed PNG chunk followed by its CRC-32.</summary>
         /// <param name="output">The output stream to write to.</param>
         /// <param name="type">The OpenGL shader or PNG chunk type.</param>
         /// <param name="data">The byte data to process.</param>
@@ -2422,7 +2360,7 @@ namespace C64.Display
             WriteUInt32BigEndian(output, crc);
         }
 
-        /// <summary>Writes Uint32 big endian.</summary>
+        /// <summary>Stores a 32-bit PNG field in network byte order within a byte buffer.</summary>
         /// <param name="buffer">The byte buffer to read from or write to.</param>
         /// <param name="offset">The starting offset within the buffer.</param>
         /// <param name="value">The value supplied to the operation.</param>
@@ -2434,10 +2372,9 @@ namespace C64.Display
             buffer[offset + 3] = (byte)value;
         }
 
-        /// <summary>Reads u int32 big endian.</summary>
+        /// <summary>Reads a 32-bit PNG field in network byte order from a byte buffer.</summary>
         /// <param name="buffer">The byte buffer to read from or write to.</param>
         /// <param name="offset">The starting offset within the buffer.</param>
-        /// <returns>The numeric value produced by the operation.</returns>
         private static uint ReadUInt32BigEndian(byte[] buffer, int offset)
         {
             return ((uint)buffer[offset] << 24) |
@@ -2446,7 +2383,7 @@ namespace C64.Display
                    buffer[offset + 3];
         }
 
-        /// <summary>Writes u int32 big endian.</summary>
+        /// <summary>Writes a 32-bit PNG field in network byte order to a stream.</summary>
         /// <param name="output">The output stream to write to.</param>
         /// <param name="value">The value supplied to the operation.</param>
         private static void WriteUInt32BigEndian(Stream output, uint value)
@@ -2457,10 +2394,9 @@ namespace C64.Display
             output.WriteByte((byte)value);
         }
 
-        /// <summary>Computes a PNG CRC-32 value.</summary>
+        /// <summary>Computes the PNG CRC-32 across a chunk type and payload.</summary>
         /// <param name="typeBytes">The PNG chunk type bytes.</param>
         /// <param name="data">The byte data to process.</param>
-        /// <returns>The numeric value produced by the operation.</returns>
         private static uint Crc32(byte[] typeBytes, byte[] data)
         {
             uint crc = 0xFFFFFFFF;
@@ -2474,10 +2410,9 @@ namespace C64.Display
             return ~crc;
         }
 
-        /// <summary>Updates an in-progress CRC-32 value.</summary>
+        /// <summary>Folds one byte into the in-progress PNG CRC-32 value.</summary>
         /// <param name="crc">The running CRC value to update.</param>
         /// <param name="value">The value supplied to the operation.</param>
-        /// <returns>The numeric value produced by the operation.</returns>
         private static uint Crc32Update(uint crc, byte value)
         {
             crc ^= value;

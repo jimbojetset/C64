@@ -1,15 +1,4 @@
-// ============================================================================
-// Project:     C64
-// File:        SaveFileWindow.cs
-// Description: Temporary SDL/OpenGL host window for the ImGui save filename
-//              prompt.
-// Author:      James Booth
-// Created:     2025
-// License:     MIT License - See LICENSE file in the project root
-// Copyright:   (c) 2024-2026 James Booth
-// Notice:      Commodore 64 and related ROMs are property of their respective
-//              rights holders. This emulator is for educational purposes only.
-// ============================================================================
+
 
 using Silk.NET.OpenGL;
 using System.Diagnostics;
@@ -17,15 +6,11 @@ using static SDL2.SDL;
 
 namespace C64.Display
 {
-    /// <summary>
-    /// Hosts an SDL2 + OpenGL window long enough to run an ImGui save filename
-    /// modal, then returns the chosen filename.
-    /// </summary>
+
     internal static class SaveFileWindow
     {
-        /// <summary>Shows the picker window and returns the selected value.</summary>
+        /// <summary>Runs a temporary SDL/ImGui modal and returns the accepted PRG filename.</summary>
         /// <param name="defaultFilename">The filename initially offered to the user.</param>
-        /// <returns>The selected or resolved string value, or null when no value is available.</returns>
         public static string? Prompt(string defaultFilename)
         {
             if (SDL_InitSubSystem(SDL_INIT_VIDEO) != 0)

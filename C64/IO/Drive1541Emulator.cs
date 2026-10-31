@@ -1,24 +1,10 @@
-// ============================================================================
-// Project:     C64
-// File:        Drive1541Emulator.cs
-// Description: Optional 1541 drive emulation path with a drive-side 6502,
-//              6522 VIA register shell, IEC line coupling, and ROM loading.
-// Author:      James Booth
-// Created:     2025
-// License:     MIT License - See LICENSE file in the project root
-// Copyright:   (c) 2024-2026 James Booth
-// Notice:      Commodore 64 and related ROMs are property of their respective
-//              rights holders. This emulator is for educational purposes only.
-// ============================================================================
+
 
 using C64.CPU;
 
 namespace C64.IO
 {
-    /// <summary>
-    /// Hosts the optional 1541 drive-side execution path.
-    /// This class loads a 1541 DOS ROM, owns the drive CPU and VIA register state, and exposes IEC line levels to the C64 bus.
-    /// </summary>
+
     internal sealed class Drive1541Emulator
     {
         private const int DriveClockHz = 1_000_000;
@@ -40,7 +26,7 @@ namespace C64.IO
         private bool hostAtnRelease = true;
         private bool lowLevelActivityActive;
 
-        /// <summary>Initializes a new Drive1541Emulator instance.</summary>
+        /// <summary>Creates a 1541 CPU, RAM, dual 6522 VIAs, and mechanism around the supplied DOS ROM.</summary>
         /// <param name="rom">The 1541 DOS ROM bytes, normally 16 KiB mapped at $C000-$FFFF.</param>
         private Drive1541Emulator(byte[] rom)
         {
@@ -52,7 +38,6 @@ namespace C64.IO
 
         /// <summary>Attempts to create a 1541 emulator using a full ROM image or split $C000/$E000 ROM halves.</summary>
         /// <param name="romPaths">Candidate filesystem paths for a full 1541 DOS ROM image.</param>
-        /// <returns>A drive emulator when a ROM is found; otherwise, null.</returns>
         public static Drive1541Emulator? TryCreate(params string[] romPaths)
         {
             Drive1541Emulator? splitRom = TryCreateFromSplitRom(romPaths);
@@ -136,10 +121,8 @@ namespace C64.IO
             lowLevelActivityActive = true;
         }
 
-        /// <summary>Gets whether the emulated drive releases the IEC DATA line.</summary>
         public bool DeviceDataRelease => via1.DataOutputRelease && !via1.AtnAcknowledgeDrivesLow(hostAtnRelease);
 
-        /// <summary>Gets whether the emulated drive releases the IEC CLOCK line.</summary>
         public bool DeviceClockRelease => via1.DeviceClockRelease;
 
         /// <summary>Steps the drive CPU for approximately the supplied number of host cycles.</summary>
@@ -168,7 +151,6 @@ namespace C64.IO
         /// <summary>Reads from the 1541 CPU memory map, including RAM, VIA registers, and DOS ROM.</summary>
         /// <param name="addr">The 1541 CPU address.</param>
         /// <param name="fallback">The fallback memory byte.</param>
-        /// <returns>The byte visible to the drive CPU.</returns>
         private byte ReadMemory(ulong addr, byte fallback)
         {
             ushort a = (ushort)(addr & 0xFFFF);
@@ -190,7 +172,6 @@ namespace C64.IO
         /// <summary>Writes to the 1541 CPU memory map, including RAM and VIA registers.</summary>
         /// <param name="addr">The 1541 CPU address.</param>
         /// <param name="value">The value written by the drive CPU.</param>
-        /// <returns>True when the write was handled by the drive map; otherwise, false.</returns>
         private bool WriteMemory(ulong addr, byte value)
         {
             ushort a = (ushort)(addr & 0xFFFF);
@@ -237,7 +218,6 @@ namespace C64.IO
         /// <summary>Determines whether an address selects a mirrored 6522 VIA register block.</summary>
         /// <param name="addr">The 1541 CPU address.</param>
         /// <param name="baseAddress">The base address of the VIA block.</param>
-        /// <returns>True when the address is within the VIA block; otherwise, false.</returns>
         private static bool IsViaAddress(ushort addr, int baseAddress)
         {
             return (addr & 0xFC00) == baseAddress;
@@ -245,7 +225,6 @@ namespace C64.IO
 
         /// <summary>Attempts to create a 1541 emulator from split 8 KiB ROM files named 1541-c000.bin and 1541-e000.bin.</summary>
         /// <param name="romPaths">Candidate full-ROM paths whose directories are searched for split ROM halves.</param>
-        /// <returns>A drive emulator when both ROM halves are valid; otherwise, null.</returns>
         private static Drive1541Emulator? TryCreateFromSplitRom(string[] romPaths)
         {
             foreach (string path in romPaths)
@@ -285,7 +264,6 @@ namespace C64.IO
         /// <summary>Finds a 1541 split ROM half in a directory, preferring explicit address-labelled filenames.</summary>
         /// <param name="directory">The ROM directory to search.</param>
         /// <param name="upperHalf">Whether to find the $E000-$FFFF half; false finds the $C000-$DFFF half.</param>
-        /// <returns>The matching ROM path, or null when no suitable half is present.</returns>
         private static string? FindSplitRomHalf(string directory, bool upperHalf)
         {
             if (!Directory.Exists(directory))
@@ -302,7 +280,6 @@ namespace C64.IO
         /// <summary>Determines whether an 8 KiB 1541 ROM file looks like the requested split ROM half.</summary>
         /// <param name="path">The ROM path to inspect.</param>
         /// <param name="upperHalf">Whether to check for the $E000-$FFFF half; false checks for the $C000-$DFFF half.</param>
-        /// <returns>True when the ROM appears to be the requested half; otherwise, false.</returns>
         private static bool IsSplitRomHalf(string path, bool upperHalf)
         {
             byte[] bytes = File.ReadAllBytes(path);
@@ -316,7 +293,6 @@ namespace C64.IO
         /// <summary>Scores split ROM filenames so explicit address-labelled files win over generic names.</summary>
         /// <param name="path">The ROM path to score.</param>
         /// <param name="upperHalf">Whether the file is being considered for the upper ROM half.</param>
-        /// <returns>A lower score for more preferred filenames.</returns>
         private static int SplitRomPreference(string path, bool upperHalf)
         {
             string name = Path.GetFileName(path).ToUpperInvariant();
@@ -331,7 +307,6 @@ namespace C64.IO
 
         /// <summary>Determines whether a normalized 1541 ROM image has CPU vectors that point into ROM space.</summary>
         /// <param name="rom">The normalized 16 KiB ROM image mapped at $C000-$FFFF.</param>
-        /// <returns>True when the reset vector points into the ROM image; otherwise, false.</returns>
         private static bool HasValidVectors(byte[] rom)
         {
             ushort resetVector = (ushort)(rom[0x3FFC] | (rom[0x3FFD] << 8));
@@ -340,16 +315,12 @@ namespace C64.IO
 
         /// <summary>Determines whether an 8 KiB upper ROM half contains a reset vector into 1541 ROM space.</summary>
         /// <param name="rom">The 8 KiB ROM half mapped at $E000-$FFFF.</param>
-        /// <returns>True when the reset vector points into 1541 ROM space; otherwise, false.</returns>
         private static bool HasValidUpperHalfVectors(byte[] rom)
         {
             ushort resetVector = (ushort)(rom[0x1FFC] | (rom[0x1FFD] << 8));
             return resetVector >= RomBase;
         }
 
-        /// <summary>
-        /// Provides a first-pass 1541 disk mechanism: motor/head control, D64 sector-to-GCR track conversion, and byte-ready signalling.
-        /// </summary>
         private sealed class DiskMechanism
         {
             private const int MinHalfTrack = 2;
@@ -398,7 +369,7 @@ namespace C64.IO
                 EnsureTrackLoaded();
             }
 
-            /// <summary>Ejects media from the mechanism.</summary>
+            /// <summary>Removes the D64 image and clears the cached GCR track stream and byte-ready state.</summary>
             public void Eject()
             {
                 image = null;
@@ -461,14 +432,12 @@ namespace C64.IO
             }
 
             /// <summary>Reads the current GCR byte exposed through VIA2 port A.</summary>
-            /// <returns>The current disk data byte.</returns>
             public byte ReadPortA()
             {
                 return currentByte;
             }
 
             /// <summary>Reads disk-side status bits exposed through VIA2 port B inputs.</summary>
-            /// <returns>The port B input bits.</returns>
             public byte ReadPortB()
             {
                 byte value = 0xFF;
@@ -481,7 +450,6 @@ namespace C64.IO
             /// <param name="track">The one-based disk track.</param>
             /// <param name="sector">The zero-based sector number.</param>
             /// <param name="sectorBytes">Receives the 256-byte sector payload.</param>
-            /// <returns>True when a mounted image contains the requested sector; otherwise, false.</returns>
             public bool TryReadSector(int track, int sector, out byte[] sectorBytes)
             {
                 sectorBytes = [];
@@ -489,7 +457,6 @@ namespace C64.IO
             }
 
             /// <summary>Determines whether the disk sync input should read high.</summary>
-            /// <returns>False while passing a simple sync-mark byte; otherwise, true.</returns>
             private bool IsSyncHigh()
             {
                 return currentByte != 0xFF;
@@ -512,7 +479,6 @@ namespace C64.IO
             /// <summary>Builds an approximate GCR byte stream for a D64 track.</summary>
             /// <param name="image">The source D64 image.</param>
             /// <param name="track">The one-based disk track number.</param>
-            /// <returns>The encoded GCR track byte stream.</returns>
             private static byte[] BuildGcrTrack(D64Image image, int track)
             {
                 int sectors = D64Image.GetSectorCount(track);
@@ -594,9 +560,6 @@ namespace C64.IO
             }
         }
 
-        /// <summary>
-        /// Models the 6522 VIA registers, timers, interrupt flags, control lines, and data-direction controlled ports.
-        /// </summary>
         private sealed class Via6522
         {
             private const byte IfrCa2 = 0x01;
@@ -630,21 +593,16 @@ namespace C64.IO
             private bool cb1High = true;
             private bool cb2High = true;
 
-            /// <summary>Gets whether this VIA releases the IEC DATA line.</summary>
             public bool DeviceDataRelease => DataOutputRelease;
 
-            /// <summary>Gets whether this VIA releases the IEC CLOCK line.</summary>
             public bool DeviceClockRelease => (ddrB & 0x08) == 0 || (portB & 0x08) == 0;
 
-            /// <summary>Gets whether the serial DATA output driver is released.</summary>
             public bool DataOutputRelease => (ddrB & 0x02) == 0 || (portB & 0x02) == 0;
 
-            /// <summary>Gets whether the ATN acknowledge output is released from the serial DATA line.</summary>
             public bool AtnAcknowledgeRelease => !AtnAcknowledgeDrivesLow(true);
 
             /// <summary>Gets whether the ATN acknowledge gate pulls DATA low for the supplied ATN line state.</summary>
             /// <param name="hostAtnRelease">Whether the C64 has released ATN.</param>
-            /// <returns>True when ATNA drives the DATA line low; otherwise, false.</returns>
             public bool AtnAcknowledgeDrivesLow(bool hostAtnRelease)
             {
                 if ((ddrB & 0x10) == 0)
@@ -654,13 +612,10 @@ namespace C64.IO
                 return atnaSet == hostAtnRelease;
             }
 
-            /// <summary>Gets the VIA port B output latch.</summary>
             public byte PortBOutput => portB;
 
-            /// <summary>Gets the VIA port B data-direction register.</summary>
             public byte DataDirectionB => ddrB;
 
-            /// <summary>Gets whether the VIA IRQ output is currently asserted.</summary>
             public bool IrqAsserted => (ReadInterruptFlags() & IfrIrq) != 0;
 
             /// <summary>Resets VIA registers to their power-on defaults.</summary>
@@ -722,7 +677,6 @@ namespace C64.IO
             /// <param name="hostDataRelease">Whether the C64 has released DATA.</param>
             /// <param name="hostClockRelease">Whether the C64 has released CLOCK.</param>
             /// <param name="hostAtnRelease">Whether the C64 has released ATN.</param>
-            /// <returns>The register value visible to the drive CPU.</returns>
             public byte Read(byte register, bool hostDataRelease, bool hostClockRelease, bool hostAtnRelease)
             {
                 bool busDataRelease = hostDataRelease && DataOutputRelease && !AtnAcknowledgeDrivesLow(hostAtnRelease);
@@ -735,7 +689,6 @@ namespace C64.IO
             /// <param name="register">The low register index.</param>
             /// <param name="portAInput">The external input bits for port A.</param>
             /// <param name="portBInput">The external input bits for port B.</param>
-            /// <returns>The register value visible to the drive CPU.</returns>
             public byte Read(byte register, byte portAInput, byte portBInput)
             {
                 switch (register & 0x0F)
@@ -795,7 +748,7 @@ namespace C64.IO
                 }
             }
 
-            /// <summary>Writes a VIA register.</summary>
+            /// <summary>Applies a drive-CPU write to the selected 6522 register, including timer and interrupt side effects.</summary>
             /// <param name="register">The low register index.</param>
             /// <param name="value">The value written by the drive CPU.</param>
             public void Write(byte register, byte value)
@@ -931,7 +884,6 @@ namespace C64.IO
             /// <param name="hostDataRelease">Whether the C64 has released DATA.</param>
             /// <param name="hostClockRelease">Whether the C64 has released CLOCK.</param>
             /// <param name="hostAtnRelease">Whether the C64 has released ATN.</param>
-            /// <returns>The port B input bits.</returns>
             private static byte BuildIecPortBInput(bool hostDataRelease, bool hostClockRelease, bool hostAtnRelease)
             {
                 byte input = 0x00;
@@ -959,14 +911,14 @@ namespace C64.IO
                     SetInterruptFlag(flag);
             }
 
-            /// <summary>Sets one or more interrupt flags.</summary>
+            /// <summary>Latches the selected 6522 IFR bits and refreshes the drive CPU IRQ line.</summary>
             /// <param name="flags">The interrupt flag mask to set.</param>
             private void SetInterruptFlag(byte flags)
             {
                 ifr |= (byte)(flags & 0x7F);
             }
 
-            /// <summary>Clears one or more interrupt flags.</summary>
+            /// <summary>Clears the selected 6522 IFR bits and refreshes the drive CPU IRQ line.</summary>
             /// <param name="flags">The interrupt flag mask to clear.</param>
             private void ClearInterruptFlags(byte flags)
             {
@@ -974,7 +926,6 @@ namespace C64.IO
             }
 
             /// <summary>Reads IFR with bit 7 reflecting enabled pending interrupts.</summary>
-            /// <returns>The interrupt flags visible to the drive CPU.</returns>
             private byte ReadInterruptFlags()
             {
                 byte pending = (byte)(ifr & 0x7F);
@@ -985,7 +936,6 @@ namespace C64.IO
             /// <param name="port">The VIA output latch.</param>
             /// <param name="ddr">The VIA data-direction register.</param>
             /// <param name="input">The externally supplied input bits.</param>
-            /// <returns>The port value visible to the drive CPU.</returns>
             private static byte ReadPort(byte port, byte ddr, byte input)
             {
                 return (byte)((port & ddr) | (input & ~ddr));

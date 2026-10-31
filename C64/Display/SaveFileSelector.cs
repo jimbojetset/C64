@@ -1,24 +1,11 @@
-// ============================================================================
-// Project:     C64
-// File:        SaveFileSelector.cs
-// Description: ImGui modal prompt for entering a PRG filename when saving C64
-//              memory to disk.
-// Author:      James Booth
-// Created:     2025
-// License:     MIT License - See LICENSE file in the project root
-// Copyright:   (c) 2024-2026 James Booth
-// Notice:      Commodore 64 and related ROMs are property of their respective
-//              rights holders. This emulator is for educational purposes only.
-// ============================================================================
+
 
 using ImGuiNET;
 using System.Numerics;
 
 namespace C64.Display
 {
-    /// <summary>
-    /// Modal ImGui popup that prompts for a PRG filename inside Software.
-    /// </summary>
+
     internal sealed class SaveFileSelector
     {
         private const string PopupId = "Save Program";
@@ -30,20 +17,18 @@ namespace C64.Display
         private string? _selectedFilename;
         private string? _error;
 
-        /// <summary>Initializes a new save-file selector.</summary>
+        /// <summary>Creates a modal PRG filename selector seeded with the suggested C64 filename.</summary>
         /// <param name="defaultFilename">The filename initially offered to the user.</param>
         public SaveFileSelector(string defaultFilename)
         {
             _filename = defaultFilename;
         }
 
-        /// <summary>Gets whether the selector has completed.</summary>
         public bool IsCompleted => _completed;
 
-        /// <summary>Gets the selected filename.</summary>
         public string? SelectedFilename => _selectedFilename;
 
-        /// <summary>Draws this selector window.</summary>
+        /// <summary>Draws the save-name modal and handles accept or cancel input for the current frame.</summary>
         public void Draw()
         {
             if (_completed)
@@ -93,7 +78,7 @@ namespace C64.Display
             }
         }
 
-        /// <summary>Validates and accepts the current filename.</summary>
+        /// <summary>Normalizes the entered PRG name and completes the selection when it is valid.</summary>
         private void TryAccept()
         {
             string filename = NormalizeFilename(_filename);
@@ -110,7 +95,6 @@ namespace C64.Display
 
         /// <summary>Normalizes a user-entered filename for PRG saving.</summary>
         /// <param name="raw">The raw bytes to decode.</param>
-        /// <returns>The string value produced by the operation.</returns>
         private static string NormalizeFilename(string raw)
         {
             string name = raw.Trim().Trim('"', '\'');

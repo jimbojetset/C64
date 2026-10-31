@@ -1,15 +1,4 @@
-// ============================================================================
-// Project:     C64
-// File:        NativeLoadFileDialog.cs
-// Description: Platform native host-file picker for loading C64 software,
-//              cartridge, disk, tape, and SID files from arbitrary locations.
-// Author:      James Booth
-// Created:     2026
-// License:     MIT License - See LICENSE file in the project root
-// Copyright:   (c) 2024-2026 James Booth
-// Notice:      Commodore 64 and related ROMs are property of their respective
-//              rights holders. This emulator is for educational purposes only.
-// ============================================================================
+
 
 using System.Diagnostics;
 using System.Runtime.InteropServices;
@@ -17,11 +6,10 @@ using C64.IO;
 
 namespace C64.Display
 {
-    /// <summary>Shows a platform-native file picker for selecting loadable C64 files.</summary>
+
     internal static class NativeLoadFileDialog
     {
         /// <summary>Shows the native file picker and returns the selected loadable file path.</summary>
-        /// <returns>The selected file path, or null when the user cancels or no supported picker is available.</returns>
         public static string? Prompt()
         {
             string? path = null;

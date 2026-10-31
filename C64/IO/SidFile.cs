@@ -1,20 +1,10 @@
-// ============================================================================
-// Project:     C64
-// File:        SidFile.cs
-// Description: PSID/RSID music file parser for direct SID tune loading.
-// Author:      James Booth
-// Created:     2026
-// License:     MIT License - See LICENSE file in the project root
-// Copyright:   (c) 2024-2026 James Booth
-// Notice:      Commodore 64 and related ROMs are property of their respective
-//              rights holders. This emulator is for educational purposes only.
-// ============================================================================
+
 
 using System.Text;
 
 namespace C64.IO
 {
-    /// <summary>A parsed PSID/RSID tune ready to copy into C64 RAM.</summary>
+
     internal sealed record SidFile(
         bool IsRsid,
         ushort Version,
@@ -29,10 +19,9 @@ namespace C64.IO
         string Released,
         byte[] Data)
     {
-        /// <summary>Gets the zero-based song index expected by most SID init routines.</summary>
+
         public byte StartSongIndex => (byte)Math.Max(0, Math.Min(255, StartSong - 1));
 
-        /// <summary>Gets whether the selected song requests CIA-timer playback according to the PSID speed word.</summary>
         public bool SelectedSongUsesCiaSpeed
         {
             get
@@ -44,7 +33,6 @@ namespace C64.IO
 
         /// <summary>Parses a PSID or RSID byte stream.</summary>
         /// <param name="raw">The raw SID file bytes.</param>
-        /// <returns>The parsed SID file.</returns>
         public static SidFile Parse(byte[] raw)
         {
             if (raw.Length < 0x76)

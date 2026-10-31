@@ -1,15 +1,4 @@
-// ============================================================================
-// Project:     C64
-// File:        SoundDeviceWindow.cs
-// Description: Temporary SDL/OpenGL host window for the ImGui audio device
-//              selection prompt.
-// Author:      James Booth
-// Created:     2025
-// License:     MIT License - See LICENSE file in the project root
-// Copyright:   (c) 2024-2026 James Booth
-// Notice:      Commodore 64 and related ROMs are property of their respective
-//              rights holders. This emulator is for educational purposes only.
-// ============================================================================
+
 
 using Silk.NET.OpenGL;
 using System.Diagnostics;
@@ -18,16 +7,11 @@ using C64.Sound;
 
 namespace C64.Display
 {
-    /// <summary>
-    /// Hosts an SDL2 + OpenGL window long enough to run an ImGui
-    /// <see cref="AudioDeviceSelector"/> modal, then disposes everything and
-    /// returns the user's choice.
-    /// </summary>
+
     internal static class SoundDeviceWindow
     {
-        /// <summary>Shows the picker window and returns the selected value.</summary>
+        /// <summary>Runs a temporary SDL/ImGui modal and returns the selected playback device name.</summary>
         /// <param name="devices">The audio device names to show in the picker.</param>
-        /// <returns>The selected or resolved string value, or null when no value is available.</returns>
         public static string? Prompt(List<string> devices)
         {
             if (devices.Count == 0) return null;
@@ -38,7 +22,6 @@ namespace C64.Display
                 return null;
             }
 
-            /// Request a core-profile OpenGL 3.3 context (matches ImGuiController).
             SDL_GL_SetAttribute(SDL_GLattr.SDL_GL_CONTEXT_MAJOR_VERSION, 3);
             SDL_GL_SetAttribute(SDL_GLattr.SDL_GL_CONTEXT_MINOR_VERSION, 3);
             SDL_GL_SetAttribute(SDL_GLattr.SDL_GL_CONTEXT_PROFILE_MASK,
@@ -72,7 +55,7 @@ namespace C64.Display
             }
 
             SDL_GL_MakeCurrent(win, glCtx);
-            SDL_GL_SetSwapInterval(1); /// vsync
+            SDL_GL_SetSwapInterval(1);
 
             GL gl = GL.GetApi(name => SDL_GL_GetProcAddress(name));
 
@@ -150,7 +133,6 @@ namespace C64.Display
                 SDL_GL_DeleteContext(glCtx);
                 SDL_DestroyWindow(win);
 
-                /// Drain residual events so they don't leak into the emulator loop.
                 while (SDL_PollEvent(out _) != 0) { }
             }
 

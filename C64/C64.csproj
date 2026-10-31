@@ -6,7 +6,6 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
-    <!-- IDE0005 requires documentation output; XML documentation diagnostics are not part of this guardrail. -->
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
     <NoWarn>$(NoWarn);CS1570;CS1572;CS1573;CS1587;CS1591</NoWarn>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>

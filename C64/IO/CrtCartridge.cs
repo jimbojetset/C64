@@ -1,21 +1,10 @@
-// ============================================================================
-// Project:     C64
-// File:        CrtCartridge.cs
-// Description: C64 CRT cartridge image parser and mapper, including standard
-//              8K/16K/Ultimax cartridges and EasyFlash banking.
-// Author:      James Booth
-// Created:     2026
-// License:     MIT License - See LICENSE file in the project root
-// Copyright:   (c) 2024-2026 James Booth
-// Notice:      Commodore 64 and related ROMs are property of their respective
-//              rights holders. This emulator is for educational purposes only.
-// ============================================================================
+
 
 using System.Text;
 
 namespace C64.IO
 {
-    /// <summary>Represents a loaded C64 cartridge image in CRT format.</summary>
+
     internal sealed class CrtCartridge
     {
         private const int HardwareNormal = 0;
@@ -43,13 +32,10 @@ namespace C64.IO
             Reset();
         }
 
-        /// <summary>Gets the cartridge display name from the CRT header.</summary>
         public string Name { get; }
 
-        /// <summary>Gets the CRT hardware type id.</summary>
         public int HardwareType { get; }
 
-        /// <summary>Gets a short user-facing hardware type name.</summary>
         public string HardwareName => HardwareType switch
         {
             HardwareNormal => "Normal cartridge",
@@ -58,9 +44,8 @@ namespace C64.IO
             _ => $"CRT type {HardwareType}"
         };
 
-        /// <summary>Parses a CRT cartridge image.</summary>
+        /// <summary>Parses a Commodore CRT header and CHIP packets into cartridge ROM banks.</summary>
         /// <param name="raw">The raw CRT file bytes.</param>
-        /// <returns>The parsed cartridge.</returns>
         public static CrtCartridge Parse(byte[] raw)
         {
             if (raw.Length < 0x40)
@@ -124,7 +109,6 @@ namespace C64.IO
         /// <summary>Reads a CPU-visible cartridge ROM byte if the current mapping exposes one.</summary>
         /// <param name="addr">The CPU address being read.</param>
         /// <param name="processorPort">The effective $0001 processor-port value.</param>
-        /// <returns>A cartridge byte, or null when the cartridge is not mapped at the address.</returns>
         public byte? ReadMemory(ulong addr, byte processorPort)
         {
             int address = (int)(addr & 0xFFFF);
@@ -138,24 +122,17 @@ namespace C64.IO
         /// <param name="addr">The CPU address being written.</param>
         /// <param name="processorPort">The effective $0001 processor-port value.</param>
         /// <param name="value">The byte being written.</param>
-        /// <returns>True when cartridge ROM was visible and observed the write.</returns>
         public bool WriteMemory(ulong addr, byte processorPort)
         {
             int address = (int)(addr & 0xFFFF);
             if (!TryGetVisibleRom(address, processorPort, out _, out _))
                 return false;
 
-            /// EasyFlash flash programming is intentionally conservative for
-            /// now: mapped cartridge writes are observed here, while the
-            /// memory backend still writes the byte into C64 RAM underneath.
-            /// Flash persistence and command-state emulation are a separate
-            /// compatibility step.
             return true;
         }
 
-        /// <summary>Handles cartridge I/O reads.</summary>
+        /// <summary>Reads cartridge control registers in the IO1 or IO2 windows when the cartridge handles them.</summary>
         /// <param name="addr">The CPU address being read.</param>
-        /// <returns>A cartridge I/O byte, or null when the cartridge does not handle the read.</returns>
         public byte? ReadIo(ulong addr)
         {
             int address = (int)(addr & 0xFFFF);
@@ -165,10 +142,9 @@ namespace C64.IO
             return null;
         }
 
-        /// <summary>Handles cartridge I/O writes.</summary>
+        /// <summary>Applies cartridge bank-switch or control-register writes in the IO1 and IO2 windows.</summary>
         /// <param name="addr">The CPU address being written.</param>
         /// <param name="value">The byte being written.</param>
-        /// <returns>True when the cartridge consumed the write.</returns>
         public bool WriteIo(ulong addr, byte value)
         {
             int address = (int)(addr & 0xFFFF);

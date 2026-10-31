@@ -1,57 +1,11 @@
-// ============================================================================
-// Project:     C64
-// File:        REU.cs
-// Description: Commodore 17xx RAM Expansion Unit emulator. Implements the
-//              8726 DMA controller register map, all four transfer modes
-//              (stash / fetch / swap / compare), $FF00 trigger, autoload,
-//              address fixing, level-triggered IRQ, and size-aware bank
-//              register read masking.
-// Author:      James Booth
-// Created:     2025
-// License:     MIT License - See LICENSE file in the project root
-// Copyright:   (c) 2024-2026 James Booth
-// Notice:      Commodore 64 and related ROMs are property of their respective
-//              rights holders. This emulator is for educational purposes only.
-// ============================================================================
+
 
 namespace C64.CPU
 {
-    /// <summary>
-    /// Commodore 17xx-series RAM Expansion Unit (REU) emulator.
-    /// Provides 128KB / 256KB / 512KB of additional RAM accessible via the
-    /// 8726 DMA controller mapped at $DF00-$DF0A.
-    ///
-    /// Register map (CMD/Commodore-correct, used by VICE and real software):
-    ///   $DF00: Status            (R)    bit7 IRQ pending, bit6 end-of-block,
-    ///                                   bit5 fault (verify error), bit4 size id,
-    ///                                   bits3-0 chip version; READ clears
-    ///                                   pending IRQ and bits 7-5.
-    ///   $DF01: Command           (R/W)  bit7 EXECUTE, bit6 reserved (=1),
-    ///                                   bit5 AUTOLOAD (0 = reload regs on
-    ///                                   completion), bit4 FF00 trigger
-    ///                                   (1 = run now, 0 = wait for $FF00
-    ///                                   write), bits3-2 reserved (=1),
-    ///                                   bits1-0 TYPE (00 stash, 01 fetch,
-    ///                                   10 swap, 11 compare).
-    ///   $DF02: C64 address low
-    ///   $DF03: C64 address high
-    ///   $DF04: REU address low
-    ///   $DF05: REU address high
-    ///   $DF06: REU address bank   (bits according to size; unused bits read 1)
-    ///   $DF07: Transfer length low
-    ///   $DF08: Transfer length high
-    ///   $DF09: Interrupt mask register (IMR) - bit7 master enable,
-    ///                                   bit6 end-of-block IRQ, bit5 fault IRQ;
-    ///                                   bits 0-4 read as 1.
-    ///   $DF0A: Address control register (ACR) - bit7 fix C64 address,
-    ///                                   bit6 fix REU address; bits 0-5 read 1.
-    ///
-    /// DMA transfer is paced from the per-cycle CPU stepper at the historical
-    /// 1 byte per 2 cycles. CPU is not halted during DMA in this build.
-    /// </summary>
+
     internal sealed class REU : IDisposable
     {
-        /// REU RAM (128KB, 256KB, or 512KB).
+
         private readonly byte[] _reuRam;
 
         private readonly int _reuSizeKb;
@@ -59,46 +13,32 @@ namespace C64.CPU
         private readonly int _reuBankMask;
         private readonly byte _reuBankReadMask;
 
-        /// Live (working) registers.
-        private int _reuAddr;        /// 24-bit REU address (low/high/bank)
-        private int _cpuAddr;        /// 16-bit CPU address (low/high)
-        private int _transferLen;    /// 16-bit transfer length (low/high)
-        private byte _commandReg;    /// $DF01 command register, last value written
-        private byte _imrReg;        /// $DF09 IMR (top 3 bits significant)
-        private byte _acrReg;        /// $DF0A ACR (top 2 bits significant)
+        private int _reuAddr;
+        private int _cpuAddr;
+        private int _transferLen;
+        private byte _commandReg;
+        private byte _imrReg;
+        private byte _acrReg;
 
-        /// Shadow (start) registers, captured on EXECUTE so AUTOLOAD=0 can
-        /// restore them when the transfer completes.
         private int _reuAddrShadow;
         private int _cpuAddrShadow;
         private int _transferLenShadow;
 
-        /// Status latches that surface in $DF00.
         private bool _irqPending;
         private bool _endOfBlock;
         private bool _fault;
 
-        /// DMA state.
-        private int _dmaType;        /// 0 stash, 1 fetch, 2 swap, 3 compare
+        private int _dmaType;
 
-        /// CPU stall cycles owed to the host stepper for the most recent DMA
-        /// burst. The 8726 halts the 6510 by asserting BA / DMA while it
-        /// transfers, so the CPU loses these cycles to the REU bus master.
         private int _pendingStallCycles;
 
-        private bool _ff00Armed;     /// EXECUTE pending FF00 trigger
+        private bool _ff00Armed;
 
-        /// <summary>Gets or sets the callback invoked when an REU IRQ is asserted.</summary>
         public Action? OnIrqRequest { get; set; }
 
-        /// <summary>
-        /// Callback invoked when an EXECUTE-now DMA is requested via a write
-        /// to $DF01 with the FF00-trigger bit set. The host wires this to
-        /// <see cref="RunDmaTransfer"/> with the live CPU memory reference.
-        /// </summary>
         public Action? OnExecuteNow { get; set; }
 
-        /// <summary>Initializes a new REU instance.</summary>
+        /// <summary>Allocates REU expansion RAM at the requested size and resets its DMA registers.</summary>
         /// <param name="sizeKb">The REU capacity in kilobytes (128, 256, or 512).</param>
         public REU(int sizeKb = 128)
         {
@@ -109,9 +49,6 @@ namespace C64.CPU
             _reuRam = new byte[sizeKb * 1024];
             _reuSizeMask = (sizeKb * 1024) - 1;
 
-            /// Bank-register mask: 128K -> 1 bit, 256K -> 2 bits, 512K -> 3 bits.
-            /// Unused upper bits read back as 1 (open-bus high) so detection
-            /// routines see e.g. $F8 on a 1700 and $F0 on a 1750.
             int bankBits = sizeKb switch
             {
                 128 => 1,
@@ -123,7 +60,7 @@ namespace C64.CPU
             Reset();
         }
 
-        /// <summary>Resets this instance to its initial state.</summary>
+        /// <summary>Clears REU RAM, DMA registers, address shadows, status latches, and pending execution state.</summary>
         public void Reset()
         {
             Array.Clear(_reuRam, 0, _reuRam.Length);
@@ -143,19 +80,15 @@ namespace C64.CPU
             _ff00Armed = false;
         }
 
-        /// <summary>Reads a value from the addressed device state.</summary>
+        /// <summary>Reads an REU register and applies status-read side effects such as clearing IRQ and completion latches.</summary>
         /// <param name="addr">The emulated address to access.</param>
-        /// <returns>The byte value produced by the operation.</returns>
         public byte Read(int addr)
         {
             switch (addr & 0x1F)
             {
                 case 0x00:
                     {
-                        /// Status: bit7 IRQ pending, bit6 end-of-block, bit5 fault,
-                        /// bit4 size id (1 = 256K/512K, 0 = 128K), bits3-0 chip
-                        /// version (0 == 8726). Reading clears bits 7-5 and the
-                        /// pending IRQ.
+
                         byte status = 0x00;
                         if (_reuSizeKb >= 256) status |= 0x10;
                         if (_irqPending) status |= 0x80;
@@ -169,7 +102,7 @@ namespace C64.CPU
                     }
 
                 case 0x01:
-                    /// Command register: unused/reserved bits read as 1.
+
                     return (byte)(_commandReg | 0x4C);
 
                 case 0x02: return (byte)(_cpuAddr & 0xFF);
@@ -181,20 +114,20 @@ namespace C64.CPU
                 case 0x08: return (byte)((_transferLen >> 8) & 0xFF);
 
                 case 0x09:
-                    /// IMR: top 3 bits significant, low 5 bits read 1.
+
                     return (byte)(_imrReg | 0x1F);
 
                 case 0x0A:
-                    /// ACR: top 2 bits significant, low 6 bits read 1.
+
                     return (byte)(_acrReg | 0x3F);
 
                 default:
-                    /// Mirrored / unused: open bus reads $FF.
+
                     return 0xFF;
             }
         }
 
-        /// <summary>Writes a value to the addressed device state.</summary>
+        /// <summary>Writes an REU register and arms or immediately starts DMA according to the command bits.</summary>
         /// <param name="addr">The emulated address to access.</param>
         /// <param name="value">The value supplied to the operation.</param>
         public void Write(int addr, byte value)
@@ -202,15 +135,14 @@ namespace C64.CPU
             switch (addr & 0x1F)
             {
                 case 0x00:
-                    /// Status register is read-only on real hardware.
+
                     return;
 
                 case 0x01:
                     _commandReg = value;
                     if ((value & 0x80) != 0)
                     {
-                        /// EXECUTE requested. FF00-trigger bit decides whether
-                        /// to run immediately or arm for the next $FF00 write.
+
                         if ((value & 0x10) != 0)
                         {
                             _ff00Armed = false;
@@ -290,7 +222,6 @@ namespace C64.CPU
             _cpuAddrShadow = _cpuAddr;
             _transferLenShadow = _transferLen;
 
-            /// Length register of 0 means 65536 bytes (one full bank).
             int len = _transferLen == 0 ? 0x10000 : _transferLen;
             _dmaType = _commandReg & 0x03;
             _endOfBlock = false;
@@ -305,13 +236,13 @@ namespace C64.CPU
             {
                 switch (_dmaType)
                 {
-                    case 0: // Stash: C64 -> REU
+                    case 0:
                         WriteReuByte(_reuAddr, memory.ReadByte((ulong)_cpuAddr));
                         break;
-                    case 1: // Fetch: REU -> C64
+                    case 1:
                         memory.WriteByte((ulong)_cpuAddr, ReadReuByte(_reuAddr));
                         break;
-                    case 2: // Swap: C64 <-> REU
+                    case 2:
                         {
                             byte cpuByte = memory.ReadByte((ulong)_cpuAddr);
                             byte reuByte = ReadReuByte(_reuAddr);
@@ -319,7 +250,7 @@ namespace C64.CPU
                             WriteReuByte(_reuAddr, cpuByte);
                             break;
                         }
-                    case 3: /// Compare: stops on first mismatch and sets FAULT.
+                    case 3:
                         {
                             byte cpuByte = memory.ReadByte((ulong)_cpuAddr);
                             byte reuByte = ReadReuByte(_reuAddr);
@@ -340,12 +271,9 @@ namespace C64.CPU
                 bytesTransferred = i + 1;
             }
 
-CompareEarlyExit:
+        CompareEarlyExit:
             _endOfBlock = true;
 
-            /// AUTOLOAD: when bit 5 is clear, restore the start values so the
-            /// next EXECUTE / FF00 repeats the same transfer. When set, leave
-            /// the registers showing the final post-DMA values.
             if ((_commandReg & 0x20) == 0)
             {
                 _reuAddr = _reuAddrShadow;
@@ -353,18 +281,11 @@ CompareEarlyExit:
                 _transferLen = _transferLenShadow;
             }
 
-            /// Clear EXECUTE and FF00-trigger bits.
             _commandReg &= 0x6F;
 
-            /// Cycle cost. Real REU rates: swap = 2 cycles/byte (read + write
-            /// on both buses), stash/fetch/compare = 1 cycle/byte. Plus a
-            /// fixed 4-cycle setup overhead the 8726 takes to acquire the bus.
             int perByte = (_dmaType == 2) ? 2 : 1;
             _pendingStallCycles += 4 + (bytesTransferred * perByte);
 
-            /// IRQ assertion: end-of-block always latches; fault latches if
-            /// compare mismatched. Master + per-source enables in IMR gate
-            /// the actual line.
             bool irq = false;
             if (_endOfBlock && (_imrReg & 0x40) != 0) irq = true;
             if (_fault && (_imrReg & 0x20) != 0) irq = true;
@@ -401,10 +322,10 @@ CompareEarlyExit:
         /// <summary>Writes a single REU RAM byte with size-mask wrapping.</summary>
         private void WriteReuByte(int addr, byte value) => _reuRam[addr & _reuSizeMask] = value;
 
-        /// <summary>Releases resources owned by this instance.</summary>
+        /// <summary>Releases the synchronization object used by REU DMA transfers.</summary>
         public void Dispose()
         {
-            /// No unmanaged resources.
+
         }
     }
 }

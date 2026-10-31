@@ -1,26 +1,11 @@
-// ============================================================================
-// Project:     C64
-// File:        AudioDeviceSelector.cs
-// Description: ImGui modal selector for choosing an SDL audio output device
-//              from the available device list.
-// Author:      James Booth
-// Created:     2025
-// License:     MIT License - See LICENSE file in the project root
-// Copyright:   (c) 2024-2026 James Booth
-// Notice:      Commodore 64 and related ROMs are property of their respective
-//              rights holders. This emulator is for educational purposes only.
-// ============================================================================
+
 
 using ImGuiNET;
 using System.Numerics;
 
 namespace C64.Sound
 {
-    /// <summary>
-    /// Modal ImGui popup that prompts the user to choose an audio output device.
-    /// Selection is made by clicking an entry, using arrow keys plus Enter, or
-    /// pressing the matching number key (0-9 for the first ten devices).
-    /// </summary>
+
     internal sealed class AudioDeviceSelector
     {
         private const string PopupId = "Select Audio Device";
@@ -30,9 +15,9 @@ namespace C64.Sound
         private bool _completed;
         private string? _selectedDeviceName;
 
-        private int _currentIndex = 0;  /// Default to index 0
+        private int _currentIndex = 0;
 
-        /// <summary>Initializes a new AudioDeviceSelector instance.</summary>
+        /// <summary>Creates an ImGui audio-device picker over the available SDL playback devices.</summary>
         /// <param name="devices">The audio device names to show in the picker.</param>
         public AudioDeviceSelector(List<string> devices)
         {
@@ -41,13 +26,11 @@ namespace C64.Sound
             _completed = _devices.Count == 0;
         }
 
-        /// <summary>True once the user has made a selection (or no prompt was needed).</summary>
         public bool IsCompleted => _completed;
 
-        /// <summary>The selected device name, or null to use the system default.</summary>
         public string? SelectedDeviceName => _selectedDeviceName;
 
-        /// <summary>Render the modal. Must be called inside an active ImGui frame.</summary>
+        /// <summary>Draws the modal device list and handles keyboard or pointer selection within an active ImGui frame.</summary>
         public void Draw()
         {
             if (_completed)
@@ -79,12 +62,10 @@ namespace C64.Sound
                         return;
                     }
 
-                    /// Set keyboard focus to the first (default) item on first frame
                     if (i == 0)
                         ImGui.SetItemDefaultFocus();
                 }
 
-                /// Number-key selection (matches the previous command-line behaviour).
                 int maxKey = Math.Min(10, _devices.Count);
                 for (int i = 0; i < maxKey; i++)
                 {
@@ -96,13 +77,12 @@ namespace C64.Sound
                         break;
                     }
                 }
-                /// Up/Down arrow keys to navigate selection
+
                 if (ImGui.IsKeyPressed(ImGuiKey.UpArrow, false) && _currentIndex > 0)
                     _currentIndex--;
                 if (ImGui.IsKeyPressed(ImGuiKey.DownArrow, false) && _currentIndex < _devices.Count - 1)
                     _currentIndex++;
 
-                /// Enter to confirm the current selection
                 if (ImGui.IsKeyPressed(ImGuiKey.Enter, false))
                 {
                     Select(_currentIndex);
@@ -112,7 +92,7 @@ namespace C64.Sound
             }
         }
 
-        /// <summary>Accepts the item at the selected index.</summary>
+        /// <summary>Completes the picker with the SDL playback device at the selected index.</summary>
         /// <param name="index">The item index to select.</param>
         private void Select(int index)
         {

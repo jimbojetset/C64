@@ -1,15 +1,4 @@
-// ============================================================================
-// Project:     C64
-// File:        ImGuiController.cs
-// Description: SDL2/OpenGL renderer and input bridge for Dear ImGui overlays
-//              used by emulator dialogs.
-// Author:      James Booth
-// Created:     2025
-// License:     MIT License - See LICENSE file in the project root
-// Copyright:   (c) 2024-2026 James Booth
-// Notice:      Commodore 64 and related ROMs are property of their respective
-//              rights holders. This emulator is for educational purposes only.
-// ============================================================================
+
 
 using ImGuiNET;
 using Silk.NET.OpenGL;
@@ -20,9 +9,7 @@ using static SDL2.SDL;
 
 namespace C64.Display
 {
-    /// <summary>
-    /// Handles ImGui initialization, input processing, and rendering with SDL2 + OpenGL
-    /// </summary>
+
     public class ImGuiController : IDisposable
     {
         private readonly GL _gl;
@@ -57,7 +44,6 @@ namespace C64.Display
             _windowWidth = width;
             _windowHeight = height;
 
-            /// Create ImGui context
             IntPtr context = ImGui.CreateContext();
             ImGui.SetCurrentContext(context);
 
@@ -70,14 +56,13 @@ namespace C64.Display
                 io.NativePtr->IniFilename = null;
             }
 
-            /// Create device objects (shaders, buffers, fonts)
             CreateDeviceObjects();
         }
 
-        /// <summary>Creates device objects.</summary>
+        /// <summary>Creates the OpenGL buffers, shaders, and uniforms used by the ImGui renderer.</summary>
         private unsafe void CreateDeviceObjects()
         {
-            /// Create shaders
+
             string vertexShaderSource = @"
                 #version 330 core
                 layout (location = 0) in vec2 Position;
@@ -123,7 +108,6 @@ namespace C64.Display
             _attribLocationVtxUV = (uint)_gl.GetAttribLocation(_shaderProgram, "UV");
             _attribLocationVtxColor = (uint)_gl.GetAttribLocation(_shaderProgram, "Color");
 
-            /// Create buffers
             _vao = _gl.GenVertexArray();
             _vbo = _gl.GenBuffer();
             _ebo = _gl.GenBuffer();
@@ -132,7 +116,6 @@ namespace C64.Display
             _gl.BindBuffer(BufferTargetARB.ArrayBuffer, _vbo);
             _gl.BindBuffer(BufferTargetARB.ElementArrayBuffer, _ebo);
 
-            /// Vertex attributes
             _gl.EnableVertexAttribArray(_attribLocationVtxPos);
             _gl.EnableVertexAttribArray(_attribLocationVtxUV);
             _gl.EnableVertexAttribArray(_attribLocationVtxColor);
@@ -144,14 +127,12 @@ namespace C64.Display
 
             _gl.BindVertexArray(0);
 
-            /// Create font texture
             CreateFontTexture();
         }
 
-        /// <summary>Compiles shader.</summary>
+        /// <summary>Compiles one ImGui OpenGL shader and reports the driver log on failure.</summary>
         /// <param name="type">The OpenGL shader or PNG chunk type.</param>
         /// <param name="source">The shader source code to compile.</param>
-        /// <returns>The numeric value produced by the operation.</returns>
         private uint CompileShader(ShaderType type, string source)
         {
             uint shader = _gl.CreateShader(type);
@@ -168,12 +149,11 @@ namespace C64.Display
             return shader;
         }
 
-        /// <summary>Creates font texture.</summary>
+        /// <summary>Uploads the ImGui font atlas and assigns it as the active font texture.</summary>
         private unsafe void CreateFontTexture()
         {
             var io = ImGui.GetIO();
 
-            /// Build font atlas
             io.Fonts.GetTexDataAsRGBA32(out IntPtr pixels, out int width, out int height, out _);
 
             _fontTexture = _gl.GenTexture();
@@ -189,7 +169,7 @@ namespace C64.Display
             io.Fonts.ClearTexData();
         }
 
-        /// <summary>Processes event.</summary>
+        /// <summary>Feeds SDL mouse, wheel, text, and keyboard events into ImGui input state.</summary>
         /// <param name="e">The SDL event to process.</param>
         public void ProcessEvent(SDL_Event e)
         {
@@ -247,7 +227,7 @@ namespace C64.Display
             }
         }
 
-        /// <summary>Updates modifiers.</summary>
+        /// <summary>Copies the current SDL Ctrl, Shift, Alt, and GUI modifier state into ImGui.</summary>
         /// <param name="io">The ImGui IO state to update.</param>
         private void UpdateModifiers(ImGuiIOPtr io)
         {
@@ -260,7 +240,6 @@ namespace C64.Display
 
         /// <summary>Maps an SDL key code to an ImGui key.</summary>
         /// <param name="key">The SDL key code to translate.</param>
-        /// <returns>The ImGui key corresponding to the SDL key code.</returns>
         private ImGuiKey TranslateKey(SDL_Keycode key)
         {
             return key switch
@@ -322,7 +301,7 @@ namespace C64.Display
             };
         }
 
-        /// <summary>Begins a new ImGui frame.</summary>
+        /// <summary>Updates timing, window dimensions, and input state before beginning an ImGui frame.</summary>
         /// <param name="deltaTime">The elapsed frame time in seconds.</param>
         public void NewFrame(float deltaTime)
         {
@@ -342,7 +321,7 @@ namespace C64.Display
             _windowHeight = height;
         }
 
-        /// <summary>Renders the current ImGui draw data.</summary>
+        /// <summary>Uploads ImGui command lists and renders them through the OpenGL backend.</summary>
         public unsafe void Render()
         {
             ImGui.Render();
@@ -351,7 +330,6 @@ namespace C64.Display
             if (drawData.CmdListsCount == 0)
                 return;
 
-            /// Backup GL state
             _gl.GetInteger(GetPName.CurrentProgram, out int lastProgram);
             _gl.GetInteger(GetPName.TextureBinding2D, out int lastTexture);
             _gl.GetInteger(GetPName.ArrayBufferBinding, out int lastArrayBuffer);
@@ -361,7 +339,6 @@ namespace C64.Display
             bool lastEnableDepthTest = _gl.IsEnabled(EnableCap.DepthTest);
             bool lastEnableScissorTest = _gl.IsEnabled(EnableCap.ScissorTest);
 
-            /// Setup render state
             _gl.Enable(EnableCap.Blend);
             _gl.BlendEquation(BlendEquationModeEXT.FuncAdd);
             _gl.BlendFuncSeparate(BlendingFactor.SrcAlpha, BlendingFactor.OneMinusSrcAlpha, BlendingFactor.One, BlendingFactor.OneMinusSrcAlpha);
@@ -369,7 +346,6 @@ namespace C64.Display
             _gl.Disable(EnableCap.DepthTest);
             _gl.Enable(EnableCap.ScissorTest);
 
-            /// Setup orthographic projection matrix
             float L = drawData.DisplayPos.X;
             float R = drawData.DisplayPos.X + drawData.DisplaySize.X;
             float T = drawData.DisplayPos.Y;
@@ -396,7 +372,6 @@ namespace C64.Display
             {
                 var cmdList = drawData.CmdLists[n];
 
-                /// Upload vertex/index buffers
                 _gl.BindBuffer(BufferTargetARB.ArrayBuffer, _vbo);
                 _gl.BufferData(BufferTargetARB.ArrayBuffer, (nuint)(cmdList.VtxBuffer.Size * Unsafe.SizeOf<ImDrawVert>()), (void*)cmdList.VtxBuffer.Data, BufferUsageARB.StreamDraw);
 
@@ -409,7 +384,7 @@ namespace C64.Display
 
                     if (pcmd.UserCallback != IntPtr.Zero)
                     {
-                        /// User callback - not implemented
+
                     }
                     else
                     {
@@ -429,7 +404,6 @@ namespace C64.Display
                 }
             }
 
-            /// Restore GL state
             _gl.UseProgram((uint)lastProgram);
             _gl.BindTexture(TextureTarget.Texture2D, (uint)lastTexture);
             _gl.BindVertexArray((uint)lastVertexArray);
@@ -441,7 +415,7 @@ namespace C64.Display
             if (lastEnableScissorTest) _gl.Enable(EnableCap.ScissorTest); else _gl.Disable(EnableCap.ScissorTest);
         }
 
-        /// <summary>Releases resources owned by this instance.</summary>
+        /// <summary>Deletes the OpenGL buffers, shaders, texture, and vertex array used by ImGui.</summary>
         public void Dispose()
         {
             if (!_disposed)
