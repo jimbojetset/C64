@@ -13,7 +13,7 @@
 
 using System.Text;
 
-namespace C64
+namespace C64.IO
 {
     /// <summary>A single loadable program block extracted from a T64 file.</summary>
     internal sealed record TapeEntry(

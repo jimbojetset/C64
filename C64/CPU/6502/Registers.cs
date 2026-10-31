@@ -36,7 +36,7 @@ namespace C64.CPU
         /// <summary>Gets or sets the CPU Y register.</summary>
         public byte Y { get; set; } /// Y Index Register
 
-        public Flags Flags = new Flags();
+        public Flags Flags = new();
 
         /// <summary>Initializes a new Registers instance.</summary>
         public Registers()

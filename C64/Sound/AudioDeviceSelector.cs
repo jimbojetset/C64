@@ -14,7 +14,7 @@
 using ImGuiNET;
 using System.Numerics;
 
-namespace C64
+namespace C64.Sound
 {
     /// <summary>
     /// Modal ImGui popup that prompts the user to choose an audio output device.

@@ -14,8 +14,9 @@
 using Silk.NET.OpenGL;
 using System.Diagnostics;
 using static SDL2.SDL;
+using C64.Sound;
 
-namespace C64
+namespace C64.Display
 {
     /// <summary>
     /// Hosts an SDL2 + OpenGL window long enough to run an ImGui

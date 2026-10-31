@@ -12,7 +12,7 @@
 
 using System.Text;
 
-namespace C64
+namespace C64.IO
 {
     /// <summary>A parsed PSID/RSID tune ready to copy into C64 RAM.</summary>
     internal sealed record SidFile(

@@ -12,6 +12,10 @@
 // ============================================================================
 
 using C64.CPU;
+using C64.Display;
+using C64.IO;
+using C64Display = C64.Display.Display;
+using C64Sound = C64.Sound.Sound;
 using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Runtime.InteropServices;
@@ -68,26 +72,26 @@ namespace C64
             string[] candidates;
             if (RuntimeInformation.IsOSPlatform(OSPlatform.OSX))
             {
-                candidates = new[]
-                {
+                candidates =
+                [
                     "/opt/homebrew/lib/libSDL2.dylib",      /// Apple Silicon Homebrew
                     "/opt/homebrew/opt/sdl2/lib/libSDL2.dylib",
                     "/usr/local/lib/libSDL2.dylib",         /// Intel Homebrew / manual install
                     "/usr/local/opt/sdl2/lib/libSDL2.dylib",
                     "libSDL2.dylib",
-                };
+                ];
             }
             else if (RuntimeInformation.IsOSPlatform(OSPlatform.Linux))
             {
-                candidates = new[]
-                {
+                candidates =
+                [
                     "libSDL2-2.0.so.0",
                     "libSDL2.so",
-                };
+                ];
             }
             else
             {
-                candidates = new[] { "SDL2.dll" };
+                candidates = ["SDL2.dll"];
             }
 
             foreach (string c in candidates)
@@ -117,9 +121,9 @@ namespace C64
 
         private readonly CancellationTokenSource cts;
         private readonly CPU_6510 cpu;
-        private readonly Display display;
+        private readonly C64Display display;
         private readonly Keyboard keyboard;
-        private readonly Sound sound;
+        private readonly C64Sound sound;
         private readonly VirtualDrive1541 drive;
         private readonly Drive1541Emulator? fullDrive;
         private readonly IecBus iecBus;
@@ -164,9 +168,7 @@ namespace C64
         private bool cia1SpInHigh = true;
         private bool cia1CntInHigh = true;
         private bool cia1CntHighSeen = true;
-        private bool cia1SpOutHigh = true;
         private uint cia1CntPulseBudget;
-        private byte cia1SerialShiftReg;
         private int cia1SerialBitsRemaining;
         private bool cia1SerialOutputActive;
         private bool cia1SerialDataPending;
@@ -203,9 +205,7 @@ namespace C64
         private bool cia2SpInHigh = true;
         private bool cia2CntInHigh = true;
         private bool cia2CntHighSeen = true;
-        private bool cia2SpOutHigh = true;
         private uint cia2CntPulseBudget;
-        private byte cia2SerialShiftReg;
         private int cia2SerialBitsRemaining;
         private bool cia2SerialOutputActive;
         private bool cia2SerialDataPending;
@@ -219,16 +219,18 @@ namespace C64
         public C64Emulator(bool turbo = false)
         {
             cts = new System.Threading.CancellationTokenSource();
-            cpu = new CPU_6510(Clock_PAL);
-            cpu.OnCyclesExecuted = OnCpuCyclesExecuted;
+            cpu = new CPU_6510(Clock_PAL)
+            {
+                OnCyclesExecuted = OnCpuCyclesExecuted
+            };
             if (turbo)
                 cpu.PacingEnabled = false;
             cpu.memory.LoadBankedROM(Path.Combine("ROMS", "basic.bin"), Memory.BankSlot.Basic);
             cpu.memory.LoadBankedROM(Path.Combine("ROMS", "kernal.bin"), Memory.BankSlot.Kernal);
             cpu.memory.LoadBankedROM(Path.Combine("ROMS", "characters.bin"), Memory.BankSlot.Char);
-            display = new Display(cpu);
+            display = new C64Display(cpu);
             keyboard = new Keyboard(cpu);
-            sound = new Sound();
+            sound = new C64Sound();
             drive = new VirtualDrive1541();
             fullDrive = IsFull1541Enabled()
                 ? Drive1541Emulator.TryCreate(
@@ -240,8 +242,10 @@ namespace C64
                 Console.WriteLine("1541 drive ROM found; full drive emulation path enabled.");
             iecBus = new IecBus(drive, fullDrive);
             datasette = new DatasetteDevice();
-            reu = new REU(128);
-            reu.OnIrqRequest = () => cpu.InitiateIRQ(0xFFFE);
+            reu = new REU(128)
+            {
+                OnIrqRequest = () => cpu.InitiateIRQ(0xFFFE)
+            };
             reu.OnExecuteNow = () => reu.RunDmaTransfer(cpu.memory);
             cpu.memory.OnFF00Write = (mem, _) => reu.NotifyFF00Write(mem);
             keyboard.OnHardReset = HardResetFromKeyboard;
@@ -340,10 +344,8 @@ namespace C64
                 cia1SpInHigh = true;
                 cia1CntInHigh = true;
                 cia1CntHighSeen = true;
-                cia1SpOutHigh = true;
                 cia1CntPulseBudget = 0;
                 cia1Pa6PrescalerPrevState = true;
-                cia1SerialShiftReg = 0;
                 cia1SerialBitsRemaining = 0;
                 cia1SerialOutputActive = false;
                 cia1SerialDataPending = false;
@@ -406,9 +408,7 @@ namespace C64
                 cia2SpInHigh = true;
                 cia2CntInHigh = true;
                 cia2CntHighSeen = true;
-                cia2SpOutHigh = true;
                 cia2CntPulseBudget = 0;
-                cia2SerialShiftReg = 0;
                 cia2SerialBitsRemaining = 0;
                 cia2SerialOutputActive = false;
                 cia2SerialDataPending = false;
@@ -1193,14 +1193,11 @@ namespace C64
                 {
                     if (!cia1SerialDataPending)
                         break;
-                    cia1SerialShiftReg = cia1Sdr;
                     cia1SerialBitsRemaining = 8;
                     cia1SerialOutputActive = true;
                     cia1SerialDataPending = false;
                 }
 
-                cia1SpOutHigh = (cia1SerialShiftReg & 0x80) != 0;
-                cia1SerialShiftReg <<= 1;
                 cia1SerialBitsRemaining--;
 
                 /// Output mode drives CNT pulses for each shifted bit.
@@ -1233,14 +1230,11 @@ namespace C64
                 {
                     if (!cia2SerialDataPending)
                         break;
-                    cia2SerialShiftReg = cia2Sdr;
                     cia2SerialBitsRemaining = 8;
                     cia2SerialOutputActive = true;
                     cia2SerialDataPending = false;
                 }
 
-                cia2SpOutHigh = (cia2SerialShiftReg & 0x80) != 0;
-                cia2SerialShiftReg <<= 1;
                 cia2SerialBitsRemaining--;
 
                 if (cia2SerialBitsRemaining == 0)
@@ -1974,11 +1968,10 @@ namespace C64
             if (currentDevice == 8 && drive.HasMedia)
             {
                 byte[] prg;
-                string resolvedName;
                 PrintKernalLoadMessages(requestedName);
                 bool ok = string.IsNullOrWhiteSpace(requestedName)
-                    ? iecBus.TryLoadFromDrive(out prg, out resolvedName)
-                    : iecBus.TryLoadFromDrive(requestedName, out prg, out resolvedName);
+                    ? iecBus.TryLoadFromDrive(out prg, out _)
+                    : iecBus.TryLoadFromDrive(requestedName, out prg, out _);
 
                 if (!ok)
                 {
@@ -2411,7 +2404,7 @@ namespace C64
         /// <summary>Runs the main emulator loop.</summary>
         public void Run()
         {
-            string? audioDevice = Sound.GetDefaultDeviceName();
+            string? audioDevice = C64Sound.GetDefaultDeviceName();
             display.Init();
             keyboard.InitGameControllers();
             SDL_StartTextInput();
@@ -2431,7 +2424,7 @@ namespace C64
             };
             cpuThread.Start();
 
-            display.Start(token);
+            display.Start();
             sound.Start(token);
 
             /// Run the exact same reset path used by Ctrl+R after all worker
@@ -2655,7 +2648,7 @@ namespace C64
 
             try
             {
-                string? audioDevice = Sound.PromptForDevice();
+                string? audioDevice = C64Sound.PromptForDevice();
                 if (audioDevice is not null)
                     sound.SwitchDevice(audioDevice, wasPaused);
             }
@@ -2805,7 +2798,7 @@ namespace C64
         {
             /// C64 screen RAM stores screen codes, not ASCII.
             /// READY. in upper-case screen code sequence.
-            ReadOnlySpan<byte> ready = stackalloc byte[] { 18, 5, 1, 4, 25, 46 };
+            ReadOnlySpan<byte> ready = [18, 5, 1, 4, 25, 46];
             byte[] mem = cpu.memory.memory;
             const int start = 0x0400;
             const int end = 0x07E7;
@@ -2842,11 +2835,11 @@ namespace C64
         private static string? FindSoftwareDirectory()
         {
             string[] candidates =
-            {
+            [
                 Path.Combine(Environment.CurrentDirectory, "C64", "Software"),
                 Path.Combine(Environment.CurrentDirectory, "Software"),
                 Path.Combine(AppContext.BaseDirectory, "Software"),
-            };
+            ];
 
             return candidates.FirstOrDefault(Directory.Exists);
         }
@@ -3160,8 +3153,8 @@ namespace C64
             {
                 /// Some RSID/PSID files install their own IRQ player during
                 /// init. Keep the CPU alive and let interrupts do the work.
-                return new byte[]
-                {
+                return
+                [
                     0x78,                         // SEI
                     0xA9, song,                   // LDA #song
                     0x20, initLo, initHi,         // JSR init
@@ -3169,14 +3162,14 @@ namespace C64
                     0x4C,
                     (byte)((driverAddress + 7) & 0xFF),
                     (byte)((driverAddress + 7) >> 8)
-                };
+                ];
             }
 
             byte playLo = (byte)(sid.PlayAddress & 0xFF);
             byte playHi = (byte)(sid.PlayAddress >> 8);
 
-            return new byte[]
-            {
+            return
+            [
                 0x78,                         // SEI
                 0xA9, song,                   // LDA #song
                 0x20, initLo, initHi,         // JSR init
@@ -3189,7 +3182,7 @@ namespace C64
                 0x4C,
                 (byte)((driverAddress + 8) & 0xFF),
                 (byte)((driverAddress + 8) >> 8)
-            };
+            ];
         }
 
         /// <summary>Gets the byte size of the SID player driver for this tune.</summary>
@@ -3204,7 +3197,7 @@ namespace C64
         /// <returns>The selected driver load address.</returns>
         private static ushort ChooseSidDriverAddress(ushort loadAddress, int payloadLength, int driverLength)
         {
-            ReadOnlySpan<ushort> candidates = stackalloc ushort[] { 0xC000, 0xC100, 0xCE00, 0x0800, 0x033C };
+            ReadOnlySpan<ushort> candidates = [0xC000, 0xC100, 0xCE00, 0x0800, 0x033C];
             foreach (ushort candidate in candidates)
             {
                 if (candidate + driverLength <= 0x10000 &&

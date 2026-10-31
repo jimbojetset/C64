@@ -14,8 +14,9 @@
 using System.Collections.Concurrent;
 using System.Diagnostics;
 using static SDL2.SDL;
+using C64.Display;
 
-namespace C64
+namespace C64.Sound
 {
     /// <summary>
     /// MOS 6581 SID chip emulator.  Three voices with triangle / sawtooth /
@@ -60,7 +61,7 @@ namespace C64
         private double _synthCycleCursor;
 
         /// ?? Per-voice synthesis state (owned by the synthesis thread) ?????????
-        private readonly Voice[] _voices = { new(), new(), new() };
+        private readonly Voice[] _voices = [new(), new(), new()];
 
         /// Overall gain trim for the synthesized SID voice path.
         /// Keep this conservative. Heavy clipping makes the simple waveforms
@@ -112,7 +113,7 @@ namespace C64
         /// ?? SDL audio ?????????????????????????????????????????????????????????
         private uint _dev;               /// SDL audio device id (0 = none)
 
-        private short[] _buf = Array.Empty<short>();
+        private short[] _buf = [];
 
         /// ?? Voice-3 oscillator / envelope readback ($D41B / $D41C) ????????????
         /// Double-buffer mechanism to ensure cycle-consistent snapshots
@@ -132,18 +133,18 @@ namespace C64
         /// Attack times (per step from 0 ? 255):
         ///   2, 8, 16, 24, 38, 56, 68, 80, 100, 250, 500, 800, 1000, 3000, 5000, 8000 ms
         private static readonly int[] AttackCycles =
-        {
+        [
                 8,    31,    63,    92,   146,   216,   262,   308,
               385,   963,  1925,  3079,  3849, 11547, 19245, 30792,
-        };
+        ];
 
         /// Decay / Release times (per step at the fastest exponential phase):
         ///   6, 24, 48, 72, 114, 168, 204, 240, 300, 750, 1500, 2400, 3000, 9000, 15000, 24000 ms
         private static readonly int[] DecayCycles =
-        {
+        [
                24,    93,   188,   276,   437,   647,   786,   924,
              1155,  2887,  5773,  9238, 11547, 34641, 57736, 92369,
-        };
+        ];
 
         /// Exponential slowdown applied during decay/release based on current
         /// envelope level � reproduces the characteristic SID curve.
@@ -183,7 +184,7 @@ namespace C64
             int count = SDL_GetNumAudioDevices(0); /// 0 = playback (iscapture)
             for (int i = 0; i < count; i++)
             {
-                string? name = null;
+                string? name;
                 try { name = SDL_GetAudioDeviceName(i, 0); } catch { name = null; }
                 names.Add(name ?? $"Device {i}");
             }
@@ -644,7 +645,7 @@ namespace C64
                 /// Multiple writes can occur between audio samples; if we only
                 /// inspect the final gate state per sample we can miss short
                 /// gate pulses and lose ADSR retriggers.
-                HandleGateEdgeOnWrite(d.Reg, previous, d.Value, regs);
+                HandleGateEdgeOnWrite(d.Reg, previous, d.Value);
 
                 /// D418 sample effects are encoded as rapid volume writes.
                 /// Capture each write here so sub-sample transitions are kept.
@@ -678,8 +679,7 @@ namespace C64
         /// <param name="reg">The SID register index.</param>
         /// <param name="previous">The previous value before the update.</param>
         /// <param name="value">The value supplied to the operation.</param>
-        /// <param name="regs">The SID register snapshot used for synthesis.</param>
-        private void HandleGateEdgeOnWrite(int reg, byte previous, byte value, byte[] regs)
+        private void HandleGateEdgeOnWrite(int reg, byte previous, byte value)
         {
             int voiceBase = (reg / 7) * 7;
             int offset = reg - voiceBase;
@@ -696,9 +696,6 @@ namespace C64
                 return;
 
             Voice v = _voices[voiceIdx];
-            byte sr = regs[voiceBase + 6];
-            int sustainLvl = ((sr >> 4) & 0x0F) * 17;
-
             if (gate)
             {
                 v.EnvPhase = EnvPhase.Attack;
@@ -776,7 +773,6 @@ namespace C64
             byte ad = r[vbase + 5];
             byte sr = r[vbase + 6];
 
-            bool gate = (ctrl & 0x01) != 0;
             bool sync = (ctrl & 0x02) != 0;
             bool ring = (ctrl & 0x04) != 0;
             bool test = (ctrl & 0x08) != 0;

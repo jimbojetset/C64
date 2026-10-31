@@ -12,11 +12,10 @@
 // ============================================================================
 
 using C64.CPU;
-using C64.IO;
 using System.Collections.Concurrent;
 using static SDL2.SDL;
 
-namespace C64
+namespace C64.IO
 {
     /// <summary>
     /// Standalone keyboard and joystick port 2 controller.
@@ -28,10 +27,10 @@ namespace C64
     {
         private readonly CPU_6510 cpu;
 
-        private readonly ConcurrentQueue<byte> keyQueue = new ConcurrentQueue<byte>();
+        private readonly ConcurrentQueue<byte> keyQueue = new();
 
         /// C64 keyboard matrix: 8 rows, each column bit is active-low.
-        private readonly byte[] keyboardMatrix = { 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF };
+        private readonly byte[] keyboardMatrix = [0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF];
 
         private volatile byte keyboardJoystick = 0xFF;
         private volatile byte controllerJoystick = 0xFF;
@@ -51,7 +50,7 @@ namespace C64
         /// release exactly what was pressed even if the host modifier state has
         /// since changed.
         /// </summary>
-        private readonly Dictionary<SDL_Scancode, TextInputBinding> textInputHeld = new();
+        private readonly Dictionary<SDL_Scancode, TextInputBinding> textInputHeld = [];
 
         /// <summary>SHIFT policy applied by a symbolic key mapping.</summary>
         private enum ShiftPolicy

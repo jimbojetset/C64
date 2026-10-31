@@ -11,7 +11,7 @@
 //              rights holders. This emulator is for educational purposes only.
 // ============================================================================
 
-namespace C64
+namespace C64.IO
 {
     /// <summary>
     /// Wraps an attached D64 image and exposes the file and sector operations used by the IEC bus and load traps.
@@ -46,7 +46,7 @@ namespace C64
         /// <returns>The available file names.</returns>
         public IReadOnlyList<string> ListFiles()
         {
-            return image?.ListPrgFiles() ?? Array.Empty<string>();
+            return image?.ListPrgFiles() ?? [];
         }
 
         /// <summary>Attempts to load prg.</summary>
@@ -56,7 +56,7 @@ namespace C64
         /// <returns>True when the operation succeeds; otherwise, false.</returns>
         public bool TryLoadPrg(string? requestedName, out byte[] prg, out string resolvedName)
         {
-            prg = Array.Empty<byte>();
+            prg = [];
             resolvedName = string.Empty;
 
             if (image is null)
@@ -90,7 +90,7 @@ namespace C64
         /// <returns>True when the operation succeeds; otherwise, false.</returns>
         public bool TryReadSector(int track, int sector, out byte[] sectorBytes)
         {
-            sectorBytes = Array.Empty<byte>();
+            sectorBytes = [];
             return image?.TryReadSector(track, sector, out sectorBytes) == true;
         }
 

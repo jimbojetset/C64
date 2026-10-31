@@ -11,7 +11,7 @@
 //              rights holders. This emulator is for educational purposes only.
 // ============================================================================
 
-namespace C64
+namespace C64.IO
 {
     /// <summary>
     /// Emulates datasette TAP pulse playback, including motor spin-up, sense state, read-line transitions, and pulse stepping.
@@ -22,7 +22,7 @@ namespace C64
         private const int MotorSpinupMs = 200;
         private const int MotorSpinupCycles = (PalCpuHz * MotorSpinupMs) / 1000;
 
-        private readonly List<int> pulseCycles = new List<int>();
+        private readonly List<int> pulseCycles = [];
         private int pulseIndex;
         private int pulseRemaining;
         private int motorSpinupRemaining;
@@ -137,7 +137,6 @@ namespace C64
                 if (pulseRemaining > remaining)
                 {
                     pulseRemaining -= remaining;
-                    remaining = 0;
                     break;
                 }
 

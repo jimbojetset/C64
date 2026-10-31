@@ -31,7 +31,7 @@ namespace C64.CPU
         /// Legacy ROM-write protection ranges (used only when no banked
         /// ROM has been registered via LoadBankedROM). Kept so older test
         /// harnesses that called Load(..., readOnly: true) keep behaving.
-        private readonly List<ROM> rom = new List<ROM>();
+        private readonly List<ROM> rom = [];
 
         /// ----- Banked ROM images for the 6510 -----
         /// The CPU's processor port at $01 chooses which of BASIC ROM,

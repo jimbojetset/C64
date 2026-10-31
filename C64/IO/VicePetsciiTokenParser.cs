@@ -333,8 +333,8 @@ namespace C64.IO
                 Char = c;
             }
 
-            public static TokenOutput Petscii(byte b) => new TokenOutput(true, b, '\0');
-            public static TokenOutput Literal(char c) => new TokenOutput(false, 0, c);
+            public static TokenOutput Petscii(byte b) => new(true, b, '\0');
+            public static TokenOutput Literal(char c) => new(false, 0, c);
         }
     }
 }

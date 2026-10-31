@@ -13,7 +13,7 @@
 
 using System.Text;
 
-namespace C64
+namespace C64.IO
 {
     /// <summary>Represents a loaded C64 cartridge image in CRT format.</summary>
     internal sealed class CrtCartridge
@@ -24,8 +24,8 @@ namespace C64
         private const int BankSize = 0x2000;
         private const int EasyFlashBankCount = 64;
 
-        private readonly Dictionary<int, byte[]> romlBanks = new();
-        private readonly Dictionary<int, byte[]> romhBanks = new();
+        private readonly Dictionary<int, byte[]> romlBanks = [];
+        private readonly Dictionary<int, byte[]> romhBanks = [];
         private readonly byte[] easyFlashRam = new byte[0x100];
         private readonly bool headerExromLow;
         private readonly bool headerGameLow;
@@ -237,7 +237,7 @@ namespace C64
             else if (HardwareType == HardwareEasyFlash)
             {
                 bool gameModeControlled = (easyFlashControl & 0x04) != 0;
-                gameLow = gameModeControlled ? (easyFlashControl & 0x01) != 0 : true;
+                gameLow = !gameModeControlled || (easyFlashControl & 0x01) != 0;
                 exromLow = (easyFlashControl & 0x02) != 0;
             }
             else

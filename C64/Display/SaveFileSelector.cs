@@ -14,7 +14,7 @@
 using ImGuiNET;
 using System.Numerics;
 
-namespace C64
+namespace C64.Display
 {
     /// <summary>
     /// Modal ImGui popup that prompts for a PRG filename inside Software.

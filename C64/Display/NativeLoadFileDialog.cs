@@ -13,8 +13,9 @@
 
 using System.Diagnostics;
 using System.Runtime.InteropServices;
+using C64.IO;
 
-namespace C64
+namespace C64.Display
 {
     /// <summary>Shows a platform-native file picker for selecting loadable C64 files.</summary>
     internal static class NativeLoadFileDialog
@@ -139,7 +140,7 @@ namespace C64
                     return null;
 
                 return output
-                    .Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries)
+                    .Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries)
                     .FirstOrDefault();
             }
             catch (Exception ex) when (ex is System.ComponentModel.Win32Exception or InvalidOperationException)

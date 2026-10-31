@@ -13,7 +13,7 @@
 
 using C64.CPU;
 
-namespace C64
+namespace C64.IO
 {
     /// <summary>
     /// Hosts the optional 1541 drive-side execution path.
@@ -28,10 +28,10 @@ namespace C64
         private const int RomBase = 0xC000;
         private const int MaxCyclesPerHostStep = 512;
 
-        private readonly CPU_6510 cpu = new CPU_6510(DriveClockHz);
-        private readonly Via6522 via1 = new Via6522();
-        private readonly Via6522 via2 = new Via6522();
-        private readonly DiskMechanism disk = new DiskMechanism();
+        private readonly CPU_6510 cpu = new(DriveClockHz);
+        private readonly Via6522 via1 = new();
+        private readonly Via6522 via2 = new();
+        private readonly DiskMechanism disk = new();
         private readonly byte[] ram = new byte[RamSize];
         private readonly byte[] rom;
         private int cycleDebt;
@@ -357,15 +357,15 @@ namespace C64
             private const int CyclesPerGcrByte = 32;
 
             private static readonly byte[] Gcr =
-            {
+            [
                 0x0A, 0x0B, 0x12, 0x13,
                 0x0E, 0x0F, 0x16, 0x17,
                 0x09, 0x19, 0x1A, 0x1B,
                 0x0D, 0x1D, 0x1E, 0x15
-            };
+            ];
 
             private D64Image? image;
-            private byte[] trackBytes = Array.Empty<byte>();
+            private byte[] trackBytes = [];
             private int halfTrack = 36;
             private int currentTrack = -1;
             private int byteIndex;
@@ -386,7 +386,7 @@ namespace C64
                 motorOn = false;
                 byteReadyHigh = true;
                 currentByte = 0x55;
-                trackBytes = Array.Empty<byte>();
+                trackBytes = [];
             }
 
             /// <summary>Attaches a D64 image and prepares the current track stream.</summary>
@@ -407,7 +407,7 @@ namespace C64
                 cycleRemainder = 0;
                 motorOn = false;
                 byteReadyHigh = true;
-                trackBytes = Array.Empty<byte>();
+                trackBytes = [];
                 currentByte = 0x55;
             }
 
@@ -484,7 +484,7 @@ namespace C64
             /// <returns>True when a mounted image contains the requested sector; otherwise, false.</returns>
             public bool TryReadSector(int track, int sector, out byte[] sectorBytes)
             {
-                sectorBytes = Array.Empty<byte>();
+                sectorBytes = [];
                 return image is not null && image.TryReadSector(track, sector, out sectorBytes);
             }
 
@@ -506,7 +506,7 @@ namespace C64
                 byteIndex = 0;
                 cycleRemainder = 0;
                 currentByte = 0x55;
-                trackBytes = image is null ? Array.Empty<byte>() : BuildGcrTrack(image, track);
+                trackBytes = image is null ? [] : BuildGcrTrack(image, track);
             }
 
             /// <summary>Builds an approximate GCR byte stream for a D64 track.</summary>
@@ -525,7 +525,7 @@ namespace C64
 
                     byte headerChecksum = (byte)(sector ^ track ^ id2 ^ id1);
                     AppendSync(output);
-                    AppendGcr(output, new byte[] { 0x08, headerChecksum, (byte)sector, (byte)track, id2, id1, 0x0F, 0x0F });
+                    AppendGcr(output, [0x08, headerChecksum, (byte)sector, (byte)track, id2, id1, 0x0F, 0x0F]);
                     AppendGap(output, 9);
 
                     byte dataChecksum = 0;
@@ -543,7 +543,7 @@ namespace C64
                     AppendGap(output, 16);
                 }
 
-                return output.ToArray();
+                return [.. output];
             }
 
             /// <summary>Appends a short sync mark to a GCR stream.</summary>

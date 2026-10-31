@@ -18,7 +18,7 @@ using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using static SDL2.SDL;
 
-namespace C64
+namespace C64.Display
 {
     /// <summary>
     /// Handles ImGui initialization, input processing, and rendering with SDL2 + OpenGL
@@ -174,7 +174,7 @@ namespace C64
             var io = ImGui.GetIO();
 
             /// Build font atlas
-            io.Fonts.GetTexDataAsRGBA32(out IntPtr pixels, out int width, out int height, out int bytesPerPixel);
+            io.Fonts.GetTexDataAsRGBA32(out IntPtr pixels, out int width, out int height, out _);
 
             _fontTexture = _gl.GenTexture();
             _gl.BindTexture(TextureTarget.Texture2D, _fontTexture);
@@ -375,13 +375,13 @@ namespace C64
             float T = drawData.DisplayPos.Y;
             float B = drawData.DisplayPos.Y + drawData.DisplaySize.Y;
 
-            Span<float> orthoProjection = stackalloc float[16]
-            {
+            Span<float> orthoProjection =
+            [
                 2.0f/(R-L),     0.0f,           0.0f,   0.0f,
                 0.0f,           2.0f/(T-B),     0.0f,   0.0f,
                 0.0f,           0.0f,          -1.0f,   0.0f,
                 (R+L)/(L-R),    (T+B)/(B-T),    0.0f,   1.0f
-            };
+            ];
 
             _gl.UseProgram(_shaderProgram);
             _gl.Uniform1(_attribLocationTex, 0);

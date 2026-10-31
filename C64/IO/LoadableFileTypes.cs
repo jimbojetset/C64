@@ -10,14 +10,14 @@
 //              rights holders. This emulator is for educational purposes only.
 // ============================================================================
 
-namespace C64
+namespace C64.IO
 {
     /// <summary>Defines the host file extensions supported by the emulator loader.</summary>
     internal static class LoadableFileTypes
     {
         /// <summary>Gets the loadable host-file extensions, including the leading dot.</summary>
         public static readonly string[] Extensions =
-        {
+        [
             ".bas",
             ".crt",
             ".d64",
@@ -28,7 +28,7 @@ namespace C64
             ".t64",
             ".tap",
             ".txt"
-        };
+        ];
 
         private static readonly HashSet<string> ExtensionSet = new(Extensions, StringComparer.OrdinalIgnoreCase);
 

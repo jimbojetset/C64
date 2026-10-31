@@ -39,13 +39,13 @@ namespace C64.CPU
 
         private const uint TimerResolutionMs = 1;
 
-        public Registers registers = new Registers();
+        public Registers registers = new();
 
         /// <summary>
         /// Compatibility C64 memory bus used by the existing emulator host.
         /// Non-C64 hosts should provide their own ICpuBus via the Bus property or constructor.
         /// </summary>
-        public Memory memory = new Memory(0x10000);
+        public Memory memory = new(0x10000);
         private ICpuBus bus = null!;
 
         private bool running = true;
@@ -57,8 +57,8 @@ namespace C64.CPU
 
         private readonly int clockFreq = 2000000; //1MHz
 
-        private readonly ConcurrentQueue<ulong> IRQ_Buffer = new ConcurrentQueue<ulong>();
-        private readonly ConcurrentQueue<ulong> NMI_Buffer = new ConcurrentQueue<ulong>();
+        private readonly ConcurrentQueue<ulong> IRQ_Buffer = new();
+        private readonly ConcurrentQueue<ulong> NMI_Buffer = new();
         private int irqLineAsserted;
 
         /// <summary>Queues an IRQ request for the CPU.</summary>

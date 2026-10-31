@@ -18,7 +18,7 @@ using System.Diagnostics;
 using System.IO.Compression;
 using static SDL2.SDL;
 
-namespace C64
+namespace C64.Display
 {
     /// <summary>
     /// Emulates enough VIC-II display behavior to render C64 frames, track raster timing, handle sprite/text/bitmap modes, and present through SDL/OpenGL.
@@ -49,7 +49,7 @@ namespace C64
         private const int VisibleBottom = 250;
 
         private static readonly int[] C64Palette =
-        {
+        [
             unchecked((int)0xFF000000), ///  0 BLACK
             unchecked((int)0xFFFFFFFF), ///  1 WHITE
             unchecked((int)0xFF68372B), ///  2 RED
@@ -66,16 +66,16 @@ namespace C64
             unchecked((int)0xFF9AD284), /// 13 LIGHT GREEN
             unchecked((int)0xFF6C5EB5), /// 14 LIGHT BLUE
             unchecked((int)0xFF959595), /// 15 LIGHT GREY
-        };
+        ];
 
         private readonly CPU_6510 cpu;
 
-        private byte[] charRom = Array.Empty<byte>();
+        private byte[] charRom = [];
 
         private byte[] renderBuf = new byte[FrameW * FrameH * 4];
         private byte[] displayBuf = new byte[FrameW * FrameH * 4];
         private readonly byte[] presentationBuf = new byte[FrameW * FrameH * 4];
-        private readonly object swapLock = new object();
+        private readonly object swapLock = new();
 
         private readonly bool[] fgLine = new bool[ScreenW];
         private readonly byte[] spriteLine = new byte[FrameW];
@@ -130,7 +130,7 @@ namespace C64
         private int rasterCycleInLine;
         private readonly bool[] busStealMask = new bool[CyclesPerRasterLine];
         private readonly List<RasterWriteEvent>[] rasterWriteEvents = new List<RasterWriteEvent>[PalRasterLines];
-        private readonly object rasterWriteEventLock = new object();
+        private readonly object rasterWriteEventLock = new();
 
         /// <summary>
         /// Captures a VIC register write and the raster cycle where it occurred so late writes can affect only the remaining pixels on the line.
@@ -351,7 +351,7 @@ namespace C64
         }
 
         /// <summary>Starts this component.</summary>
-        public void Start(CancellationToken token)
+        public void Start()
         { }
 
         /// <summary>Sets loaded file in title.</summary>
@@ -506,12 +506,12 @@ namespace C64
             monitorTexture = CreateMonitorTexture();
 
             float[] vertices =
-            {
+            [
                 -1f, -1f, 0f, 1f,
                  1f, -1f, 1f, 1f,
                 -1f,  1f, 0f, 0f,
                  1f,  1f, 1f, 0f,
-            };
+            ];
 
             presentVao = glApi.GenVertexArray();
             presentVbo = glApi.GenBuffer();
@@ -575,11 +575,11 @@ namespace C64
         private static string FindDisplayAsset(string fileName)
         {
             string[] candidates =
-            {
+            [
                 Path.Combine(Environment.CurrentDirectory, "Display", fileName),
                 Path.Combine(AppContext.BaseDirectory, "Display", fileName),
                 Path.Combine(Environment.CurrentDirectory, "C64", "Display", fileName),
-            };
+            ];
 
             return candidates.FirstOrDefault(File.Exists)
                 ?? throw new FileNotFoundException($"Display asset not found: {fileName}");
@@ -593,7 +593,7 @@ namespace C64
         private static byte[] LoadPngBgra(string path, out int width, out int height)
         {
             byte[] file = File.ReadAllBytes(path);
-            ReadOnlySpan<byte> signature = stackalloc byte[] { 137, 80, 78, 71, 13, 10, 26, 10 };
+            ReadOnlySpan<byte> signature = [137, 80, 78, 71, 13, 10, 26, 10];
             if (file.Length < signature.Length || !file.AsSpan(0, signature.Length).SequenceEqual(signature))
                 throw new InvalidDataException("Monitor background must be a PNG file.");
 
@@ -906,76 +906,76 @@ namespace C64
         {
             return char.ToUpperInvariant(ch) switch
             {
-                '0' => new byte[] { 0x0E, 0x11, 0x13, 0x15, 0x19, 0x11, 0x0E },
-                '1' => new byte[] { 0x04, 0x0C, 0x04, 0x04, 0x04, 0x04, 0x0E },
-                '2' => new byte[] { 0x0E, 0x11, 0x01, 0x02, 0x04, 0x08, 0x1F },
-                '3' => new byte[] { 0x1E, 0x01, 0x01, 0x0E, 0x01, 0x01, 0x1E },
-                '4' => new byte[] { 0x02, 0x06, 0x0A, 0x12, 0x1F, 0x02, 0x02 },
-                '5' => new byte[] { 0x1F, 0x10, 0x10, 0x1E, 0x01, 0x01, 0x1E },
-                '6' => new byte[] { 0x0E, 0x10, 0x10, 0x1E, 0x11, 0x11, 0x0E },
-                '7' => new byte[] { 0x1F, 0x01, 0x02, 0x04, 0x08, 0x08, 0x08 },
-                '8' => new byte[] { 0x0E, 0x11, 0x11, 0x0E, 0x11, 0x11, 0x0E },
-                '9' => new byte[] { 0x0E, 0x11, 0x11, 0x0F, 0x01, 0x01, 0x0E },
-                'A' => new byte[] { 0x0E, 0x11, 0x11, 0x1F, 0x11, 0x11, 0x11 },
-                'B' => new byte[] { 0x1E, 0x11, 0x11, 0x1E, 0x11, 0x11, 0x1E },
-                'C' => new byte[] { 0x0E, 0x11, 0x10, 0x10, 0x10, 0x11, 0x0E },
-                'D' => new byte[] { 0x1E, 0x11, 0x11, 0x11, 0x11, 0x11, 0x1E },
-                'E' => new byte[] { 0x1F, 0x10, 0x10, 0x1E, 0x10, 0x10, 0x1F },
-                'F' => new byte[] { 0x1F, 0x10, 0x10, 0x1E, 0x10, 0x10, 0x10 },
-                'G' => new byte[] { 0x0E, 0x11, 0x10, 0x17, 0x11, 0x11, 0x0E },
-                'H' => new byte[] { 0x11, 0x11, 0x11, 0x1F, 0x11, 0x11, 0x11 },
-                'I' => new byte[] { 0x0E, 0x04, 0x04, 0x04, 0x04, 0x04, 0x0E },
-                'J' => new byte[] { 0x01, 0x01, 0x01, 0x01, 0x11, 0x11, 0x0E },
-                'K' => new byte[] { 0x11, 0x12, 0x14, 0x18, 0x14, 0x12, 0x11 },
-                'L' => new byte[] { 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x1F },
-                'M' => new byte[] { 0x11, 0x1B, 0x15, 0x15, 0x11, 0x11, 0x11 },
-                'N' => new byte[] { 0x11, 0x19, 0x15, 0x13, 0x11, 0x11, 0x11 },
-                'O' => new byte[] { 0x0E, 0x11, 0x11, 0x11, 0x11, 0x11, 0x0E },
-                'P' => new byte[] { 0x1E, 0x11, 0x11, 0x1E, 0x10, 0x10, 0x10 },
-                'Q' => new byte[] { 0x0E, 0x11, 0x11, 0x11, 0x15, 0x12, 0x0D },
-                'R' => new byte[] { 0x1E, 0x11, 0x11, 0x1E, 0x14, 0x12, 0x11 },
-                'S' => new byte[] { 0x0F, 0x10, 0x10, 0x0E, 0x01, 0x01, 0x1E },
-                'T' => new byte[] { 0x1F, 0x04, 0x04, 0x04, 0x04, 0x04, 0x04 },
-                'U' => new byte[] { 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x0E },
-                'V' => new byte[] { 0x11, 0x11, 0x11, 0x11, 0x0A, 0x0A, 0x04 },
-                'W' => new byte[] { 0x11, 0x11, 0x11, 0x15, 0x15, 0x15, 0x0A },
-                'X' => new byte[] { 0x11, 0x11, 0x0A, 0x04, 0x0A, 0x11, 0x11 },
-                'Y' => new byte[] { 0x11, 0x11, 0x0A, 0x04, 0x04, 0x04, 0x04 },
-                'Z' => new byte[] { 0x1F, 0x01, 0x02, 0x04, 0x08, 0x10, 0x1F },
-                ' ' => new byte[] { 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 },
-                '!' => new byte[] { 0x04, 0x04, 0x04, 0x04, 0x04, 0x00, 0x04 },
-                '"' => new byte[] { 0x0A, 0x0A, 0x0A, 0x00, 0x00, 0x00, 0x00 },
-                '#' => new byte[] { 0x0A, 0x0A, 0x1F, 0x0A, 0x1F, 0x0A, 0x0A },
-                '$' => new byte[] { 0x04, 0x0F, 0x14, 0x0E, 0x05, 0x1E, 0x04 },
-                '%' => new byte[] { 0x18, 0x19, 0x02, 0x04, 0x08, 0x13, 0x03 },
-                '&' => new byte[] { 0x0C, 0x12, 0x14, 0x08, 0x15, 0x12, 0x0D },
-                '\'' => new byte[] { 0x04, 0x04, 0x08, 0x00, 0x00, 0x00, 0x00 },
-                '(' => new byte[] { 0x02, 0x04, 0x08, 0x08, 0x08, 0x04, 0x02 },
-                ')' => new byte[] { 0x08, 0x04, 0x02, 0x02, 0x02, 0x04, 0x08 },
-                '*' => new byte[] { 0x00, 0x04, 0x15, 0x0E, 0x15, 0x04, 0x00 },
-                '+' => new byte[] { 0x00, 0x04, 0x04, 0x1F, 0x04, 0x04, 0x00 },
-                ',' => new byte[] { 0x00, 0x00, 0x00, 0x00, 0x04, 0x04, 0x08 },
-                '-' => new byte[] { 0x00, 0x00, 0x00, 0x1F, 0x00, 0x00, 0x00 },
-                '.' => new byte[] { 0x00, 0x00, 0x00, 0x00, 0x00, 0x0C, 0x0C },
-                '/' => new byte[] { 0x01, 0x02, 0x02, 0x04, 0x08, 0x08, 0x10 },
-                ':' => new byte[] { 0x00, 0x0C, 0x0C, 0x00, 0x0C, 0x0C, 0x00 },
-                ';' => new byte[] { 0x00, 0x0C, 0x0C, 0x00, 0x04, 0x04, 0x08 },
-                '<' => new byte[] { 0x02, 0x04, 0x08, 0x10, 0x08, 0x04, 0x02 },
-                '=' => new byte[] { 0x00, 0x00, 0x1F, 0x00, 0x1F, 0x00, 0x00 },
-                '>' => new byte[] { 0x08, 0x04, 0x02, 0x01, 0x02, 0x04, 0x08 },
-                '?' => new byte[] { 0x0E, 0x11, 0x01, 0x02, 0x04, 0x00, 0x04 },
-                '@' => new byte[] { 0x0E, 0x11, 0x17, 0x15, 0x17, 0x10, 0x0E },
-                '[' => new byte[] { 0x0E, 0x08, 0x08, 0x08, 0x08, 0x08, 0x0E },
-                '\\' => new byte[] { 0x10, 0x08, 0x08, 0x04, 0x02, 0x02, 0x01 },
-                ']' => new byte[] { 0x0E, 0x02, 0x02, 0x02, 0x02, 0x02, 0x0E },
-                '^' => new byte[] { 0x04, 0x0A, 0x11, 0x00, 0x00, 0x00, 0x00 },
-                '_' => new byte[] { 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x1F },
-                '`' => new byte[] { 0x08, 0x04, 0x02, 0x00, 0x00, 0x00, 0x00 },
-                '{' => new byte[] { 0x02, 0x04, 0x04, 0x08, 0x04, 0x04, 0x02 },
-                '|' => new byte[] { 0x04, 0x04, 0x04, 0x00, 0x04, 0x04, 0x04 },
-                '}' => new byte[] { 0x08, 0x04, 0x04, 0x02, 0x04, 0x04, 0x08 },
-                '~' => new byte[] { 0x00, 0x00, 0x08, 0x15, 0x02, 0x00, 0x00 },
-                _ => new byte[] { 0x0E, 0x11, 0x01, 0x02, 0x04, 0x00, 0x04 },
+                '0' => [0x0E, 0x11, 0x13, 0x15, 0x19, 0x11, 0x0E],
+                '1' => [0x04, 0x0C, 0x04, 0x04, 0x04, 0x04, 0x0E],
+                '2' => [0x0E, 0x11, 0x01, 0x02, 0x04, 0x08, 0x1F],
+                '3' => [0x1E, 0x01, 0x01, 0x0E, 0x01, 0x01, 0x1E],
+                '4' => [0x02, 0x06, 0x0A, 0x12, 0x1F, 0x02, 0x02],
+                '5' => [0x1F, 0x10, 0x10, 0x1E, 0x01, 0x01, 0x1E],
+                '6' => [0x0E, 0x10, 0x10, 0x1E, 0x11, 0x11, 0x0E],
+                '7' => [0x1F, 0x01, 0x02, 0x04, 0x08, 0x08, 0x08],
+                '8' => [0x0E, 0x11, 0x11, 0x0E, 0x11, 0x11, 0x0E],
+                '9' => [0x0E, 0x11, 0x11, 0x0F, 0x01, 0x01, 0x0E],
+                'A' => [0x0E, 0x11, 0x11, 0x1F, 0x11, 0x11, 0x11],
+                'B' => [0x1E, 0x11, 0x11, 0x1E, 0x11, 0x11, 0x1E],
+                'C' => [0x0E, 0x11, 0x10, 0x10, 0x10, 0x11, 0x0E],
+                'D' => [0x1E, 0x11, 0x11, 0x11, 0x11, 0x11, 0x1E],
+                'E' => [0x1F, 0x10, 0x10, 0x1E, 0x10, 0x10, 0x1F],
+                'F' => [0x1F, 0x10, 0x10, 0x1E, 0x10, 0x10, 0x10],
+                'G' => [0x0E, 0x11, 0x10, 0x17, 0x11, 0x11, 0x0E],
+                'H' => [0x11, 0x11, 0x11, 0x1F, 0x11, 0x11, 0x11],
+                'I' => [0x0E, 0x04, 0x04, 0x04, 0x04, 0x04, 0x0E],
+                'J' => [0x01, 0x01, 0x01, 0x01, 0x11, 0x11, 0x0E],
+                'K' => [0x11, 0x12, 0x14, 0x18, 0x14, 0x12, 0x11],
+                'L' => [0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x1F],
+                'M' => [0x11, 0x1B, 0x15, 0x15, 0x11, 0x11, 0x11],
+                'N' => [0x11, 0x19, 0x15, 0x13, 0x11, 0x11, 0x11],
+                'O' => [0x0E, 0x11, 0x11, 0x11, 0x11, 0x11, 0x0E],
+                'P' => [0x1E, 0x11, 0x11, 0x1E, 0x10, 0x10, 0x10],
+                'Q' => [0x0E, 0x11, 0x11, 0x11, 0x15, 0x12, 0x0D],
+                'R' => [0x1E, 0x11, 0x11, 0x1E, 0x14, 0x12, 0x11],
+                'S' => [0x0F, 0x10, 0x10, 0x0E, 0x01, 0x01, 0x1E],
+                'T' => [0x1F, 0x04, 0x04, 0x04, 0x04, 0x04, 0x04],
+                'U' => [0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x0E],
+                'V' => [0x11, 0x11, 0x11, 0x11, 0x0A, 0x0A, 0x04],
+                'W' => [0x11, 0x11, 0x11, 0x15, 0x15, 0x15, 0x0A],
+                'X' => [0x11, 0x11, 0x0A, 0x04, 0x0A, 0x11, 0x11],
+                'Y' => [0x11, 0x11, 0x0A, 0x04, 0x04, 0x04, 0x04],
+                'Z' => [0x1F, 0x01, 0x02, 0x04, 0x08, 0x10, 0x1F],
+                ' ' => [0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00],
+                '!' => [0x04, 0x04, 0x04, 0x04, 0x04, 0x00, 0x04],
+                '"' => [0x0A, 0x0A, 0x0A, 0x00, 0x00, 0x00, 0x00],
+                '#' => [0x0A, 0x0A, 0x1F, 0x0A, 0x1F, 0x0A, 0x0A],
+                '$' => [0x04, 0x0F, 0x14, 0x0E, 0x05, 0x1E, 0x04],
+                '%' => [0x18, 0x19, 0x02, 0x04, 0x08, 0x13, 0x03],
+                '&' => [0x0C, 0x12, 0x14, 0x08, 0x15, 0x12, 0x0D],
+                '\'' => [0x04, 0x04, 0x08, 0x00, 0x00, 0x00, 0x00],
+                '(' => [0x02, 0x04, 0x08, 0x08, 0x08, 0x04, 0x02],
+                ')' => [0x08, 0x04, 0x02, 0x02, 0x02, 0x04, 0x08],
+                '*' => [0x00, 0x04, 0x15, 0x0E, 0x15, 0x04, 0x00],
+                '+' => [0x00, 0x04, 0x04, 0x1F, 0x04, 0x04, 0x00],
+                ',' => [0x00, 0x00, 0x00, 0x00, 0x04, 0x04, 0x08],
+                '-' => [0x00, 0x00, 0x00, 0x1F, 0x00, 0x00, 0x00],
+                '.' => [0x00, 0x00, 0x00, 0x00, 0x00, 0x0C, 0x0C],
+                '/' => [0x01, 0x02, 0x02, 0x04, 0x08, 0x08, 0x10],
+                ':' => [0x00, 0x0C, 0x0C, 0x00, 0x0C, 0x0C, 0x00],
+                ';' => [0x00, 0x0C, 0x0C, 0x00, 0x04, 0x04, 0x08],
+                '<' => [0x02, 0x04, 0x08, 0x10, 0x08, 0x04, 0x02],
+                '=' => [0x00, 0x00, 0x1F, 0x00, 0x1F, 0x00, 0x00],
+                '>' => [0x08, 0x04, 0x02, 0x01, 0x02, 0x04, 0x08],
+                '?' => [0x0E, 0x11, 0x01, 0x02, 0x04, 0x00, 0x04],
+                '@' => [0x0E, 0x11, 0x17, 0x15, 0x17, 0x10, 0x0E],
+                '[' => [0x0E, 0x08, 0x08, 0x08, 0x08, 0x08, 0x0E],
+                '\\' => [0x10, 0x08, 0x08, 0x04, 0x02, 0x02, 0x01],
+                ']' => [0x0E, 0x02, 0x02, 0x02, 0x02, 0x02, 0x0E],
+                '^' => [0x04, 0x0A, 0x11, 0x00, 0x00, 0x00, 0x00],
+                '_' => [0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x1F],
+                '`' => [0x08, 0x04, 0x02, 0x00, 0x00, 0x00, 0x00],
+                '{' => [0x02, 0x04, 0x04, 0x08, 0x04, 0x04, 0x02],
+                '|' => [0x04, 0x04, 0x04, 0x00, 0x04, 0x04, 0x04],
+                '}' => [0x08, 0x04, 0x04, 0x02, 0x04, 0x04, 0x08],
+                '~' => [0x00, 0x00, 0x08, 0x15, 0x02, 0x00, 0x00],
+                _ => [0x0E, 0x11, 0x01, 0x02, 0x04, 0x00, 0x04],
             };
         }
 
@@ -1280,24 +1280,7 @@ namespace C64
             byte bg3 = (byte)(GetRasterLineStartValue(line, 0xD024, mem[0xD024]) & 0x0F);
             byte dd00 = mem[0xDD00];
             byte dd02 = mem[0xDD02];
-            byte spriteEnable = GetRasterLineStartValue(line, 0xD015, mem[0xD015]);
-            byte spriteXExpand = GetRasterLineStartValue(line, 0xD01D, mem[0xD01D]);
-            byte spriteYExpand = GetRasterLineStartValue(line, 0xD017, mem[0xD017]);
-            byte spriteMulticolor = GetRasterLineStartValue(line, 0xD01C, mem[0xD01C]);
-            byte spritePriority = GetRasterLineStartValue(line, 0xD01B, mem[0xD01B]);
-            byte spriteXHigh = GetRasterLineStartValue(line, 0xD010, mem[0xD010]);
-            byte spriteMc1Color = GetRasterLineStartValue(line, 0xD025, mem[0xD025]);
-            byte spriteMc2Color = GetRasterLineStartValue(line, 0xD026, mem[0xD026]);
-            byte[] spriteColors = new byte[8];
-            byte[] spriteXPos = new byte[8];
-            byte[] spriteYPos = new byte[8];
             byte[] spritePtrs = new byte[8];
-            for (int i = 0; i < 8; i++)
-            {
-                spriteColors[i] = GetRasterLineStartValue(line, 0xD027 + i, mem[0xD027 + i]);
-                spriteXPos[i] = GetRasterLineStartValue(line, 0xD000 + i * 2, mem[0xD000 + i * 2]);
-                spriteYPos[i] = GetRasterLineStartValue(line, 0xD001 + i * 2, mem[0xD001 + i * 2]);
-            }
 
             int playY = line - VisibleTop;
             int fineY = d011 & 0x07;
@@ -1335,7 +1318,7 @@ namespace C64
                     colorRow[col] = mem[0xD800 + row * 40 + col];
             }
 
-            RenderScanline(frameY, playY, d011, d016, d018, bg0, bg1, bg2, bg3, dd00, dd02, spriteEnable, spriteXExpand, spriteYExpand, spriteMulticolor, spritePriority, spriteXHigh, spriteMc1Color, spriteMc2Color, spriteColors, spriteXPos, spriteYPos, spritePtrs, colorRow, cachedScreenRow, cachedBitmapRows, dy, matrixVisible);
+            RenderScanline(frameY, playY, d011, d016, d018, bg0, bg1, bg2, bg3, dd00, dd02, spritePtrs, colorRow, cachedScreenRow, cachedBitmapRows, dy, matrixVisible);
         }
 
         /// <summary>
@@ -1352,27 +1335,15 @@ namespace C64
         /// <param name="bg3">The background color 3 index.</param>
         /// <param name="dd00">The CIA2 port A data latch value.</param>
         /// <param name="dd02">The CIA2 port A data direction register value.</param>
-        /// <param name="spriteEnable">The sprite enable register value.</param>
-        /// <param name="spriteXExpand">The sprite X expansion register value.</param>
-        /// <param name="spriteYExpand">The sprite Y expansion register value.</param>
-        /// <param name="spriteMulticolor">The sprite multicolor enable register value.</param>
-        /// <param name="spritePriority">The sprite priority register value.</param>
-        /// <param name="spriteXHigh">The high X-position bits for all sprites.</param>
-        /// <param name="spriteMc1Color">The shared sprite multicolor 1 index.</param>
-        /// <param name="spriteMc2Color">The shared sprite multicolor 2 index.</param>
-        /// <param name="spriteColors">The per-sprite color indexes.</param>
-        /// <param name="spriteXPos">The per-sprite X positions.</param>
-        /// <param name="spriteYPos">The per-sprite Y positions.</param>
         /// <param name="spritePtrs">The per-sprite data pointers.</param>
         /// <param name="colorRow">The cached color RAM row for this scanline.</param>
         /// <param name="cachedScreenRow">The cached screen RAM row for this scanline.</param>
         /// <param name="cachedBitmapRows">The cached bitmap rows for this character row.</param>
         /// <param name="dy">The row offset within the current character cell.</param>
         /// <param name="matrixVisible">Whether the text or bitmap matrix is visible on this scanline.</param>
-        private void RenderScanline(int frameY, int playY, byte d011, byte d016, byte d018, byte bg0, byte bg1, byte bg2, byte bg3, byte dd00, byte dd02, byte spriteEnable, byte spriteXExpand, byte spriteYExpand, byte spriteMulticolor, byte spritePriority, byte spriteXHigh, byte spriteMc1Color, byte spriteMc2Color, byte[] spriteColors, byte[] spriteXPos, byte[] spriteYPos, byte[] spritePtrs, byte[] colorRow, byte[] cachedScreenRow, byte[][] cachedBitmapRows, int dy, bool matrixVisible)
+        private void RenderScanline(int frameY, int playY, byte d011, byte d016, byte d018, byte bg0, byte bg1, byte bg2, byte bg3, byte dd00, byte dd02, byte[] spritePtrs, byte[] colorRow, byte[] cachedScreenRow, byte[][] cachedBitmapRows, int dy, bool matrixVisible)
         {
             int bank = GetVicBankBase(dd00, dd02);
-            int screenAddr = bank + ((d018 >> 4) & 0x0F) * 0x400;
             int charAddr = bank + ((d018 >> 1) & 0x07) * 0x800;
 
             bool screenOn = (d011 & 0x10) != 0;
@@ -1397,7 +1368,7 @@ namespace C64
             else if (bmm && mcm)
                 RenderLineMulticolorBitmap(frameY, bg0, colorRow, cachedScreenRow, cachedBitmapRows, dy);
             else if (bmm)
-                RenderLineHiresBitmap(frameY, colorRow, cachedScreenRow, cachedBitmapRows, dy);
+                RenderLineHiresBitmap(frameY, cachedScreenRow, cachedBitmapRows, dy);
             else if (ecm)
                 RenderLineExtendedBgText(frameY, charAddr, bg0, bg1, bg2, bg3, bank, colorRow, cachedScreenRow, dy);
             else if (mcm)
@@ -1756,7 +1727,6 @@ namespace C64
         /// <param name="dy">The row offset within the current character cell.</param>
         private void RenderLineStandardText(int y, int charAddr, byte bg, int bank, byte[] colorRow, byte[] cachedScreenRow, int dy)
         {
-            byte[] mem = cpu.memory.memory;
             ResolveCharSource(charAddr, bank, out byte[] cs, out int cb);
             int bgC = C64Palette[bg];
             bool charFromVicRam = ReferenceEquals(cs, cpu.memory.memory) && cb >= 0xD000 && cb < 0xE000;
@@ -1801,10 +1771,9 @@ namespace C64
         /// <param name="dy">The row offset within the current character cell.</param>
         private void RenderLineMulticolorText(int y, int charAddr, byte bg0, byte bg1, byte bg2, int bank, byte[] colorRow, byte[] cachedScreenRow, int dy)
         {
-            byte[] mem = cpu.memory.memory;
             ResolveCharSource(charAddr, bank, out byte[] cs, out int cb);
             int bgC = C64Palette[bg0];
-            int[] mcc = { bgC, C64Palette[bg1], C64Palette[bg2], 0 };
+            int[] mcc = [bgC, C64Palette[bg1], C64Palette[bg2], 0];
             bool charFromVicRam = ReferenceEquals(cs, cpu.memory.memory) && cb >= 0xD000 && cb < 0xE000;
 
             int lineStart = (y * FrameW + FramePlayfieldX) * 4;
@@ -1874,9 +1843,8 @@ namespace C64
         /// <param name="dy">The row offset within the current character cell.</param>
         private void RenderLineExtendedBgText(int y, int charAddr, byte bg0, byte bg1, byte bg2, byte bg3, int bank, byte[] colorRow, byte[] cachedScreenRow, int dy)
         {
-            byte[] mem = cpu.memory.memory;
             ResolveCharSource(charAddr, bank, out byte[] cs, out int cb);
-            int[] bgC = { C64Palette[bg0], C64Palette[bg1], C64Palette[bg2], C64Palette[bg3] };
+            int[] bgC = [C64Palette[bg0], C64Palette[bg1], C64Palette[bg2], C64Palette[bg3]];
             bool charFromVicRam = ReferenceEquals(cs, cpu.memory.memory) && cb >= 0xD000 && cb < 0xE000;
 
             int lineStart = (y * FrameW + FramePlayfieldX) * 4;
@@ -1912,14 +1880,11 @@ namespace C64
 
         /// <summary>Renders line hires bitmap.</summary>
         /// <param name="y">The Y coordinate in pixels.</param>
-        /// <param name="colorRow">The cached color RAM row for this scanline.</param>
         /// <param name="cachedScreenRow">The cached screen RAM row for this scanline.</param>
         /// <param name="cachedBitmapRows">The cached bitmap rows for this character row.</param>
         /// <param name="dy">The row offset within the current character cell.</param>
-        private void RenderLineHiresBitmap(int y, byte[] colorRow, byte[] cachedScreenRow, byte[][] cachedBitmapRows, int dy)
+        private void RenderLineHiresBitmap(int y, byte[] cachedScreenRow, byte[][] cachedBitmapRows, int dy)
         {
-            byte[] mem = cpu.memory.memory;
-
             int lineStart = (y * FrameW + FramePlayfieldX) * 4;
             int fgBase = 0;
 
@@ -1955,7 +1920,6 @@ namespace C64
         /// <param name="dy">The row offset within the current character cell.</param>
         private void RenderLineMulticolorBitmap(int y, byte bg0, byte[] colorRow, byte[] cachedScreenRow, byte[][] cachedBitmapRows, int dy)
         {
-            byte[] mem = cpu.memory.memory;
             int bgC = C64Palette[bg0];
 
             int lineStart = (y * FrameW + FramePlayfieldX) * 4;
@@ -2166,25 +2130,11 @@ namespace C64
         /// </summary>
         /// <param name="frameY">The frame-buffer scanline to render.</param>
         /// <param name="bank">The active VIC memory bank base.</param>
-        /// <param name="spriteEnable">The sprite enable register value.</param>
-        /// <param name="spriteXExpand">The sprite X expansion register value.</param>
-        /// <param name="spriteYExpand">The sprite Y expansion register value.</param>
-        /// <param name="spriteMulticolor">The sprite multicolor enable register value.</param>
-        /// <param name="spritePriority">The sprite priority register value.</param>
-        /// <param name="spriteXHigh">The high X-position bits for all sprites.</param>
-        /// <param name="spriteMc1Color">The shared sprite multicolor 1 index.</param>
-        /// <param name="spriteMc2Color">The shared sprite multicolor 2 index.</param>
-        /// <param name="spriteColors">The per-sprite color indexes.</param>
-        /// <param name="spriteXPos">The per-sprite X positions.</param>
-        /// <param name="spriteYPos">The per-sprite Y positions.</param>
         /// <param name="spritePtrs">The per-sprite data pointers.</param>
         private void RenderSpritesScanline(int frameY, byte d011, byte d016, bool horizontalBorderOpen, bool verticalBorderOpen, int bank, byte[] spritePtrs)
         {
-            byte[] mem = cpu.memory.memory;
-
             for (int s = 7; s >= 0; s--)
             {
-                int mask = 1 << s;
                 if (!spriteDisplayActive[s]) continue;
 
                 int frameSpriteX = spriteDisplayFrameX[s];
@@ -2393,7 +2343,7 @@ namespace C64
             using (var fs = File.Create(path))
             {
                 /// PNG signature
-                fs.Write(new byte[] { 137, 80, 78, 71, 13, 10, 26, 10 });
+                fs.Write([137, 80, 78, 71, 13, 10, 26, 10]);
 
                 /// IHDR
                 byte[] ihdr = new byte[13];
@@ -2436,7 +2386,7 @@ namespace C64
                 }
 
                 WritePngChunk(fs, "IDAT", compressed);
-                WritePngChunk(fs, "IEND", Array.Empty<byte>());
+                WritePngChunk(fs, "IEND", []);
             }
         }
 

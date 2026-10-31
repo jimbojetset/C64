@@ -13,7 +13,7 @@
 
 using System.Text;
 
-namespace C64
+namespace C64.IO
 {
     /// <summary>
     /// Parses a D64 disk image and exposes directory, PRG loading, disk-name, and raw sector access helpers.
@@ -21,14 +21,14 @@ namespace C64
     internal sealed class D64Image
     {
         private static readonly int[] SectorsPerTrack =
-        {
+        [
             0,
             21,21,21,21,21,21,21,21,21,21,21,21,21,21,21,21,21,
             19,19,19,19,19,19,19,
             18,18,18,18,18,18,
             17,17,17,17,17,
             17,17,17,17,17,17,17
-        };
+        ];
 
         private readonly byte[] raw;
 
@@ -84,7 +84,7 @@ namespace C64
         /// <returns>True when the operation succeeds; otherwise, false.</returns>
         public bool TryLoadPrg(string? requestedName, out byte[] prgBytes, out string resolvedName)
         {
-            prgBytes = Array.Empty<byte>();
+            prgBytes = [];
             resolvedName = string.Empty;
 
             var entries = ReadDirectoryEntries();
@@ -142,7 +142,7 @@ namespace C64
                 sector = nextSector;
             }
 
-            prgBytes = data.ToArray();
+            prgBytes = [.. data];
             resolvedName = selected.Name;
             return prgBytes.Length >= 3;
         }
@@ -152,7 +152,7 @@ namespace C64
         /// <returns>True when the operation succeeds; otherwise, false.</returns>
         public bool TryLoadDirectory(out byte[] prgBytes)
         {
-            prgBytes = Array.Empty<byte>();
+            prgBytes = [];
 
             var body = new List<byte>(2048);
             ushort nextLineAddress = 0x0801;
@@ -182,7 +182,7 @@ namespace C64
         /// <returns>True when the operation succeeds; otherwise, false.</returns>
         public bool TryReadSector(int track, int sector, out byte[] sectorBytes)
         {
-            sectorBytes = Array.Empty<byte>();
+            sectorBytes = [];
             int off = Offset(track, sector);
             if (off < 0 || off + 256 > raw.Length)
                 return false;

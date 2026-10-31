@@ -13,7 +13,7 @@
 
 using System.Text;
 
-namespace C64
+namespace C64.IO
 {
     /// <summary>
     /// Emulates the high-level IEC bus commands and a lightweight low-level responder for the virtual 1541 drive path.
@@ -41,11 +41,11 @@ namespace C64
         private byte? currentTalker;
         private byte? listenSecondary;
         private byte? talkSecondary;
-        private readonly List<byte> commandBytes = new List<byte>();
-        private Queue<byte> talkQueue = new Queue<byte>();
-        private Queue<byte> statusQueue = new Queue<byte>();
-        private readonly Dictionary<byte, DirectChannel> directChannels = new Dictionary<byte, DirectChannel>();
-        private readonly Dictionary<byte, byte> logicalChannels = new Dictionary<byte, byte>();
+        private readonly List<byte> commandBytes = [];
+        private Queue<byte> talkQueue = new();
+        private Queue<byte> statusQueue = new();
+        private readonly Dictionary<byte, DirectChannel> directChannels = [];
+        private readonly Dictionary<byte, byte> logicalChannels = [];
         private byte? currentInputChannel;
         private byte? currentOutputChannel;
 
@@ -599,7 +599,7 @@ namespace C64
                 values.Add(value);
             }
 
-            return values.ToArray();
+            return [.. values];
         }
 
         /// <summary>Sets drive ok.</summary>
