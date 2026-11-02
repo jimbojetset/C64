@@ -7,10 +7,8 @@ using static SDL2.SDL;
 namespace C64.IO
 {
 
-    internal sealed class Keyboard : IDisposable
+    internal sealed class Keyboard(CPU_6510 cpu) : IDisposable
     {
-        private readonly CPU_6510 cpu;
-
         private readonly ConcurrentQueue<byte> keyQueue = new();
 
         private readonly byte[] keyboardMatrix = [0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF];
@@ -38,12 +36,11 @@ namespace C64.IO
             ForceUnshift,
         }
 
-        private readonly struct TextInputBinding
+        private readonly struct TextInputBinding(int row, int col, ShiftPolicy shift)
         {
-            public readonly int Row;
-            public readonly int Column;
-            public readonly ShiftPolicy Shift;
-            public TextInputBinding(int row, int col, ShiftPolicy shift) { Row = row; Column = col; Shift = shift; }
+            public readonly int Row = row;
+            public readonly int Column = col;
+            public readonly ShiftPolicy Shift = shift;
         }
 
         private int syntheticShiftCount;
@@ -79,13 +76,6 @@ namespace C64.IO
         public Action? OnToggleTurbo { get; set; }
 
         public Action? OnSelectAudioDevice { get; set; }
-
-        /// <summary>Creates the C64 keyboard matrix and joystick input state connected to the 6510.</summary>
-        /// <param name="cpu">The CPU instance connected to this component.</param>
-        public Keyboard(CPU_6510 cpu)
-        {
-            this.cpu = cpu;
-        }
 
         public int ActiveJoystickPort => activeJoystickPort;
 

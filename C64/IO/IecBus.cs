@@ -5,10 +5,10 @@ using System.Text;
 namespace C64.IO
 {
 
-    internal sealed class IecBus
+    internal sealed class IecBus(VirtualDrive1541 drive, Drive1541Emulator? fullDrive = null)
     {
-        private readonly VirtualDrive1541 drive;
-        private readonly Drive1541Emulator? fullDrive;
+        private readonly VirtualDrive1541 drive = drive;
+        private readonly Drive1541Emulator? fullDrive = fullDrive;
 
         private static readonly bool LowLevelEnabled =
             string.Equals(Environment.GetEnvironmentVariable("C64_IEC_LOWLEVEL"), "1", StringComparison.Ordinal);
@@ -46,14 +46,6 @@ namespace C64.IO
         private int lowLevelBytePhase;
         private byte lowLevelCurrentByte;
         private bool lowLevelActivityReported;
-
-        /// <summary>Creates the IEC protocol state for virtual drive 8 and an optional cycle-level 1541.</summary>
-        /// <param name="drive">The virtual 1541 drive attached to the IEC bus.</param>
-        public IecBus(VirtualDrive1541 drive, Drive1541Emulator? fullDrive = null)
-        {
-            this.drive = drive;
-            this.fullDrive = fullDrive;
-        }
 
         /// <summary>Updates the host-side CIA2 IEC port pins.</summary>
         /// <param name="dd00">The CIA2 port A data latch value.</param>
@@ -184,7 +176,7 @@ namespace C64.IO
                 return true;
             }
 
-            if (text.StartsWith("#", StringComparison.Ordinal))
+            if (text.StartsWith('#'))
             {
                 directChannels[channel] = new DirectChannel(new byte[256]);
                 SetDriveOk();
@@ -610,17 +602,10 @@ namespace C64.IO
             return (byte)(dev & 0x1F);
         }
 
-        private sealed class DirectChannel
+        /// <summary>Creates a 256-byte-style direct-access channel over the supplied drive buffer.</summary>
+        /// <param name="data">The bytes exposed through the direct channel.</param>
+        private sealed class DirectChannel(byte[] data)
         {
-            private readonly byte[] data;
-
-            /// <summary>Creates a 256-byte-style direct-access channel over the supplied drive buffer.</summary>
-            /// <param name="data">The bytes exposed through the direct channel.</param>
-            public DirectChannel(byte[] data)
-            {
-                this.data = data;
-            }
-
             public int Position { get; set; }
 
             /// <summary>Returns the next direct-channel byte and advances its bounded cursor.</summary>

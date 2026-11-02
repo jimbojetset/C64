@@ -8,7 +8,7 @@ namespace C64.CPU
     public class C64MemoryBus : ICpuBus
     {
 
-        public byte[] memory { get; set; }
+        public byte[] Memory { get; set; }
 
         private readonly List<ROM> rom = [];
 
@@ -44,7 +44,7 @@ namespace C64.CPU
         /// <param name="size">The size of the emulated memory in bytes.</param>
         public C64MemoryBus(int size)
         {
-            memory = new byte[size];
+            Memory = new byte[size];
         }
 
         /// <summary>Clears the 4 KiB RAM shadowed by character ROM or I/O at $D000-$DFFF.</summary>
@@ -72,7 +72,7 @@ namespace C64.CPU
                 return;
             }
 
-            memory[addr] = value;
+            Memory[addr] = value;
         }
 
         /// <summary>Loads and validates a BASIC, KERNAL, or character ROM for 6510 banking.</summary>
@@ -134,7 +134,7 @@ namespace C64.CPU
                     if (OnIOWrite(addr, value)) return;
                 }
 
-                memory[addr] = value;
+                Memory[addr] = value;
                 return;
             }
 
@@ -153,7 +153,7 @@ namespace C64.CPU
 
                     if (Is_IO_Mapped())
                     {
-                        memory[addr] = value;
+                        Memory[addr] = value;
                     }
                     else
                     {
@@ -164,7 +164,7 @@ namespace C64.CPU
                 if (Is_IO_Mapped())
                 {
                     if (OnIOWrite is not null && OnIOWrite(addr, value)) return;
-                    memory[addr] = value;
+                    Memory[addr] = value;
                     return;
                 }
 
@@ -177,7 +177,7 @@ namespace C64.CPU
                 _ = OnCartridgeWrite(addr, port);
             }
 
-            memory[addr] = value;
+            Memory[addr] = value;
         }
 
         /// <summary>Determines whether an address is in a legacy ROM range.</summary>
@@ -202,7 +202,7 @@ namespace C64.CPU
         {
             if (!bankingEnabled)
             {
-                byte legacy = memory[addr];
+                byte legacy = Memory[addr];
                 if (OnMemoryRead is not null)
                     legacy = OnMemoryRead(addr, legacy);
                 if (addr >= 0xD000 && addr < 0xE000 && OnIORead is not null)
@@ -212,7 +212,7 @@ namespace C64.CPU
                 return legacy;
             }
 
-            if (addr < 0x8000) return memory[addr];
+            if (addr < 0x8000) return Memory[addr];
 
             byte port = GetProcessorPortEffective();
 
@@ -223,16 +223,16 @@ namespace C64.CPU
                     return cart.Value;
             }
 
-            if (addr < 0xA000) return memory[addr];
+            if (addr < 0xA000) return Memory[addr];
 
             if (addr < 0xC000)
             {
                 if (basicRom is not null && (port & 0x03) == 0x03)
                     return basicRom[addr - 0xA000];
-                return memory[addr];
+                return Memory[addr];
             }
 
-            if (addr < 0xD000) return memory[addr];
+            if (addr < 0xD000) return Memory[addr];
 
             if (addr < 0xE000)
             {
@@ -247,9 +247,9 @@ namespace C64.CPU
                 {
 
                     if (addr >= 0xD800 && addr < 0xDC00)
-                        return memory[addr];
+                        return Memory[addr];
 
-                    byte v = memory[addr];
+                    byte v = Memory[addr];
                     if (OnIORead is not null) v = OnIORead(addr, v);
                     if (OnIOPostRead is not null) OnIOPostRead(addr);
                     return v;
@@ -269,7 +269,7 @@ namespace C64.CPU
 
             if (kernalRom is not null && (port & 0x02) != 0)
                 return kernalRom[addr - 0xE000];
-            return memory[addr];
+            return Memory[addr];
         }
 
         /// <summary>Determines whether the I/O window is currently mapped.</summary>
@@ -287,8 +287,8 @@ namespace C64.CPU
         private byte GetProcessorPortEffective()
         {
 
-            byte ddr = memory[0x0000];
-            byte data = memory[0x0001];
+            byte ddr = Memory[0x0000];
+            byte data = Memory[0x0001];
             return (byte)((data & ddr) | (~ddr & 0xFF));
         }
 
@@ -309,7 +309,7 @@ namespace C64.CPU
             addr &= 0xFFFF;
             if (addr >= 0xD000 && addr < 0xE000)
                 return ioUnderRam[addr - 0xD000];
-            return memory[addr];
+            return Memory[addr];
         }
 
         /// <summary>Copies a file range into RAM and optionally protects it as legacy ROM.</summary>
@@ -319,7 +319,7 @@ namespace C64.CPU
         /// <param name="readOnly">Whether the loaded range should be marked read-only.</param>
         public void Load(string filePath, int startAddr, int length, bool readOnly)
         {
-            Array.Copy(File.ReadAllBytes(filePath), 0, memory, startAddr, length);
+            Array.Copy(File.ReadAllBytes(filePath), 0, Memory, startAddr, length);
             if (readOnly)
                 rom.Add(new ROM() { StartAddr = startAddr, Length = length });
         }

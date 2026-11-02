@@ -80,7 +80,7 @@ namespace C64.Sound
         private Thread? _thread;
 
         private CancellationToken _ct;
-        private readonly object _audioStateLock = new();
+        private readonly System.Threading.Lock _audioStateLock = new();
 
         private static readonly int[] AttackCycles =
         [
@@ -962,24 +962,13 @@ namespace C64.Sound
         private enum EnvPhase
         { Attack, Decay, Sustain, Release }
 
-        private readonly struct SidWrite
+        private readonly struct SidWrite(int reg, byte value, long tick)
         {
-            /// <summary>Captures a SID register value and the emulated clock tick when it takes effect.</summary>
-            /// <param name="reg">The SID register index.</param>
-            /// <param name="value">The SID register value written.</param>
-            /// <param name="tick">The SID clock tick when the write should take effect.</param>
-            public SidWrite(int reg, byte value, long tick)
-            {
-                Reg = reg;
-                Value = value;
-                Tick = tick;
-            }
+            public int Reg { get; } = reg;
 
-            public int Reg { get; }
+            public byte Value { get; } = value;
 
-            public byte Value { get; }
-
-            public long Tick { get; }
+            public long Tick { get; } = tick;
         }
 
         private sealed class Voice

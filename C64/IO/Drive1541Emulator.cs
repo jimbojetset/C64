@@ -82,8 +82,8 @@ namespace C64.IO
             via1.Reset();
             via2.Reset();
             disk.Reset();
-            cpu.memory.memory[0xFFFC] = ReadMemory(0xFFFC, 0);
-            cpu.memory.memory[0xFFFD] = ReadMemory(0xFFFD, 0);
+            cpu.memory.Memory[0xFFFC] = ReadMemory(0xFFFC, 0);
+            cpu.memory.Memory[0xFFFD] = ReadMemory(0xFFFD, 0);
             cpu.ResetNow();
         }
 

@@ -112,9 +112,9 @@ namespace C64
         private readonly IecBus iecBus;
         private readonly DatasetteDevice datasette;
         private readonly REU reu;
-        private readonly object cia1Lock = new();
-        private readonly object cia2Lock = new();
-        private readonly object kernalPatchLock = new();
+        private readonly System.Threading.Lock cia1Lock = new();
+        private readonly System.Threading.Lock cia2Lock = new();
+        private readonly System.Threading.Lock kernalPatchLock = new();
         private readonly ConcurrentQueue<(string Path, bool AutoRun)> pendingLoads = new();
         private CrtCartridge? cartridge;
         private string? lastHostLoadedFile;
@@ -282,7 +282,7 @@ namespace C64
         /// </summary>
         private void InitHardware()
         {
-            byte[] m = cpu.memory.memory;
+            byte[] m = cpu.memory.Memory;
 
             Array.Clear(m, 0x0000, m.Length);
             cpu.memory.ClearIoUnderRam();
@@ -460,11 +460,11 @@ namespace C64
 
                 case 0xD011:
                     {
-                        byte oldD011 = cpu.memory.memory[0xD011];
+                        byte oldD011 = cpu.memory.Memory[0xD011];
                         display.RasterCompare = (display.RasterCompare & 0xFF) | ((value & 0x80) << 1);
                         byte oldHigh = (byte)(oldD011 & 0x80);
                         byte newVal = (byte)((value & 0x7F) | oldHigh);
-                        cpu.memory.memory[0xD011] = newVal;
+                        cpu.memory.Memory[0xD011] = newVal;
                         display.RecordRasterWrite(addr, oldD011, newVal);
                         display.RefreshCurrentRasterLine();
                         return true;
@@ -481,10 +481,10 @@ namespace C64
                     }
                 case 0xD019:
                     {
-                        byte cur = cpu.memory.memory[0xD019];
+                        byte cur = cpu.memory.Memory[0xD019];
                         byte next = (byte)(cur & ~value);
                         if ((next & 0x0F) == 0) next &= 0x7F;
-                        cpu.memory.memory[0xD019] = next;
+                        cpu.memory.Memory[0xD019] = next;
                         return true;
                     }
                 case 0xDC0D:
@@ -508,7 +508,7 @@ namespace C64
                             {
                                 cia1IcrStatus = (byte)(cia1IcrStatus & 0x7F);
                             }
-                            cpu.memory.memory[0xDC0D] = cia1IcrStatus;
+                            cpu.memory.Memory[0xDC0D] = cia1IcrStatus;
                         }
                         if (raiseIrq) cpu.InitiateIRQ(0xFFFE);
                         return true;
@@ -520,8 +520,8 @@ namespace C64
                             cia1TimerALatch = (ushort)((cia1TimerALatch & 0xFF00) | value);
                             if ((cia1Cra & 0x01) == 0)
                                 cia1TimerACounter = cia1TimerALatch;
-                            cpu.memory.memory[0xDC04] = (byte)(cia1TimerACounter & 0xFF);
-                            cpu.memory.memory[0xDC05] = (byte)(cia1TimerACounter >> 8);
+                            cpu.memory.Memory[0xDC04] = (byte)(cia1TimerACounter & 0xFF);
+                            cpu.memory.Memory[0xDC05] = (byte)(cia1TimerACounter >> 8);
                         }
                         return true;
                     }
@@ -532,8 +532,8 @@ namespace C64
                             cia1TimerALatch = (ushort)((cia1TimerALatch & 0x00FF) | (value << 8));
                             if ((cia1Cra & 0x01) == 0)
                                 cia1TimerACounter = cia1TimerALatch;
-                            cpu.memory.memory[0xDC04] = (byte)(cia1TimerACounter & 0xFF);
-                            cpu.memory.memory[0xDC05] = (byte)(cia1TimerACounter >> 8);
+                            cpu.memory.Memory[0xDC04] = (byte)(cia1TimerACounter & 0xFF);
+                            cpu.memory.Memory[0xDC05] = (byte)(cia1TimerACounter >> 8);
                         }
                         return true;
                     }
@@ -544,12 +544,12 @@ namespace C64
                             if ((value & 0x10) != 0)
                             {
                                 cia1TimerACounter = cia1TimerALatch;
-                                cpu.memory.memory[0xDC04] = (byte)(cia1TimerACounter & 0xFF);
-                                cpu.memory.memory[0xDC05] = (byte)(cia1TimerACounter >> 8);
+                                cpu.memory.Memory[0xDC04] = (byte)(cia1TimerACounter & 0xFF);
+                                cpu.memory.Memory[0xDC05] = (byte)(cia1TimerACounter >> 8);
                             }
 
                             cia1Cra = NormalizeCiaControlWrite(value);
-                            cpu.memory.memory[0xDC0E] = cia1Cra;
+                            cpu.memory.Memory[0xDC0E] = cia1Cra;
                         }
                         return true;
                     }
@@ -560,8 +560,8 @@ namespace C64
                             cia1TimerBLatch = (ushort)((cia1TimerBLatch & 0xFF00) | value);
                             if ((cia1Crb & 0x01) == 0)
                                 cia1TimerBCounter = cia1TimerBLatch;
-                            cpu.memory.memory[0xDC06] = (byte)(cia1TimerBCounter & 0xFF);
-                            cpu.memory.memory[0xDC07] = (byte)(cia1TimerBCounter >> 8);
+                            cpu.memory.Memory[0xDC06] = (byte)(cia1TimerBCounter & 0xFF);
+                            cpu.memory.Memory[0xDC07] = (byte)(cia1TimerBCounter >> 8);
                         }
                         return true;
                     }
@@ -572,8 +572,8 @@ namespace C64
                             cia1TimerBLatch = (ushort)((cia1TimerBLatch & 0x00FF) | (value << 8));
                             if ((cia1Crb & 0x01) == 0)
                                 cia1TimerBCounter = cia1TimerBLatch;
-                            cpu.memory.memory[0xDC06] = (byte)(cia1TimerBCounter & 0xFF);
-                            cpu.memory.memory[0xDC07] = (byte)(cia1TimerBCounter >> 8);
+                            cpu.memory.Memory[0xDC06] = (byte)(cia1TimerBCounter & 0xFF);
+                            cpu.memory.Memory[0xDC07] = (byte)(cia1TimerBCounter >> 8);
                         }
                         return true;
                     }
@@ -599,7 +599,7 @@ namespace C64
                         {
                             cia1Sdr = value;
                             cia1SerialDataPending = true;
-                            cpu.memory.memory[0xDC0C] = cia1Sdr;
+                            cpu.memory.Memory[0xDC0C] = cia1Sdr;
                         }
                         return true;
                     }
@@ -610,44 +610,44 @@ namespace C64
                             if ((value & 0x10) != 0)
                             {
                                 cia1TimerBCounter = cia1TimerBLatch;
-                                cpu.memory.memory[0xDC06] = (byte)(cia1TimerBCounter & 0xFF);
-                                cpu.memory.memory[0xDC07] = (byte)(cia1TimerBCounter >> 8);
+                                cpu.memory.Memory[0xDC06] = (byte)(cia1TimerBCounter & 0xFF);
+                                cpu.memory.Memory[0xDC07] = (byte)(cia1TimerBCounter >> 8);
                             }
 
                             cia1Crb = NormalizeCiaControlWrite(value);
-                            cpu.memory.memory[0xDC0F] = cia1Crb;
+                            cpu.memory.Memory[0xDC0F] = cia1Crb;
                         }
                         return true;
                     }
                 case 0xDC00:
                     cia1PortA = value;
-                    cpu.memory.memory[addr] = value;
+                    cpu.memory.Memory[addr] = value;
                     return true;
 
                 case 0xDC01:
                     cia1PortB = value;
-                    cpu.memory.memory[addr] = value;
+                    cpu.memory.Memory[addr] = value;
                     return true;
 
                 case 0xDC02:
                     cia1Ddra = value;
-                    cpu.memory.memory[addr] = value;
+                    cpu.memory.Memory[addr] = value;
                     return true;
 
                 case 0xDC03:
                     cia1Ddrb = value;
-                    cpu.memory.memory[addr] = value;
+                    cpu.memory.Memory[addr] = value;
                     return true;
 
                 case 0xDD00:
                     cia2PortA = value;
-                    cpu.memory.memory[addr] = value;
+                    cpu.memory.Memory[addr] = value;
                     iecBus.UpdateHostCia2PortA(cia2PortA, cia2Ddra);
                     return true;
 
                 case 0xDD02:
                     cia2Ddra = (byte)(value & 0x3F);
-                    cpu.memory.memory[addr] = value;
+                    cpu.memory.Memory[addr] = value;
                     iecBus.UpdateHostCia2PortA(cia2PortA, cia2Ddra);
                     return true;
 
@@ -657,8 +657,8 @@ namespace C64
                         cia2TimerALatch = (ushort)((cia2TimerALatch & 0xFF00) | value);
                         if ((cia2Cra & 0x01) == 0)
                             cia2TimerACounter = cia2TimerALatch;
-                        cpu.memory.memory[0xDD04] = (byte)(cia2TimerACounter & 0xFF);
-                        cpu.memory.memory[0xDD05] = (byte)(cia2TimerACounter >> 8);
+                        cpu.memory.Memory[0xDD04] = (byte)(cia2TimerACounter & 0xFF);
+                        cpu.memory.Memory[0xDD05] = (byte)(cia2TimerACounter >> 8);
                     }
                     return true;
 
@@ -668,8 +668,8 @@ namespace C64
                         cia2TimerALatch = (ushort)((cia2TimerALatch & 0x00FF) | (value << 8));
                         if ((cia2Cra & 0x01) == 0)
                             cia2TimerACounter = cia2TimerALatch;
-                        cpu.memory.memory[0xDD04] = (byte)(cia2TimerACounter & 0xFF);
-                        cpu.memory.memory[0xDD05] = (byte)(cia2TimerACounter >> 8);
+                        cpu.memory.Memory[0xDD04] = (byte)(cia2TimerACounter & 0xFF);
+                        cpu.memory.Memory[0xDD05] = (byte)(cia2TimerACounter >> 8);
                     }
                     return true;
 
@@ -679,8 +679,8 @@ namespace C64
                         cia2TimerBLatch = (ushort)((cia2TimerBLatch & 0xFF00) | value);
                         if ((cia2Crb & 0x01) == 0)
                             cia2TimerBCounter = cia2TimerBLatch;
-                        cpu.memory.memory[0xDD06] = (byte)(cia2TimerBCounter & 0xFF);
-                        cpu.memory.memory[0xDD07] = (byte)(cia2TimerBCounter >> 8);
+                        cpu.memory.Memory[0xDD06] = (byte)(cia2TimerBCounter & 0xFF);
+                        cpu.memory.Memory[0xDD07] = (byte)(cia2TimerBCounter >> 8);
                     }
                     return true;
 
@@ -690,8 +690,8 @@ namespace C64
                         cia2TimerBLatch = (ushort)((cia2TimerBLatch & 0x00FF) | (value << 8));
                         if ((cia2Crb & 0x01) == 0)
                             cia2TimerBCounter = cia2TimerBLatch;
-                        cpu.memory.memory[0xDD06] = (byte)(cia2TimerBCounter & 0xFF);
-                        cpu.memory.memory[0xDD07] = (byte)(cia2TimerBCounter >> 8);
+                        cpu.memory.Memory[0xDD06] = (byte)(cia2TimerBCounter & 0xFF);
+                        cpu.memory.Memory[0xDD07] = (byte)(cia2TimerBCounter >> 8);
                     }
                     return true;
 
@@ -717,7 +717,7 @@ namespace C64
                         {
                             cia2Sdr = value;
                             cia2SerialDataPending = true;
-                            cpu.memory.memory[0xDD0C] = cia2Sdr;
+                            cpu.memory.Memory[0xDD0C] = cia2Sdr;
                         }
                         return true;
                     }
@@ -743,7 +743,7 @@ namespace C64
                                 cia2IcrStatus = (byte)(cia2IcrStatus & 0x7F);
                             }
 
-                            cpu.memory.memory[0xDD0D] = cia2IcrStatus;
+                            cpu.memory.Memory[0xDD0D] = cia2IcrStatus;
                         }
 
                         if (raiseNmi)
@@ -756,11 +756,11 @@ namespace C64
                         if ((value & 0x10) != 0)
                         {
                             cia2TimerACounter = cia2TimerALatch;
-                            cpu.memory.memory[0xDD04] = (byte)(cia2TimerACounter & 0xFF);
-                            cpu.memory.memory[0xDD05] = (byte)(cia2TimerACounter >> 8);
+                            cpu.memory.Memory[0xDD04] = (byte)(cia2TimerACounter & 0xFF);
+                            cpu.memory.Memory[0xDD05] = (byte)(cia2TimerACounter >> 8);
                         }
                         cia2Cra = NormalizeCiaControlWrite(value);
-                        cpu.memory.memory[0xDD0E] = cia2Cra;
+                        cpu.memory.Memory[0xDD0E] = cia2Cra;
                     }
                     return true;
 
@@ -770,11 +770,11 @@ namespace C64
                         if ((value & 0x10) != 0)
                         {
                             cia2TimerBCounter = cia2TimerBLatch;
-                            cpu.memory.memory[0xDD06] = (byte)(cia2TimerBCounter & 0xFF);
-                            cpu.memory.memory[0xDD07] = (byte)(cia2TimerBCounter >> 8);
+                            cpu.memory.Memory[0xDD06] = (byte)(cia2TimerBCounter & 0xFF);
+                            cpu.memory.Memory[0xDD07] = (byte)(cia2TimerBCounter >> 8);
                         }
                         cia2Crb = NormalizeCiaControlWrite(value);
-                        cpu.memory.memory[0xDD0F] = cia2Crb;
+                        cpu.memory.Memory[0xDD0F] = cia2Crb;
                     }
                     return true;
             }
@@ -788,7 +788,7 @@ namespace C64
             if (addr >= 0xDF00 && addr <= 0xDFFF)
             {
                 reu.Write((int)addr, value);
-                cpu.memory.memory[addr] = value;
+                cpu.memory.Memory[addr] = value;
                 return true;
             }
 
@@ -796,7 +796,7 @@ namespace C64
             {
                 int sidReg = (int)((addr - 0xD400) & 0x1F);
                 sound.WriteRegister(sidReg, value);
-                cpu.memory.memory[addr] = value;
+                cpu.memory.Memory[addr] = value;
                 return true;
             }
 
@@ -808,8 +808,8 @@ namespace C64
         /// <param name="value">The value supplied to the operation.</param>
         private void WriteVicRenderRegister(ulong addr, byte value)
         {
-            byte oldValue = cpu.memory.memory[addr];
-            cpu.memory.memory[addr] = value;
+            byte oldValue = cpu.memory.Memory[addr];
+            cpu.memory.Memory[addr] = value;
             display.RecordRasterWrite(addr, oldValue, value);
             if (!IsVicSpriteRenderRegister(addr))
                 display.RefreshCurrentRasterLine();
@@ -867,7 +867,7 @@ namespace C64
             {
                 case 0xD011:
                     {
-                        byte low = (byte)(cpu.memory.memory[0xD011] & 0x7F);
+                        byte low = (byte)(cpu.memory.Memory[0xD011] & 0x7F);
                         byte hi = (byte)(((display.CurrentRasterLine >> 8) & 0x01) << 7);
                         return (byte)(low | hi);
                     }
@@ -972,8 +972,8 @@ namespace C64
                 case 0xD01E:
                 case 0xD01F:
                     {
-                        byte value = cpu.memory.memory[addr];
-                        cpu.memory.memory[addr] = 0;
+                        byte value = cpu.memory.Memory[addr];
+                        cpu.memory.Memory[addr] = 0;
                         return value;
                     }
                 case 0xDC0D:
@@ -982,7 +982,7 @@ namespace C64
                         {
                             byte value = cia1IcrStatus;
                             cia1IcrStatus = 0x00;
-                            cpu.memory.memory[0xDC0D] = 0x00;
+                            cpu.memory.Memory[0xDC0D] = 0x00;
                             return value;
                         }
                     }
@@ -992,7 +992,7 @@ namespace C64
                         {
                             byte value = cia2IcrStatus;
                             cia2IcrStatus = 0x00;
-                            cpu.memory.memory[0xDD0D] = 0x00;
+                            cpu.memory.Memory[0xDD0D] = 0x00;
                             return value;
                         }
                     }
@@ -1103,7 +1103,7 @@ namespace C64
 
             cia1SerialInBits = 0;
             cia1Sdr = cia1SerialInShiftReg;
-            cpu.memory.memory[0xDC0C] = cia1Sdr;
+            cpu.memory.Memory[0xDC0C] = cia1Sdr;
 
             cia1IcrStatus |= 0x08;
             if ((cia1IcrMask & 0x08) != 0)
@@ -1131,7 +1131,7 @@ namespace C64
 
             cia2SerialInBits = 0;
             cia2Sdr = cia2SerialInShiftReg;
-            cpu.memory.memory[0xDD0C] = cia2Sdr;
+            cpu.memory.Memory[0xDD0C] = cia2Sdr;
 
             cia2IcrStatus |= 0x08;
             if ((cia2IcrMask & 0x08) != 0)
@@ -1300,10 +1300,10 @@ namespace C64
         /// <param name="hours">The BCD hours value.</param>
         private void UpdateCiaTodMirror(int baseAddr, byte tenths, byte seconds, byte minutes, byte hours)
         {
-            cpu.memory.memory[baseAddr] = tenths;
-            cpu.memory.memory[baseAddr + 1] = seconds;
-            cpu.memory.memory[baseAddr + 2] = minutes;
-            cpu.memory.memory[baseAddr + 3] = hours;
+            cpu.memory.Memory[baseAddr] = tenths;
+            cpu.memory.Memory[baseAddr + 1] = seconds;
+            cpu.memory.Memory[baseAddr + 2] = minutes;
+            cpu.memory.Memory[baseAddr + 3] = hours;
         }
 
         /// <summary>Converts a BCD byte to an integer.</summary>
@@ -1533,7 +1533,7 @@ namespace C64
                     cntPulses = Math.Max(cntPulses, (uint)underA);
 
                 int tbMode = (cia1Crb >> 5) & 0x03;
-                uint ticksB = 0;
+                uint ticksB;
                 if (tbMode == 0)
                     ticksB = cycles;
                 else if (tbMode == 1)
@@ -1568,14 +1568,14 @@ namespace C64
 
                 StepCia1Tod(cycles, ref raiseIrq);
 
-                cpu.memory.memory[0xDC04] = (byte)(cia1TimerACounter & 0xFF);
-                cpu.memory.memory[0xDC05] = (byte)(cia1TimerACounter >> 8);
-                cpu.memory.memory[0xDC06] = (byte)(cia1TimerBCounter & 0xFF);
-                cpu.memory.memory[0xDC07] = (byte)(cia1TimerBCounter >> 8);
-                cpu.memory.memory[0xDC0C] = cia1Sdr;
-                cpu.memory.memory[0xDC0D] = cia1IcrStatus;
-                cpu.memory.memory[0xDC0E] = cia1Cra;
-                cpu.memory.memory[0xDC0F] = cia1Crb;
+                cpu.memory.Memory[0xDC04] = (byte)(cia1TimerACounter & 0xFF);
+                cpu.memory.Memory[0xDC05] = (byte)(cia1TimerACounter >> 8);
+                cpu.memory.Memory[0xDC06] = (byte)(cia1TimerBCounter & 0xFF);
+                cpu.memory.Memory[0xDC07] = (byte)(cia1TimerBCounter >> 8);
+                cpu.memory.Memory[0xDC0C] = cia1Sdr;
+                cpu.memory.Memory[0xDC0D] = cia1IcrStatus;
+                cpu.memory.Memory[0xDC0E] = cia1Cra;
+                cpu.memory.Memory[0xDC0F] = cia1Crb;
             }
 
             if (raiseIrq)
@@ -1651,14 +1651,14 @@ namespace C64
 
                 StepCia2Tod(cycles, ref raiseNmi);
 
-                cpu.memory.memory[0xDD04] = (byte)(cia2TimerACounter & 0xFF);
-                cpu.memory.memory[0xDD05] = (byte)(cia2TimerACounter >> 8);
-                cpu.memory.memory[0xDD06] = (byte)(cia2TimerBCounter & 0xFF);
-                cpu.memory.memory[0xDD07] = (byte)(cia2TimerBCounter >> 8);
-                cpu.memory.memory[0xDD0C] = cia2Sdr;
-                cpu.memory.memory[0xDD0D] = cia2IcrStatus;
-                cpu.memory.memory[0xDD0E] = cia2Cra;
-                cpu.memory.memory[0xDD0F] = cia2Crb;
+                cpu.memory.Memory[0xDD04] = (byte)(cia2TimerACounter & 0xFF);
+                cpu.memory.Memory[0xDD05] = (byte)(cia2TimerACounter >> 8);
+                cpu.memory.Memory[0xDD06] = (byte)(cia2TimerBCounter & 0xFF);
+                cpu.memory.Memory[0xDD07] = (byte)(cia2TimerBCounter >> 8);
+                cpu.memory.Memory[0xDD0C] = cia2Sdr;
+                cpu.memory.Memory[0xDD0D] = cia2IcrStatus;
+                cpu.memory.Memory[0xDD0E] = cia2Cra;
+                cpu.memory.Memory[0xDD0F] = cia2Crb;
             }
 
             if (raiseNmi)
@@ -1678,7 +1678,7 @@ namespace C64
             TryHandleKernalLoadTrap();
             TryHandleKernalSaveTrap();
 
-            byte p1 = cpu.memory.memory[0x0001];
+            byte p1 = cpu.memory.Memory[0x0001];
             bool motorOn = (p1 & 0x20) == 0;
             datasette.SetMotor(motorOn);
 
@@ -1706,9 +1706,9 @@ namespace C64
             }
 
             if (datasette.SenseHigh)
-                cpu.memory.memory[0x0001] |= 0x10;
+                cpu.memory.Memory[0x0001] |= 0x10;
             else
-                cpu.memory.memory[0x0001] &= 0xEF;
+                cpu.memory.Memory[0x0001] &= 0xEF;
 
             byte iecExternal = iecBus.BuildExternalCia2PortA(0xFF);
             bool iecDataHigh = (iecExternal & 0x80) != 0;
@@ -1846,7 +1846,7 @@ namespace C64
         /// <summary>Intercepts KERNAL OPEN and creates the matching IEC logical file from the current filename parameters.</summary>
         private void HandleKernalOpenTrap()
         {
-            byte[] mem = cpu.memory.memory;
+            byte[] mem = cpu.memory.Memory;
             byte nameLen = mem[0x00B7];
             ushort namePtr = (ushort)(mem[0x00BB] | (mem[0x00BC] << 8));
             string? name = null;
@@ -1881,7 +1881,7 @@ namespace C64
             if (cartridge is not null)
                 return;
 
-            byte[] mem = cpu.memory.memory;
+            byte[] mem = cpu.memory.Memory;
 
             byte nameLen = mem[0x00B7];
             ushort namePtr = (ushort)(mem[0x00BB] | (mem[0x00BC] << 8));
@@ -1987,7 +1987,7 @@ namespace C64
         private void ReleaseIecLinesAfterTrappedLoad()
         {
             cia2PortA = (byte)(cia2PortA & ~0x38);
-            cpu.memory.memory[0xDD00] = cia2PortA;
+            cpu.memory.Memory[0xDD00] = cia2PortA;
             iecBus.UpdateHostCia2PortA(cia2PortA, cia2Ddra);
         }
 
@@ -2003,7 +2003,7 @@ namespace C64
             if (cartridge is not null)
                 return;
 
-            byte[] mem = cpu.memory.memory;
+            byte[] mem = cpu.memory.Memory;
             string? requestedName = ReadKernalFilename();
             if (string.IsNullOrWhiteSpace(requestedName))
             {
@@ -2147,7 +2147,7 @@ namespace C64
         /// <summary>Reads the current KERNAL filename bytes from C64 memory and decodes printable PETSCII.</summary>
         private string? ReadKernalFilename()
         {
-            byte[] mem = cpu.memory.memory;
+            byte[] mem = cpu.memory.Memory;
             byte nameLen = mem[0x00B7];
             ushort namePtr = (ushort)(mem[0x00BB] | (mem[0x00BC] << 8));
 
@@ -2216,14 +2216,14 @@ namespace C64
         /// <summary>Moves the host-rendered KERNAL message cursor to column zero before writing a new line.</summary>
         private void EnsureScreenLineStart()
         {
-            if (cpu.memory.memory[0x00D3] != 0)
+            if (cpu.memory.Memory[0x00D3] != 0)
                 NewScreenLine();
         }
 
         /// <summary>Advances the host-rendered message cursor, scrolling the BASIC screen when needed.</summary>
         private void NewScreenLine()
         {
-            byte[] mem = cpu.memory.memory;
+            byte[] mem = cpu.memory.Memory;
             int row = Math.Min(mem[0x00D6] + 1, 24);
             if (mem[0x00D6] >= 24)
                 ScrollBasicScreenUp();
@@ -2252,7 +2252,7 @@ namespace C64
         /// <param name="ch">The character to convert or write.</param>
         private void WriteScreenChar(char ch)
         {
-            byte[] mem = cpu.memory.memory;
+            byte[] mem = cpu.memory.Memory;
             int col = mem[0x00D3];
             if (col >= 40)
             {
@@ -2274,7 +2274,7 @@ namespace C64
         /// <summary>Scrolls C64 screen and color RAM up one 40-column row and clears the bottom row.</summary>
         private void ScrollBasicScreenUp()
         {
-            byte[] mem = cpu.memory.memory;
+            byte[] mem = cpu.memory.Memory;
             int screenBase = mem[0x0288] << 8;
             if (screenBase == 0)
                 screenBase = 0x0400;
@@ -2774,7 +2774,7 @@ namespace C64
         {
 
             ReadOnlySpan<byte> ready = [18, 5, 1, 4, 25, 46];
-            byte[] mem = cpu.memory.memory;
+            byte[] mem = cpu.memory.Memory;
             const int start = 0x0400;
             const int end = 0x07E7;
 
@@ -3043,7 +3043,7 @@ namespace C64
 
             ushort loadAddr = loadAddressOverride ?? (ushort)(data[0] | (data[1] << 8));
             int progLen = data.Length - 2;
-            byte[] mem = cpu.memory.memory;
+            byte[] mem = cpu.memory.Memory;
 
             if (loadAddr + progLen > mem.Length)
                 throw new InvalidDataException("PRG file would load past end of memory.");
@@ -3183,7 +3183,7 @@ namespace C64
         /// <param name="entry">The decoded tape entry to load.</param>
         private (ushort LoadAddress, ushort EndAddress) LoadTapeEntry(TapeEntry entry)
         {
-            byte[] mem = cpu.memory.memory;
+            byte[] mem = cpu.memory.Memory;
             int dataLen = entry.Data.Length;
 
             if (entry.LoadAddress + dataLen > mem.Length)
@@ -3234,7 +3234,7 @@ namespace C64
         /// <summary>Prompts for a filename and saves the current BASIC program range as a host PRG file.</summary>
         private void SaveProgram()
         {
-            byte[] mem = cpu.memory.memory;
+            byte[] mem = cpu.memory.Memory;
             int endAddr = mem[0x2D] | (mem[0x2E] << 8);
             int progLen = endAddr - 0x0801;
             if (progLen <= 2)
@@ -3291,7 +3291,7 @@ namespace C64
         {
             string name = raw.Trim().Trim('"', '\'');
 
-            if (name.StartsWith("@", StringComparison.Ordinal))
+            if (name.StartsWith('@'))
                 name = name.Substring(1);
 
             int commaIndex = name.IndexOf(',');

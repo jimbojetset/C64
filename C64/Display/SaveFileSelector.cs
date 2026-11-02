@@ -6,23 +6,16 @@ using System.Numerics;
 namespace C64.Display
 {
 
-    internal sealed class SaveFileSelector
+    internal sealed class SaveFileSelector(string defaultFilename)
     {
         private const string PopupId = "Save Program";
 
-        private string _filename;
+        private string _filename = defaultFilename;
         private bool _needsOpen = true;
         private bool _completed;
         private bool _focusName = true;
         private string? _selectedFilename;
         private string? _error;
-
-        /// <summary>Creates a modal PRG filename selector seeded with the suggested C64 filename.</summary>
-        /// <param name="defaultFilename">The filename initially offered to the user.</param>
-        public SaveFileSelector(string defaultFilename)
-        {
-            _filename = defaultFilename;
-        }
 
         public bool IsCompleted => _completed;
 

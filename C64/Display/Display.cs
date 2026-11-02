@@ -1034,7 +1034,7 @@ namespace C64.Display
                 Array.Clear(busStealMask, 0, busStealMask.Length);
             }
 
-            byte[] mem = cpu.memory.memory;
+            byte[] mem = cpu.memory.Memory;
             uint stolen = 0;
             while (cycles > 0)
             {
@@ -1134,7 +1134,7 @@ namespace C64.Display
             if (isResetting)
                 return;
 
-            ProcessRasterLine(currentRasterLine, cpu.memory.memory);
+            ProcessRasterLine(currentRasterLine, cpu.memory.Memory);
         }
 
         /// <summary>Discards all captured mid-frame VIC register writes.</summary>
@@ -1327,7 +1327,7 @@ namespace C64.Display
                 if (screenOn && inPlayfieldY)
                     FillLineSolid(frameY, bg0);
                 else
-                    FillLineRangeWithBorderEvents(frameY, 0, ScreenW - 1, (byte)(cpu.memory.memory[0xD020] & 0x0F));
+                    FillLineRangeWithBorderEvents(frameY, 0, ScreenW - 1, (byte)(cpu.memory.Memory[0xD020] & 0x0F));
             }
             else if (invalidBitmapMode)
                 FillLineSolid(frameY, 0);
@@ -1384,7 +1384,7 @@ namespace C64.Display
             }
             else
             {
-                src = cpu.memory.memory;
+                src = cpu.memory.Memory;
                 baseIdx = charAddr;
             }
         }
@@ -1524,7 +1524,7 @@ namespace C64.Display
         /// <param name="d016">The VIC D016 control register value.</param>
         private void ApplyInnerBorders(int frameY, int playY, byte d011, byte d016, bool horizontalBorderOpen, bool verticalBorderOpen)
         {
-            byte borderIdx = (byte)(cpu.memory.memory[0xD020] & 0x0F);
+            byte borderIdx = (byte)(cpu.memory.Memory[0xD020] & 0x0F);
 
             bool row25 = (d011 & 0x08) != 0;
             int firstVisibleY = row25 ? 0 : 4;
@@ -1558,7 +1558,7 @@ namespace C64.Display
         /// <param name="frameY">The frame-buffer scanline to render.</param>
         private void ApplyOuterBorders(int frameY, bool horizontalBorderOpen)
         {
-            byte borderIdx = (byte)(cpu.memory.memory[0xD020] & 0x0F);
+            byte borderIdx = (byte)(cpu.memory.Memory[0xD020] & 0x0F);
             int rasterLine = frameY + FrameFirstRasterLine;
 
             if (!horizontalBorderOpen)
@@ -1684,7 +1684,7 @@ namespace C64.Display
         {
             ResolveCharSource(charAddr, bank, out byte[] cs, out int cb);
             int bgC = C64Palette[bg];
-            bool charFromVicRam = ReferenceEquals(cs, cpu.memory.memory) && cb >= 0xD000 && cb < 0xE000;
+            bool charFromVicRam = ReferenceEquals(cs, cpu.memory.Memory) && cb >= 0xD000 && cb < 0xE000;
 
             int lineStart = (y * FrameW + FramePlayfieldX) * 4;
             int fgBase = 0;
@@ -1729,7 +1729,7 @@ namespace C64.Display
             ResolveCharSource(charAddr, bank, out byte[] cs, out int cb);
             int bgC = C64Palette[bg0];
             int[] mcc = [bgC, C64Palette[bg1], C64Palette[bg2], 0];
-            bool charFromVicRam = ReferenceEquals(cs, cpu.memory.memory) && cb >= 0xD000 && cb < 0xE000;
+            bool charFromVicRam = ReferenceEquals(cs, cpu.memory.Memory) && cb >= 0xD000 && cb < 0xE000;
 
             int lineStart = (y * FrameW + FramePlayfieldX) * 4;
             int fgBase = 0;
@@ -1800,7 +1800,7 @@ namespace C64.Display
         {
             ResolveCharSource(charAddr, bank, out byte[] cs, out int cb);
             int[] bgC = [C64Palette[bg0], C64Palette[bg1], C64Palette[bg2], C64Palette[bg3]];
-            bool charFromVicRam = ReferenceEquals(cs, cpu.memory.memory) && cb >= 0xD000 && cb < 0xE000;
+            bool charFromVicRam = ReferenceEquals(cs, cpu.memory.Memory) && cb >= 0xD000 && cb < 0xE000;
 
             int lineStart = (y * FrameW + FramePlayfieldX) * 4;
             int fgBase = 0;
@@ -2151,7 +2151,7 @@ namespace C64.Display
         {
             if (frameX < 0 || frameX >= FrameW || frameY < 0 || frameY >= FrameH) return;
             byte myBit = (byte)(1 << spriteIdx);
-            byte[] mem = cpu.memory.memory;
+            byte[] mem = cpu.memory.Memory;
 
             int playfieldX = frameX - FramePlayfieldX;
             bool inPlayfield = playfieldX >= 0 && playfieldX < ScreenW;
