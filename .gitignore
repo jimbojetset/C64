@@ -1,6 +1,8 @@
 /C64/ROMS/
+!/C64/ROMS/.gitkeep
 /C64/bin/
 /C64/obj/
 /C64/Debug/
 /C64/Release/
-/C64/ROMS copy/
+
+
